@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Packing List</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;}
+.container{max-width:900px;margin:auto;background:white;padding:30px;border-radius:12px;}
+input,button{width:100%;padding:15px;margin-bottom:15px;border-radius:8px;font-size:16px;box-sizing:border-box;}
+button{background:#0b1736;color:white;border:none;cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Packing List</h1>
+
+<input id="invoice_no" placeholder="Invoice No">
+<input id="buyer" placeholder="Buyer Name">
+<input id="item" placeholder="Item Name">
+<input id="carton" type="number" placeholder="Carton">
+<input id="net_weight" placeholder="Net Weight">
+<input id="gross_weight" placeholder="Gross Weight">
+
+<button onclick="savePacking()">Save Packing List</button>
+<button onclick="generatePackingPDF()">Generate Packing PDF</button>
+</div>
+
+<script>
+async function savePacking(){
+    const data = {
+        invoice_no: document.getElementById("invoice_no").value,
+        buyer: document.getElementById("buyer").value,
+        items:[{
+            name: document.getElementById("item").value,
+            carton: Number(document.getElementById("carton").value),
+            net_weight: document.getElementById("net_weight").value,
+            gross_weight: document.getElementById("gross_weight").value
+        }]
+    };
+
+    const res = await fetch("/packing-list",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(data)
+    });
+
+    const result = await res.json();
+    alert("Packing Saved : " + result.packing_no);
+}
+
+async function generatePackingPDF(){
+    const data = {
+        invoice_no: document.getElementById("invoice_no").value,
+        buyer: document.getElementById("buyer").value,
+        items:[{
+            name: document.getElementById("item").value,
+            carton: Number(document.getElementById("carton").value),
+            net_weight: document.getElementById("net_weight").value,
+            gross_weight: document.getElementById("gross_weight").value
+        }]
+    };
+
+    const res = await fetch("/packing-list/pdf",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(data)
+    });
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    window.open(url);
+}
+</script>
+</body>
+</html>

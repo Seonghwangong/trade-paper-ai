@@ -1,0 +1,15 @@
+[
+    {
+        "invoice_no": "INV-002",
+        "buyer": "ABC Trading",
+        "items": [
+            {
+                "name": "Steel Plate",
+                "carton": 5,
+                "net_weight": "500KG",
+                "gross_weight": "530KG"
+            }
+        ],
+        "packing_no": "PK-001"
+    }
+]

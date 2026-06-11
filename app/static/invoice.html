@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice</title>
+
+<style>
+body{
+    font-family:Arial,sans-serif;
+    background:#f3f4f6;
+    padding:40px;
+}
+
+.container{
+    max-width:900px;
+    margin:auto;
+    background:white;
+    padding:30px;
+    border-radius:12px;
+}
+
+h1{
+    margin-bottom:20px;
+}
+
+input{
+    width:100%;
+    padding:15px;
+    margin-bottom:15px;
+    border:1px solid #ddd;
+    border-radius:8px;
+    font-size:16px;
+    box-sizing:border-box;
+}
+
+button{
+    width:100%;
+    padding:16px;
+    margin-bottom:10px;
+    background:#0b1736;
+    color:white;
+    border:none;
+    border-radius:10px;
+    font-size:18px;
+    cursor:pointer;
+}
+
+button:hover{
+    opacity:0.9;
+}
+</style>
+
+</head>
+<body>
+
+<div class="container">
+
+<h1>Invoice</h1>
+
+<input id="seller" placeholder="Seller Name">
+<input id="buyer" placeholder="Buyer Name">
+
+<input id="item1" placeholder="Item Name">
+<input id="qty1" type="number" placeholder="Quantity">
+<input id="price1" type="number" placeholder="Unit Price">
+
+<button onclick="generatePDF()">
+Generate Invoice PDF
+</button>
+
+<button onclick="saveInvoice()">
+Save Invoice
+</button>
+
+</div>
+
+<script>
+
+async function saveInvoice(){
+
+    const data = {
+        seller: document.getElementById("seller").value,
+        buyer: document.getElementById("buyer").value,
+        items:[
+            {
+                name: document.getElementById("item1").value,
+                quantity: Number(document.getElementById("qty1").value),
+                unit_price: Number(document.getElementById("price1").value)
+            }
+        ]
+    };
+
+    const response = await fetch("/invoice",{
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json"
+        },
+        body:JSON.stringify(data)
+    });
+
+    const result = await response.json();
+
+    alert("Invoice Saved : " + result.invoice_no);
+}
+
+async function generatePDF(){
+
+    const data = {
+        seller: document.getElementById("seller").value,
+        buyer: document.getElementById("buyer").value,
+        items:[
+            {
+                name: document.getElementById("item1").value,
+                quantity: Number(document.getElementById("qty1").value),
+                unit_price: Number(document.getElementById("price1").value)
+            }
+        ]
+    };
+
+    const response = await fetch("/invoice/pdf",{
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json"
+        },
+        body:JSON.stringify(data)
+    });
+
+    const blob = await response.blob();
+
+    const url = window.URL.createObjectURL(blob);
+
+    window.open(url);
+}
+
+</script>
+
+</body>
+</html>
