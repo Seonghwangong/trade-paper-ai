@@ -98,6 +98,21 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.drawString(50, height - 125, f"Packing No: {packing_no}")
     pdf.drawString(50, height - 145, f"Invoice No: {invoice_no}")
     pdf.drawString(50, height - 165, f"Date: {today}")
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.drawString(50, height - 200, "SELLER")
+
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(50, height - 220, seller)
+    pdf.drawString(50, height - 238, seller_address)
+    pdf.drawString(50, height - 256, seller_email)
+
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.drawString(320, height - 200, "BUYER")
+
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(320, height - 220, buyer)
+    pdf.drawString(320, height - 238, buyer_address)
+    pdf.drawString(320, height - 256, buyer_email)
 
     pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
     pdf.setFillColor(colors.HexColor("#F9FAFB"))
