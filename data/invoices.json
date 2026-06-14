@@ -11,18 +11,6 @@
         ]
     },
     {
-        "seller": "test",
-        "buyer": "company",
-        "items": [
-            {
-                "name": "mouse",
-                "quantity": 5,
-                "unit_price": 100
-            }
-        ],
-        "invoice_no": "INV-002"
-    },
-    {
         "seller": "sony",
         "buyer": "google",
         "items": [
@@ -35,7 +23,47 @@
         "invoice_no": "INV-003"
     },
     {
-        "additionalProp1": {},
-        "invoice_no": "INV-004"
+        "seller": "dnicorp",
+        "buyer": "apple",
+        "items": [
+            {
+                "name": "Mac",
+                "quantity": 1,
+                "unit_price": 100
+            },
+            {
+                "name": "keyboard",
+                "quantity": 2,
+                "unit_price": 50
+            },
+            {
+                "name": "mouse",
+                "quantity": 3,
+                "unit_price": 20
+            }
+        ],
+        "invoice_no": "INV-005"
+    },
+    {
+        "seller": "dnicorp",
+        "buyer": "apple",
+        "items": [
+            {
+                "name": "Mac",
+                "quantity": 1,
+                "unit_price": 100
+            },
+            {
+                "name": "keyboard",
+                "quantity": 2,
+                "unit_price": 50
+            },
+            {
+                "name": "mouse",
+                "quantity": 3,
+                "unit_price": 20
+            }
+        ],
+        "invoice_no": "INV-006"
     }
 ]

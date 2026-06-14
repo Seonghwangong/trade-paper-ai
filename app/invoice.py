@@ -1,11 +1,12 @@
 from io import BytesIO
 from datetime import datetime
 from fastapi import APIRouter, Body, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 import json
+import os
 from pathlib import Path
 
 COMPANY_FILE = Path("data/company.json")
@@ -23,7 +24,11 @@ def create_invoice(payload: dict = Body(...)):
         with open(INVOICE_FILE, "r", encoding="utf-8") as f:
             invoices = json.load(f)
 
-    invoice_no = f"INV-{len(invoices)+1:03d}"
+    if invoices:
+        last_no = int(invoices[-1]["invoice_no"].split("-")[1])
+        invoice_no = f"INV-{last_no + 1:03d}"
+    else:
+        invoice_no = "INV-001"
 
     payload["invoice_no"] = invoice_no
 
@@ -180,46 +185,146 @@ def create_invoice_pdf(payload: dict = Body(...)):
             "Content-Disposition": f'attachment; filename="{invoice_no}.pdf"'
         }
     )
+@router.get("/delete-invoice/{invoice_no}")
+def delete_invoice(invoice_no: str):
+
+    if not INVOICE_FILE.exists():
+        return {"error": "No invoices"}
+
+    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
+        invoices = json.load(f)
+
+    invoices = [
+        inv for inv in invoices
+        if inv.get("invoice_no") != invoice_no
+    ]
+
+    with open(INVOICE_FILE, "w", encoding="utf-8") as f:
+        json.dump(invoices, f, indent=4)
+
+    return RedirectResponse(
+        url="/invoice-list",
+        status_code=302
+    )    
 @router.get("/invoice-list")
 def invoice_list():
-    invoices = []
 
-    if INVOICE_FILE.exists():
-        with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-            invoices = json.load(f)
+    if not os.path.exists(INVOICE_FILE):
+        return HTMLResponse("<h1>No Invoices</h1>")
 
-    html = """
-    <h1 style="font-family: Arial;">Invoice List</h1>
+    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
+        invoices = json.load(f)
 
-<table border="1" style="border-collapse: collapse; width: 90%; font-family: Arial;">
-        <tr>
-            <th>Invoice No</th>
-            <th>Seller</th>
-            <th>Buyer</th>
-            <th>Items</th>
-            <th>PDF</th>
-        </tr>
+    valid_invoices = [inv for inv in invoices if inv.get("invoice_no")]
+
+    html = f"""
+    <html>
+    <head>
+        <title>Invoice List</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                background: #f3f4f6;
+                margin: 0;
+                padding: 40px;
+            }}
+            .container {{
+                max-width: 1100px;
+                margin: auto;
+                background: white;
+                padding: 30px;
+                border-radius: 16px;
+            }}
+            h1 {{
+                color: #111827;
+                margin-bottom: 10px;
+            }}
+            .top {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 25px;
+            }}
+            .count {{
+                background: #111827;
+                color: white;
+                padding: 14px 20px;
+                border-radius: 12px;
+                font-weight: bold;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 16px;
+            }}
+            th {{
+                background: #111827;
+                color: white;
+                padding: 14px;
+                text-align: left;
+            }}
+            td {{
+                padding: 14px;
+                border-bottom: 1px solid #e5e7eb;
+            }}
+            a {{
+                text-decoration: none;
+                font-weight: bold;
+            }}
+            .pdf {{
+                color: #2563eb;
+            }}
+            .delete {{
+                color: #dc2626;
+            }}
+            .home {{
+                display: inline-block;
+                margin-bottom: 20px;
+                color: #111827;
+                font-weight: bold;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <a class="home" href="/">← Home</a>
+
+            <div class="top">
+                <h1>Invoice Management</h1>
+                <div class="count">Total Invoices: {len(valid_invoices)}</div>
+            </div>
+
+            <table>
+                <tr>
+                    <th>Invoice No</th>
+                    <th>Seller</th>
+                    <th>Buyer</th>
+                    <th>Items</th>
+                    <th>PDF</th>
+                    <th>Delete</th>
+                </tr>
     """
 
-    for inv in invoices:
-        if not inv.get("invoice_no"): continue
+    for inv in valid_invoices:
         items = inv.get("items", [])
         item_names = ", ".join([item.get("name", "") for item in items])
 
         html += f"""
-        <tr>
-            <td>{inv.get("invoice_no", "")}</td>
-            <td>{inv.get("seller", "")}</td>
-            <td>{inv.get("buyer", "")}</td>
-            <td>{item_names}</td>
-            <td><a href="/invoice-pdf/{inv.get("invoice_no", "")}">PDF</a></td>
-        </tr>
+                <tr>
+                    <td>{inv.get("invoice_no","")}</td>
+                    <td>{inv.get("seller","")}</td>
+                    <td>{inv.get("buyer","")}</td>
+                    <td>{item_names}</td>
+                    <td><a class="pdf" href="/invoice-pdf/{inv.get('invoice_no','')}">PDF</a></td>
+                    <td><a class="delete" href="/delete-invoice/{inv.get('invoice_no','')}">Delete</a></td>
+                </tr>
         """
-    html += f"""
-    <p><b>Total Invoices:</b> {len(invoices)}</p>
-    """
+
     html += """
-    </table>
+            </table>
+        </div>
+    </body>
+    </html>
     """
 
     return HTMLResponse(html)

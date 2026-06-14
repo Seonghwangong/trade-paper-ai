@@ -181,12 +181,30 @@ def packing_list_pdf(packing_no: str):
 
 
 @router.get("/packing-list")
-def packing_list():
+def packing_list(search: str = ""):
     packing_lists = load_packing_lists()
 
+    if search:
+
+        packing_lists = [
+            p for p in packing_lists
+            if search.lower() in str(p.get("buyer", "")).lower()
+            or search.lower() in str(p.get("seller", "")).lower()
+        ]    
+
     html = """
-    <h1 style="font-family: Arial;">Packing List</h1>
-    """
+<h1 style="font-family: Arial;">Packing List</h1>
+
+<form action="/packing-list" method="get" style="margin-bottom:20px;">
+<input
+    type="text"
+    name="search"
+    placeholder="Search buyer or seller"
+    style="padding:10px; width:250px;"
+>
+<button type="submit">Search</button>
+</form>
+"""
 
     html += f"""
     <p><b>Total Packing Lists:</b> {len(packing_lists)}</p>
@@ -201,6 +219,7 @@ def packing_list():
             <th style="padding:10px;">Buyer</th>
             <th style="padding:10px;">Items</th>
             <th style="padding:10px;">PDF</th>
+            <th style="padding:10px;">Delete</th>
         </tr>
     """
 
@@ -219,6 +238,7 @@ def packing_list():
             <td>{packing.get("buyer", "")}</td>
             <td>{item_names}</td>
             <td><a href="/packing-list-pdf/{packing.get("packing_no", "")}">PDF</a></td>
+            <td><a href="/packing-delete/{packing.get("packing_no", "")}">Delete</a></td>
         </tr>
         """
 
@@ -227,3 +247,41 @@ def packing_list():
     """
 
     return HTMLResponse(html)
+
+@router.post("/packing")
+def save_packing(payload: dict = Body(...)):
+
+    packing_no = "PK-001"
+
+    payload["packing_no"] = packing_no
+
+    return payload              
+
+@router.get("/packing-list")
+def packing_list():
+
+    return HTMLResponse("""
+    <h1>Packing Management</h1>
+    <p>Coming Soon...</p>
+    """) 
+
+@router.get("/packing-delete/{packing_no}")
+def packing_delete(packing_no: str):
+
+    if not PACKING_FILE.exists():
+        return {"error": "Packing file not found"}
+
+    with open(PACKING_FILE, "r", encoding="utf-8") as f:
+        packings = json.load(f)
+
+    packings = [
+        p for p in packings
+        if p.get("packing_no") != packing_no
+    ]
+
+    with open(PACKING_FILE, "w", encoding="utf-8") as f:
+        json.dump(packings, f, indent=4)
+
+    return HTMLResponse(
+        f'<script>location.href="/packing-list";</script>'
+    )

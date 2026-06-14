@@ -60,10 +60,18 @@ button:hover{
 
 <input id="seller" placeholder="Seller Name">
 <input id="buyer" placeholder="Buyer Name">
+<input id="item1" placeholder="Item 1 Name">
+<input id="qty1" type="number" placeholder="Item 1 Quantity">
+<input id="price1" type="number" placeholder="Item 1 Unit Price">
 
-<input id="item1" placeholder="Item Name">
-<input id="qty1" type="number" placeholder="Quantity">
-<input id="price1" type="number" placeholder="Unit Price">
+<input id="item2" placeholder="Item 2 Name">
+<input id="qty2" type="number" placeholder="Item 2 Quantity">
+<input id="price2" type="number" placeholder="Item 2 Unit Price">
+
+<input id="item3" placeholder="Item 3 Name">
+<input id="qty3" type="number" placeholder="Item 3 Quantity">
+<input id="price3" type="number" placeholder="Item 3 Unit Price">
+
 
 <button onclick="generatePDF()">
 Generate Invoice PDF
@@ -83,12 +91,22 @@ async function saveInvoice(){
         seller: document.getElementById("seller").value,
         buyer: document.getElementById("buyer").value,
         items:[
-            {
-                name: document.getElementById("item1").value,
-                quantity: Number(document.getElementById("qty1").value),
-                unit_price: Number(document.getElementById("price1").value)
-            }
-        ]
+    {
+        name: document.getElementById("item1").value,
+        quantity: Number(document.getElementById("qty1").value),
+        unit_price: Number(document.getElementById("price1").value)
+    },
+    {
+        name: document.getElementById("item2").value,
+        quantity: Number(document.getElementById("qty2").value),
+        unit_price: Number(document.getElementById("price2").value)
+    },
+    {
+        name: document.getElementById("item3").value,
+        quantity: Number(document.getElementById("qty3").value),
+        unit_price: Number(document.getElementById("price3").value)
+    }
+]
     };
 
     const response = await fetch("/invoice",{
@@ -106,16 +124,32 @@ async function saveInvoice(){
 
 async function generatePDF(){
 
+    const companyResponse = await fetch("/company-data");
+    const company = await companyResponse.json();
+
     const data = {
-        seller: document.getElementById("seller").value,
+        seller: company.name || document.getElementById("seller").value,
+        seller_address: company.address || "",
+        seller_email: company.email || "",
+
         buyer: document.getElementById("buyer").value,
-        items:[
-            {
-                name: document.getElementById("item1").value,
-                quantity: Number(document.getElementById("qty1").value),
-                unit_price: Number(document.getElementById("price1").value)
-            }
-        ]
+       items:[
+    {
+        name: document.getElementById("item1").value,
+        quantity: Number(document.getElementById("qty1").value),
+        unit_price: Number(document.getElementById("price1").value)
+    },
+    {
+        name: document.getElementById("item2").value,
+        quantity: Number(document.getElementById("qty2").value),
+        unit_price: Number(document.getElementById("price2").value)
+    },
+    {
+        name: document.getElementById("item3").value,
+        quantity: Number(document.getElementById("qty3").value),
+        unit_price: Number(document.getElementById("price3").value)
+    }
+]
     };
 
     const response = await fetch("/invoice/pdf",{
@@ -127,9 +161,7 @@ async function generatePDF(){
     });
 
     const blob = await response.blob();
-
     const url = window.URL.createObjectURL(blob);
-
     window.open(url);
 }
 

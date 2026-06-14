@@ -82,7 +82,8 @@ def invoice_list(search: str = ""):
     html = """
     <html>
     <body style="font-family:Arial; background:#f4f7fb; padding:40px;">
-    <h1>📄 Trade Paper AI - Invoice List</h1>
+    <h1>Trade Paper AI</h1>
+    <h2>Invoice Management</h2>
     <form action="/invoice-list" method="get" style="margin-bottom:20px;">
     <input
         type="text"

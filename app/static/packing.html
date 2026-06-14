@@ -6,31 +6,72 @@
 <style>
 body{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;}
 .container{max-width:900px;margin:auto;background:white;padding:30px;border-radius:12px;}
-input,button{width:100%;padding:15px;margin-bottom:15px;border-radius:8px;font-size:16px;box-sizing:border-box;}
-button{background:#0b1736;color:white;border:none;cursor:pointer;}
+h1{
+    color:#0b1736;
+    margin-bottom:5px;
+}
+
+h2{
+    color:#666;
+    margin-top:0;
+    margin-bottom:30px;
+}
+input,select,button{
+    width:100%;
+    padding:15px;
+    margin-bottom:15px;
+    border-radius:8px;
+    font-size:16px;
+    box-sizing:border-box;
+}
+
+.form-grid select{
+    margin-bottom:0;
+}
+
+button{
+    background:#0b1736;
+    color:white;
+    border:none;
+    cursor:pointer;
+    margin-top:10px;
+}
+
+.form-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:20px;
+}
 </style>
 </head>
 <body>
 <div class="container">
-<h1>Packing List</h1>
+<h1>Trade Paper AI</h1>
+<h2>Packing List</h2>
+<div class="form-grid">
+    <select id="invoice_no" onchange="loadInvoiceData()">
+    <option value="">Select Invoice No</option>
+</select>
+    <input id="buyer" placeholder="Buyer Name">
 
-<input id="invoice_no" placeholder="Invoice No">
-<input id="buyer" placeholder="Buyer Name">
-<input id="item" placeholder="Item Name">
-<input id="carton" type="number" placeholder="Carton">
-<input id="net_weight" placeholder="Net Weight">
-<input id="gross_weight" placeholder="Gross Weight">
+    <input id="item" placeholder="Item Name">
+    <input id="carton" type="number" placeholder="Carton">
 
+    <input id="net_weight" placeholder="Net Weight">
+    <input id="gross_weight" placeholder="Gross Weight">
+
+</div>
 <button onclick="savePacking()">Save Packing List</button>
 <button onclick="generatePackingPDF()">Generate Packing PDF</button>
 </div>
 
 <script>
 async function savePacking(){
+
     const data = {
         invoice_no: document.getElementById("invoice_no").value,
         buyer: document.getElementById("buyer").value,
-        items:[{
+        items: [{
             name: document.getElementById("item").value,
             carton: Number(document.getElementById("carton").value),
             net_weight: document.getElementById("net_weight").value,
@@ -38,21 +79,25 @@ async function savePacking(){
         }]
     };
 
-    const res = await fetch("/packing-list",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(data)
+    const res = await fetch("/packing-list", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
     });
 
     const result = await res.json();
-    alert("Packing Saved : " + result.packing_no);
+alert("Packing Saved : " + result.packing_no);
+
+window.location.href = "/packing-list";
+
 }
 
 async function generatePackingPDF(){
+
     const data = {
         invoice_no: document.getElementById("invoice_no").value,
         buyer: document.getElementById("buyer").value,
-        items:[{
+        items: [{
             name: document.getElementById("item").value,
             carton: Number(document.getElementById("carton").value),
             net_weight: document.getElementById("net_weight").value,
@@ -60,16 +105,64 @@ async function generatePackingPDF(){
         }]
     };
 
-    const res = await fetch("/packing-list/pdf",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(data)
+    const res = await fetch("/packing-list/pdf", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
     });
 
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
+
     window.open(url);
 }
+
+async function loadInvoiceOptions(){
+
+    const response = await fetch("/invoices");
+    const invoices = await response.json();
+
+    let optionHtml = '<option value="">Select Invoice No</option>';
+
+    invoices.forEach(function(inv){
+
+        if(inv.invoice_no){
+            optionHtml += '<option value="' + inv.invoice_no + '">' +
+                inv.invoice_no + ' - ' + (inv.buyer || '') +
+                '</option>';
+        }
+    });
+
+    document.getElementById("invoice_no").innerHTML = optionHtml;
+}
+
+async function loadInvoiceData(){
+
+    const invoiceNo = document.getElementById("invoice_no").value;
+
+    if(!invoiceNo){
+        return;
+    }
+
+    const response = await fetch("/invoices");
+    const invoices = await response.json();
+
+    const invoice = invoices.find(function(inv){
+        return inv.invoice_no === invoiceNo;
+    });
+
+    if(!invoice){
+        return;
+    }
+
+    document.getElementById("buyer").value = invoice.buyer || "";
+
+    if(invoice.items && invoice.items.length > 0){
+        document.getElementById("item").value = invoice.items[0].name || "";
+    }
+}
+loadInvoiceOptions();
+
 </script>
 </body>
 </html>
