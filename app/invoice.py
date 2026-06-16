@@ -208,7 +208,7 @@ def delete_invoice(invoice_no: str):
         status_code=302
     )    
 @router.get("/invoice-list")
-def invoice_list():
+def invoice_list(search: str = ""):
 
     if not os.path.exists(INVOICE_FILE):
         return HTMLResponse("<h1>No Invoices</h1>")
@@ -216,7 +216,22 @@ def invoice_list():
     with open(INVOICE_FILE, "r", encoding="utf-8") as f:
         invoices = json.load(f)
 
-    valid_invoices = [inv for inv in invoices if inv.get("invoice_no")]
+    valid_invoices = [
+        inv for inv in invoices
+        if inv.get("invoice_no")
+    ]
+
+    if search:
+        search_lower = search.lower()
+
+        valid_invoices = [
+            inv for inv in valid_invoices
+            if (
+                search_lower in inv.get("invoice_no", "").lower()
+                or search_lower in inv.get("buyer", "").lower()
+                or search_lower in inv.get("seller", "").lower()
+            )
+        ]
 
     html = f"""
     <html>
@@ -252,6 +267,17 @@ def invoice_list():
                 padding: 14px 20px;
                 border-radius: 12px;
                 font-weight: bold;
+            }}
+            .search {{
+                margin-bottom: 20px;
+            }}
+            .search input {{
+                width: 100%;
+                padding: 14px;
+                border: 1px solid #d1d5db;
+                border-radius: 10px;
+                font-size: 16px;
+                box-sizing: border-box;
             }}
             table {{
                 width: 100%;
@@ -294,6 +320,15 @@ def invoice_list():
                 <h1>Invoice Management</h1>
                 <div class="count">Total Invoices: {len(valid_invoices)}</div>
             </div>
+
+            <form class="search" method="get" action="/invoice-list">
+                <input
+                    type="text"
+                    name="search"
+                    value="{search}"
+                    placeholder="Search Invoice No, Buyer, Seller"
+                >
+            </form>
 
             <table>
                 <tr>
