@@ -273,30 +273,155 @@ def save_packing(payload: dict = Body(...)):
     return payload              
 
 @router.get("/packing-list")
-def packing_list():
+def packing_list(search: str = ""):
 
-    return HTMLResponse("""
-    <h1>Packing Management</h1>
-    <p>Coming Soon...</p>
-    """) 
+    packing_lists = load_packing_lists()
 
-@router.get("/packing-delete/{packing_no}")
-def packing_delete(packing_no: str):
-
-    if not PACKING_FILE.exists():
-        return {"error": "Packing file not found"}
-
-    with open(PACKING_FILE, "r", encoding="utf-8") as f:
-        packings = json.load(f)
-
-    packings = [
-        p for p in packings
-        if p.get("packing_no") != packing_no
+    valid_packings = [
+        p for p in packing_lists
+        if p.get("packing_no")
     ]
 
-    with open(PACKING_FILE, "w", encoding="utf-8") as f:
-        json.dump(packings, f, indent=4)
+    if search:
+        search_lower = search.lower()
 
-    return HTMLResponse(
-        f'<script>location.href="/packing-list";</script>'
-    )
+        valid_packings = [
+            p for p in valid_packings
+            if (
+                search_lower in p.get("packing_no", "").lower()
+                or search_lower in p.get("invoice_no", "").lower()
+                or search_lower in p.get("buyer", "").lower()
+            )
+        ]
+
+    html = f"""
+    <html>
+    <head>
+        <title>Packing List</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                background: #f3f4f6;
+                margin: 0;
+                padding: 40px;
+            }}
+            .container {{
+                max-width: 1100px;
+                margin: auto;
+                background: white;
+                padding: 30px;
+                border-radius: 16px;
+            }}
+            h1 {{
+                color: #111827;
+                margin-bottom: 10px;
+            }}
+            .top {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 25px;
+            }}
+            .count {{
+                background: #111827;
+                color: white;
+                padding: 14px 20px;
+                border-radius: 12px;
+                font-weight: bold;
+            }}
+            .search {{
+                margin-bottom: 20px;
+            }}
+            .search input {{
+                width: 100%;
+                padding: 14px;
+                border: 1px solid #d1d5db;
+                border-radius: 10px;
+                font-size: 16px;
+                box-sizing: border-box;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 16px;
+            }}
+            th {{
+                background: #111827;
+                color: white;
+                padding: 14px;
+                text-align: left;
+            }}
+            td {{
+                padding: 14px;
+                border-bottom: 1px solid #e5e7eb;
+            }}
+            a {{
+                text-decoration: none;
+                font-weight: bold;
+            }}
+            .pdf {{
+                color: #2563eb;
+            }}
+            .delete {{
+                color: #dc2626;
+            }}
+            .home {{
+                display: inline-block;
+                margin-bottom: 20px;
+                color: #111827;
+                font-weight: bold;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <a class="home" href="/">← Home</a>
+
+            <div class="top">
+                <h1>Packing Management</h1>
+                <div class="count">Total Packings: {len(valid_packings)}</div>
+            </div>
+
+            <form class="search" method="get" action="/packing-list">
+                <input
+                    type="text"
+                    name="search"
+                    value="{search}"
+                    placeholder="Search Packing No, Invoice No, Buyer"
+                >
+            </form>
+
+            <table>
+                <tr>
+                    <th>Packing No</th>
+                    <th>Invoice No</th>
+                    <th>Buyer</th>
+                    <th>Items</th>
+                    <th>PDF</th>
+                    <th>Delete</th>
+                </tr>
+    """
+
+    for packing in valid_packings:
+        items = packing.get("items", [])
+        item_names = ", ".join([item.get("name", "") for item in items])
+
+        html += f"""
+                <tr>
+                    <td>{packing.get("packing_no", "")}</td>
+                    <td>{packing.get("invoice_no", "")}</td>
+                    <td>{packing.get("buyer", "")}</td>
+                    <td>{item_names}</td>
+                    <td><a class="pdf" href="/packing-list-pdf/{packing.get('packing_no', '')}">PDF</a></td>
+                    <td><a class="delete" href="/packing-delete/{packing.get('packing_no', '')}">Delete</a></td>
+                </tr>
+        """
+
+    html += """
+            </table>
+        </div>
+    </body>
+    </html>
+    """
+
+    return HTMLResponse(html)
