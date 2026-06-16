@@ -16,8 +16,36 @@ app.add_middleware(
 )
 @app.get("/", response_class=HTMLResponse)
 def root():
-    with open(BASE_DIR / "static" / "index.html", "r") as f:
-        return f.read()
+
+    invoice_count = 0
+    packing_count = 0
+
+    invoices_file = BASE_DIR.parent / "data" / "invoices.json"
+    packing_file = BASE_DIR.parent / "data" / "packing_lists.json"
+
+    if invoices_file.exists():
+        with open(invoices_file, "r", encoding="utf-8") as f:
+            invoices = json.load(f)
+            invoice_count = len([
+                inv for inv in invoices
+                if inv.get("invoice_no")
+            ])
+
+    if packing_file.exists():
+        with open(packing_file, "r", encoding="utf-8") as f:
+            packings = json.load(f)
+            packing_count = len([
+                p for p in packings
+                if p.get("packing_no")
+            ])
+
+    with open(BASE_DIR / "static" / "index.html", "r", encoding="utf-8") as f:
+        html = f.read()
+
+    html = html.replace("{{INVOICE_COUNT}}", str(invoice_count))
+    html = html.replace("{{PACKING_COUNT}}", str(packing_count))
+
+    return HTMLResponse(html)
 @app.get("/company")
 def company_page():
     with open(BASE_DIR / "static" / "company.html", "r") as f:

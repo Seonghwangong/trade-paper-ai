@@ -93,6 +93,7 @@ def create_invoice_pdf(payload: dict = Body(...)):
 
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 24)
+    pdf.drawString(50, height - 55, "INVOICE")
 
     logo_path = Path("app/static/logo.png")
     if logo_path.exists():
