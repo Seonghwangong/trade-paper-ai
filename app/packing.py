@@ -1,7 +1,7 @@
 from io import BytesIO
 from datetime import datetime
-from fastapi import APIRouter, Body, Response
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Body, Response, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
@@ -262,166 +262,71 @@ def packing_list(search: str = ""):
     """
 
     return HTMLResponse(html)
-
 @router.post("/packing")
-def save_packing(payload: dict = Body(...)):
-
-    packing_no = "PK-001"
-
-    payload["packing_no"] = packing_no
-
-    return payload              
-
-@router.get("/packing-list")
-def packing_list(search: str = ""):
-
+def save_packing(
+    invoice_no: str = Form(""),
+    seller: str = Form(""),
+    buyer: str = Form(""),
+    item_name: str = Form(""),
+):
     packing_lists = load_packing_lists()
 
-    valid_packings = [
+    next_no = len(packing_lists) + 1
+    packing_no = f"PK-{next_no:03d}"
+
+    packing = {
+        "packing_no": packing_no,
+        "invoice_no": invoice_no,
+        "seller": seller,
+        "buyer": buyer,
+        "items": [
+            {
+                "name": item_name
+            }
+        ]
+    }
+
+    packing_lists.append(packing)
+    save_packing_lists(packing_lists)
+
+    return RedirectResponse(url="/packing-list", status_code=303)
+
+
+@router.get("/packing-delete/{packing_no}")
+def delete_packing(packing_no: str):
+    packing_lists = load_packing_lists()
+
+    packing_lists = [
         p for p in packing_lists
-        if p.get("packing_no")
+        if p.get("packing_no") != packing_no
     ]
 
-    if search:
-        search_lower = search.lower()
+    save_packing_lists(packing_lists)
 
-        valid_packings = [
-            p for p in valid_packings
-            if (
-                search_lower in p.get("packing_no", "").lower()
-                or search_lower in p.get("invoice_no", "").lower()
-                or search_lower in p.get("buyer", "").lower()
-            )
-        ]
+    return RedirectResponse(url="/packing-list", status_code=303)
+@router.get("/packing-form")
+def packing_form():
+    html = """
+    <h1>Packing Input</h1>
 
-    html = f"""
-    <html>
-    <head>
-        <title>Packing List</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                background: #f3f4f6;
-                margin: 0;
-                padding: 40px;
-            }}
-            .container {{
-                max-width: 1100px;
-                margin: auto;
-                background: white;
-                padding: 30px;
-                border-radius: 16px;
-            }}
-            h1 {{
-                color: #111827;
-                margin-bottom: 10px;
-            }}
-            .top {{
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 25px;
-            }}
-            .count {{
-                background: #111827;
-                color: white;
-                padding: 14px 20px;
-                border-radius: 12px;
-                font-weight: bold;
-            }}
-            .search {{
-                margin-bottom: 20px;
-            }}
-            .search input {{
-                width: 100%;
-                padding: 14px;
-                border: 1px solid #d1d5db;
-                border-radius: 10px;
-                font-size: 16px;
-                box-sizing: border-box;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 16px;
-            }}
-            th {{
-                background: #111827;
-                color: white;
-                padding: 14px;
-                text-align: left;
-            }}
-            td {{
-                padding: 14px;
-                border-bottom: 1px solid #e5e7eb;
-            }}
-            a {{
-                text-decoration: none;
-                font-weight: bold;
-            }}
-            .pdf {{
-                color: #2563eb;
-            }}
-            .delete {{
-                color: #dc2626;
-            }}
-            .home {{
-                display: inline-block;
-                margin-bottom: 20px;
-                color: #111827;
-                font-weight: bold;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <a class="home" href="/">← Home</a>
+    <form action="/packing" method="post">
+        <p>Invoice No</p>
+        <input type="text" name="invoice_no">
 
-            <div class="top">
-                <h1>Packing Management</h1>
-                <div class="count">Total Packings: {len(valid_packings)}</div>
-            </div>
+        <p>Seller</p>
+        <input type="text" name="seller">
 
-            <form class="search" method="get" action="/packing-list">
-                <input
-                    type="text"
-                    name="search"
-                    value="{search}"
-                    placeholder="Search Packing No, Invoice No, Buyer"
-                >
-            </form>
+        <p>Buyer</p>
+        <input type="text" name="buyer">
 
-            <table>
-                <tr>
-                    <th>Packing No</th>
-                    <th>Invoice No</th>
-                    <th>Buyer</th>
-                    <th>Items</th>
-                    <th>PDF</th>
-                    <th>Delete</th>
-                </tr>
+        <p>Item Name</p>
+        <input type="text" name="item_name">
+
+        <br><br>
+        <button type="submit">Save Packing</button>
+    </form>
+
+    <br>
+    <a href="/packing-list">Back to Packing List</a>
     """
-
-    for packing in valid_packings:
-        items = packing.get("items", [])
-        item_names = ", ".join([item.get("name", "") for item in items])
-
-        html += f"""
-                <tr>
-                    <td>{packing.get("packing_no", "")}</td>
-                    <td>{packing.get("invoice_no", "")}</td>
-                    <td>{packing.get("buyer", "")}</td>
-                    <td>{item_names}</td>
-                    <td><a class="pdf" href="/packing-list-pdf/{packing.get('packing_no', '')}">PDF</a></td>
-                    <td><a class="delete" href="/packing-delete/{packing.get('packing_no', '')}">Delete</a></td>
-                </tr>
-        """
-
-    html += """
-            </table>
-        </div>
-    </body>
-    </html>
-    """
-
-    return HTMLResponse(html)
+    return HTMLResponse(html)    

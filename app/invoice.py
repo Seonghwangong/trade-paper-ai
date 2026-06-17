@@ -96,15 +96,15 @@ def create_invoice_pdf(payload: dict = Body(...)):
     pdf.drawString(50, height - 55, "INVOICE")
 
     logo_path = Path("app/static/logo.png")
-    if logo_path.exists():
-        pdf.drawImage(
-            str(logo_path),
-            470,
-            720,
-            width=60,
-            height=60,
-            mask="auto"
-        )
+    # if logo_path.exists():
+    #     pdf.drawImage(
+    #         str(logo_path),
+    #         470,
+    #         720,
+    #         width=60,
+    #         height=60,
+    #         mask="auto"
+    #     )
 
     pdf.drawString(50, height - 55, "COMMERCIAL INVOICE")
 
