@@ -181,5 +181,21 @@ def home():
     <p><a href="/invoices">Invoice List</a></p>
     <p><a href="/packing-form">Packing</a></p>
     <p><a href="/packing-list">Packing List</a></p>
+
+    <hr>
+
+    <h2>Dashboard</h2>
+
+    <p>
+        <a href="/invoices">
+            <button style="padding:20px; width:250px;">Total Invoices</button>
+        </a>
+    </p>
+
+    <p>
+        <a href="/packing-list">
+            <button style="padding:20px; width:250px;">Total Packings</button>
+        </a>
+    </p>
     """
-    return HTMLResponse(html)    
+    return HTMLResponse(html)
