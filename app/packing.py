@@ -325,7 +325,7 @@ def packing_form():
             continue
 
         invoice_options += f"""
-        <option value="{invoice_no}">{invoice_no} - {buyer}</option>
+        <option value="{invoice_no}" data-seller="{seller}" data-buyer="{buyer}">{invoice_no} - {buyer}</option>
         """
 
     html = f"""
@@ -333,25 +333,40 @@ def packing_form():
 
     <form action="/packing" method="post">
         <p>Invoice No</p>
-        <select name="invoice_no">
+        <select id="invoice_no" name="invoice_no">
             {invoice_options}
         </select>
 
         <p>Seller</p>
-        <input type="text" name="seller">
-
+        <input id="seller" type="text" name="seller">
         <p>Buyer</p>
-        <input type="text" name="buyer">
-
+        <input id="buyer" type="text" name="buyer">
         <p>Item Name</p>
         <input type="text" name="item_name">
 
         <br><br>
         <button type="submit">Save Packing</button>
-    </form>
+</form>
 
-    <br>
-    <a href="/">Back Home</a>
+<script>
+document.getElementById("invoice_no").addEventListener("change", function() {{
+
+    const selectedText =
+        this.options[this.selectedIndex].text;
+
+    const parts = selectedText.split(" - ");
+
+    if (parts.length > 1) {{
+        document.getElementById("buyer").value = parts[1];
+
+        document.getElementById("seller").value =
+    this.options[this.selectedIndex].dataset.seller;
+    }}
+}});
+</script>
+
+<br>
+<a href="/">Back Home</a>
     <br>
     <a href="/packing-list">Back to Packing List</a>
     """
