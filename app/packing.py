@@ -10,6 +10,7 @@ from pathlib import Path
 
 COMPANY_FILE = Path("data/company.json")
 PACKING_FILE = Path("data/packing_lists.json")
+INVOICE_FILE = Path("data/invoices.json")
 
 router = APIRouter()
 
@@ -306,12 +307,33 @@ def delete_packing(packing_no: str):
     return RedirectResponse(url="/packing-list", status_code=303)
 @router.get("/packing-form")
 def packing_form():
-    html = """
+    invoices = []
+
+    if INVOICE_FILE.exists():
+        with open(INVOICE_FILE, "r", encoding="utf-8") as f:
+            invoices = json.load(f)
+
+    invoice_options = """
+<option value="">Select Invoice</option>
+"""
+    for invoice in invoices:
+        invoice_no = invoice.get("invoice_no", "")
+        buyer = invoice.get("buyer", "")
+        if not invoice_no:
+            continue
+
+        invoice_options += f"""
+        <option value="{invoice_no}">{invoice_no} - {buyer}</option>
+        """
+
+    html = f"""
     <h1>Packing Input</h1>
 
     <form action="/packing" method="post">
         <p>Invoice No</p>
-        <input type="text" name="invoice_no">
+        <select name="invoice_no">
+            {invoice_options}
+        </select>
 
         <p>Seller</p>
         <input type="text" name="seller">
@@ -327,6 +349,9 @@ def packing_form():
     </form>
 
     <br>
+    <a href="/">Back Home</a>
+    <br>
     <a href="/packing-list">Back to Packing List</a>
     """
-    return HTMLResponse(html)    
+
+    return HTMLResponse(html)
