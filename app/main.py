@@ -171,3 +171,15 @@ def invoice_pdf(index: int):
     from app.invoice import create_invoice_pdf
 
     return create_invoice_pdf(invoice)
+@app.get("/")
+def home():
+    html = """
+    <h1>Trade Paper AI</h1>
+
+    <p><a href="/company">Company</a></p>
+    <p><a href="/invoice">Invoice</a></p>
+    <p><a href="/invoices">Invoice List</a></p>
+    <p><a href="/packing-form">Packing</a></p>
+    <p><a href="/packing-list">Packing List</a></p>
+    """
+    return HTMLResponse(html)    
