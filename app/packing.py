@@ -318,7 +318,9 @@ def packing_form():
 """
     for invoice in invoices:
         invoice_no = invoice.get("invoice_no", "")
+        seller = invoice.get("seller", "")
         buyer = invoice.get("buyer", "")
+
         if not invoice_no:
             continue
 
