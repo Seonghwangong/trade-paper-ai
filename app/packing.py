@@ -199,6 +199,7 @@ def packing_list_pdf(packing_no: str):
 @router.get("/packing-list")
 def packing_list(search: str = ""):
     packing_lists = load_packing_lists()
+    packing_lists = list(reversed(packing_lists))
 
     if search:
 
@@ -206,16 +207,18 @@ def packing_list(search: str = ""):
             p for p in packing_lists
             if search.lower() in str(p.get("buyer", "")).lower()
             or search.lower() in str(p.get("seller", "")).lower()
+            or search.lower() in str(p.get("items", "")).lower()
         ]    
 
-    html = """
+    html = f"""
 <h1 style="font-family: Arial;">Packing List</h1>
 
 <form action="/packing-list" method="get" style="margin-bottom:20px;">
 <input
     type="text"
     name="search"
-    placeholder="Search buyer or seller"
+    value="{search}"
+    placeholder="Search buyer, seller or item"
     style="padding:10px; width:250px;"
 >
 <button type="submit">Search</button>
@@ -272,7 +275,13 @@ def save_packing(
 ):
     packing_lists = load_packing_lists()
 
-    next_no = len(packing_lists) + 1
+    existing_numbers = [
+    int(p.get("packing_no", "PK-000").split("-")[1])
+    for p in packing_lists
+    if p.get("packing_no", "").startswith("PK-")
+]
+
+    next_no = max(existing_numbers, default=0) + 1
     packing_no = f"PK-{next_no:03d}"
 
     packing = {

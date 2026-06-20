@@ -220,6 +220,11 @@ def invoice_list(search: str = ""):
         inv for inv in invoices
         if inv.get("invoice_no")
     ]
+    valid_invoices = sorted(
+    valid_invoices,
+    key=lambda inv: inv.get("invoice_no", ""),
+    reverse=True
+)
 
     if search:
         search_lower = search.lower()
@@ -230,6 +235,7 @@ def invoice_list(search: str = ""):
                 search_lower in inv.get("invoice_no", "").lower()
                 or search_lower in inv.get("buyer", "").lower()
                 or search_lower in inv.get("seller", "").lower()
+                or search_lower in str(inv.get("items", "")).lower()
             )
         ]
 
@@ -326,7 +332,7 @@ def invoice_list(search: str = ""):
                     type="text"
                     name="search"
                     value="{search}"
-                    placeholder="Search Invoice No, Buyer, Seller"
+                    placeholder="Search Invoice No, Buyer, Seller or Item"
                 >
             </form>
 

@@ -101,6 +101,11 @@ from fastapi.responses import HTMLResponse
 @app.get("/invoice-list", response_class=HTMLResponse)
 def invoice_list(search: str = ""):
     invoices = load_invoices()
+    invoices = sorted(
+    invoices,
+    key=lambda inv: inv.get("invoice_no", ""),
+    reverse=True
+)
     if search:
         invoices = [
             inv for inv in invoices

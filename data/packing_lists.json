@@ -39,19 +39,13 @@
         ]
     },
     {
-        "packing_no": "PK-005",
-        "invoice_no": "",
-        "seller": "",
-        "buyer": "",
+        "packing_no": "PK-006",
+        "invoice_no": "INV-003",
+        "seller": "sony",
+        "buyer": "google",
         "items": [
             {
-                "name": "Phone"
-            },
-            {
-                "name": "Tablet"
-            },
-            {
-                "name": "Cable"
+                "name": "mouse"
             }
         ]
     }
