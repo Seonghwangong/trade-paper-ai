@@ -281,10 +281,10 @@ def save_packing(
         "seller": seller,
         "buyer": buyer,
         "items": [
-            {
-                "name": item_name
-            }
-        ]
+    {"name": name.strip()}
+    for name in item_name.split(",")
+    if name.strip()
+]
     }
 
     packing_lists.append(packing)
@@ -341,8 +341,8 @@ def packing_form():
         <input id="seller" type="text" name="seller">
         <p>Buyer</p>
         <input id="buyer" type="text" name="buyer">
-        <p>Item Name</p>
-        <input type="text" name="item_name">
+        <p>Item Name (comma separated)</p>
+<input type="text" name="item_name" placeholder="MacBook, Keyboard, Mouse">
 
         <br><br>
         <button type="submit">Save Packing</button>
