@@ -257,6 +257,7 @@ def packing_list(search: str = ""):
             <td>{packing.get("buyer", "")}</td>
             <td>{item_names}</td>
             <td><a href="/packing-list-pdf/{packing.get("packing_no", "")}">PDF</a></td>
+            <td><a href="/edit-packing/{packing.get("packing_no", "")}">Edit</a></td>
             <td><a href="/packing-delete/{packing.get("packing_no", "")}">Delete</a></td>
         </tr>
         """
@@ -301,6 +302,87 @@ def save_packing(
 
     return RedirectResponse(url="/packing-list", status_code=303)
 
+@router.get("/edit-packing/{packing_no}")
+def edit_packing(packing_no: str):
+    packing_lists = load_packing_lists()
+
+    for packing in packing_lists:
+        if packing.get("packing_no") == packing_no:
+
+            items = packing.get("items", [])
+            item_name = items[0].get("name", "") if items else ""
+            carton = items[0].get("carton", "") if items else ""
+            net_weight = items[0].get("net_weight", "") if items else ""
+            gross_weight = items[0].get("gross_weight", "") if items else ""
+
+            html = f"""
+            <h1>Edit Packing List</h1>
+
+            <form action="/update-packing/{packing_no}" method="post">
+
+                <p>Invoice No</p>
+                <input type="text" name="invoice_no" value="{packing.get('invoice_no','')}">
+
+                <p>Seller</p>
+                <input type="text" name="seller" value="{packing.get('seller','')}">
+
+                <p>Buyer</p>
+                <input type="text" name="buyer" value="{packing.get('buyer','')}">
+
+                <p>Item Name</p>
+                <input type="text" name="item_name" value="{item_name}">
+
+                <p>Carton</p>
+                <input type="text" name="carton" value="{carton}">
+
+                <p>Net Weight</p>
+                <input type="text" name="net_weight" value="{net_weight}">
+
+                <p>Gross Weight</p>
+                <input type="text" name="gross_weight" value="{gross_weight}">
+
+                <br><br>
+                <button type="submit">Update Packing</button>
+
+            </form>
+
+            <br>
+            <a href="/packing-list">Back to Packing List</a>
+            """
+
+            return HTMLResponse(html)
+
+    return {"error": "Packing list not found"}
+@router.post("/update-packing/{packing_no}")
+def update_packing(
+    packing_no: str,
+    invoice_no: str = Form(""),
+    seller: str = Form(""),
+    buyer: str = Form(""),
+    item_name: str = Form(""),
+    carton: str = Form(""),
+    net_weight: str = Form(""),
+    gross_weight: str = Form(""),
+):
+    packing_lists = load_packing_lists()
+
+    for packing in packing_lists:
+        if packing.get("packing_no") == packing_no:
+            packing["invoice_no"] = invoice_no
+            packing["seller"] = seller
+            packing["buyer"] = buyer
+            packing["items"] = [
+                {
+                    "name": item_name,
+                    "carton": carton,
+                    "net_weight": net_weight,
+                    "gross_weight": gross_weight,
+                }
+            ]
+
+    save_packing_lists(packing_lists)
+
+    return RedirectResponse(url="/packing-list", status_code=303)
 
 @router.get("/packing-delete/{packing_no}")
 def delete_packing(packing_no: str):

@@ -49,19 +49,7 @@
         "buyer": "apple",
         "items": [
             {
-                "name": "Mac",
-                "quantity": 1,
-                "unit_price": 100
-            },
-            {
-                "name": "keyboard",
-                "quantity": 2,
-                "unit_price": 50
-            },
-            {
-                "name": "mouse",
-                "quantity": 3,
-                "unit_price": 20
+                "name": "test"
             }
         ],
         "invoice_no": "INV-006"

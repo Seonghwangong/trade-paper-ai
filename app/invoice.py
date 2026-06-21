@@ -1,6 +1,6 @@
 from io import BytesIO
 from datetime import datetime
-from fastapi import APIRouter, Body, Response
+from fastapi import APIRouter, Body, Response, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -186,7 +186,66 @@ def create_invoice_pdf(payload: dict = Body(...)):
             "Content-Disposition": f'attachment; filename="{invoice_no}.pdf"'
         }
     )
+@router.get("/edit-invoice/{invoice_no}")
+def edit_invoice(invoice_no: str):  
+    if not INVOICE_FILE.exists():
+        return {"error": "No invoices"}
+    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
+        invoices = json.load(f)
+    for inv in invoices:
+        if inv.get("invoice_no") == invoice_no:
+            items = inv.get("items", [])
+            item_name = items[0].get("name", "") if items else ""
+
+            html = f"""
+            <h1>Edit Invoice</h1>
+
+            <form action="/update-invoice/{invoice_no}" method="post">
+                <p>Seller</p>
+                <input type="text" name="seller" value="{inv.get('seller', '')}">
+
+                <p>Buyer</p>
+                <input type="text" name="buyer" value="{inv.get('buyer', '')}">
+
+                <p>Item Name</p>
+                <input type="text" name="item_name" value="{item_name}">
+
+                <br><br>
+                <button type="submit">Update Invoice</button>
+            </form>
+
+            <br>
+            <a href="/invoice-list">Back to Invoice List</a>
+            """
+
+            return HTMLResponse(html)
+
+    return {"error": "Invoice not found"} 
+@router.post("/update-invoice/{invoice_no}")
+def update_invoice(
+    invoice_no: str,
+    seller: str = Form(""),
+    buyer: str = Form(""),
+    item_name: str = Form(""),
+):
+    if not INVOICE_FILE.exists():
+        return {"error": "No invoices"}
+
+    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
+        invoices = json.load(f)
+
+    for inv in invoices:
+        if inv.get("invoice_no") == invoice_no:
+            inv["seller"] = seller
+            inv["buyer"] = buyer
+            inv["items"] = [{"name": item_name}]
+
+    with open(INVOICE_FILE, "w", encoding="utf-8") as f:
+        json.dump(invoices, f, indent=4)
+
+    return RedirectResponse(url="/invoice-list", status_code=303)     
 @router.get("/delete-invoice/{invoice_no}")
+
 def delete_invoice(invoice_no: str):
 
     if not INVOICE_FILE.exists():
@@ -358,6 +417,7 @@ def invoice_list(search: str = ""):
                     <td>{inv.get("buyer","")}</td>
                     <td>{item_names}</td>
                     <td><a class="pdf" href="/invoice-pdf/{inv.get('invoice_no','')}">PDF</a></td>
+                    <td><a class="pdf" href="/edit-invoice/{inv.get('invoice_no')}">Edit</a></td>
                     <td><a class="delete" href="/delete-invoice/{inv.get('invoice_no','')}">Delete</a></td>
                 </tr>
         """

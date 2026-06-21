@@ -45,7 +45,10 @@
         "buyer": "google",
         "items": [
             {
-                "name": "mouse"
+                "name": "mouse edit",
+                "carton": "",
+                "net_weight": "",
+                "gross_weight": ""
             }
         ]
     }
