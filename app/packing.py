@@ -63,14 +63,7 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     seller_address = company.get("address") or payload.get("seller_address", "Seoul, Korea")
     seller_email = company.get("email") or payload.get("seller_email", "contact@tradepaper.ai")
 
-    items = payload.get("items", [
-        {
-            "name": "Sample Item",
-            "carton": 1,
-            "net_weight": "10KG",
-            "gross_weight": "12KG"
-        }
-    ])
+    items = payload.get("items", [])
 
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
@@ -83,12 +76,7 @@ def create_packing_list_pdf(payload: dict = Body(...)):
 
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 24)
-
-    logo_path = Path("app/static/logo.png")
-    if logo_path.exists():
-        pdf.drawImage(str(logo_path), 470, 720, width=60, height=60, mask="auto")
-
-    pdf.drawString(50, height - 55, "PACKING LIST")
+    pdf.drawString(50, height - 55, "COMMERCIAL PACKING LIST")
 
     pdf.setFont("Helvetica", 10)
     pdf.drawRightString(width - 50, height - 40, "Trade Paper AI")
@@ -99,21 +87,6 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.drawString(50, height - 125, f"Packing No: {packing_no}")
     pdf.drawString(50, height - 145, f"Invoice No: {invoice_no}")
     pdf.drawString(50, height - 165, f"Date: {today}")
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(50, height - 200, "SELLER")
-
-    pdf.setFont("Helvetica", 10)
-    pdf.drawString(50, height - 220, seller)
-    pdf.drawString(50, height - 238, seller_address)
-    pdf.drawString(50, height - 256, seller_email)
-
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(320, height - 200, "BUYER")
-
-    pdf.setFont("Helvetica", 10)
-    pdf.drawString(320, height - 220, buyer)
-    pdf.drawString(320, height - 238, buyer_address)
-    pdf.drawString(320, height - 256, buyer_email)
 
     pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
     pdf.setFillColor(colors.HexColor("#F9FAFB"))
@@ -128,11 +101,11 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.setFont("Helvetica", 10)
     pdf.drawString(65, height - 215, seller)
     pdf.drawString(65, height - 230, seller_address)
-    pdf.drawString(65, height - 240, seller_email)
+    pdf.drawString(65, height - 245, seller_email)
 
     pdf.drawString(330, height - 215, buyer)
     pdf.drawString(330, height - 230, buyer_address)
-    pdf.drawString(330, height - 240, buyer_email)
+    pdf.drawString(330, height - 245, buyer_email)
 
     y = height - 310
     pdf.setFillColor(colors.HexColor("#E5E7EB"))
@@ -149,23 +122,32 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
     pdf.setFont("Helvetica", 10)
 
-    for item in items:
-        pdf.rect(50, y, 495, 30, fill=0)
+    total_carton = 0
 
+    for item in items:
+        carton = int(item.get("carton", 1))
+        total_carton += carton
+
+        pdf.rect(50, y, 495, 30, fill=0)
         pdf.drawString(60, y + 11, item.get("name", ""))
-        pdf.drawRightString(260, y + 11, str(item.get("carton", 1)))
+        pdf.drawRightString(260, y + 11, str(carton))
         pdf.drawRightString(390, y + 11, str(item.get("net_weight", "10KG")))
         pdf.drawRightString(520, y + 11, str(item.get("gross_weight", "12KG")))
 
         y -= 30
 
-    y -= 60
+    y -= 40
     pdf.setFillColor(colors.HexColor("#111827"))
     pdf.roundRect(335, y - 10, 210, 45, 8, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 13)
-    pdf.drawRightString(525, y + 7, "END OF PACKING LIST")
+    pdf.drawRightString(525, y + 7, f"TOTAL CARTONS: {total_carton}")
+
+    pdf.setFillColor(colors.black)
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(50, 115, "Authorized Signature:")
+    pdf.line(170, 115, 330, 115)
 
     pdf.setFillColor(colors.HexColor("#6B7280"))
     pdf.setFont("Helvetica", 9)

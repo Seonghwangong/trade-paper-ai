@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 from pathlib import Path
 from app.routers.company import router as company_router
+from app.product import router as product_router
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR.parent / "data" / "invoices.json"
@@ -74,6 +75,7 @@ from app.packing import router as packing_router
 app.include_router(invoice_router)
 app.include_router(packing_router)
 app.include_router(company_router)
+app.include_router(product_router)
 def load_invoices():
     if not DATA_FILE.exists():
         return []

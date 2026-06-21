@@ -80,7 +80,10 @@ def create_invoice_pdf(payload: dict = Body(...)):
         }
     ])
 
-    total = sum(item["quantity"] * item["unit_price"] for item in items)
+    total = sum(
+    int(item.get("quantity", 1)) * float(item.get("unit_price", 0))
+    for item in items
+)
 
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
@@ -93,7 +96,6 @@ def create_invoice_pdf(payload: dict = Body(...)):
 
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 24)
-    pdf.drawString(50, height - 55, "INVOICE")
 
     logo_path = Path("app/static/logo.png")
     # if logo_path.exists():
@@ -153,11 +155,12 @@ def create_invoice_pdf(payload: dict = Body(...)):
 
     for item in items:
         pdf.rect(50, y, 495, 30, fill=0)
-        line_total = item["quantity"] * item["unit_price"]
-
+        quantity = int(item.get("quantity", 1))
+        unit_price = float(item.get("unit_price", 0))
+        line_total = quantity * unit_price
         pdf.drawString(60, y + 11, item["name"])
-        pdf.drawRightString(320, y + 11, str(item["quantity"]))
-        pdf.drawRightString(430, y + 11, f"USD {item['unit_price']}")
+        pdf.drawRightString(320, y + 11, str(quantity))
+        pdf.drawRightString(430, y + 11, f"USD {unit_price}")
         pdf.drawRightString(540, y + 11, f"USD {line_total}")
 
         y -= 30
