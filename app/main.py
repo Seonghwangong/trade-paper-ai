@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from app.routers.company import router as company_router
 from app.product import router as product_router
+from app.buyer import router as buyer_router
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR.parent / "data" / "invoices.json"
@@ -52,6 +53,10 @@ def company_page():
     with open(BASE_DIR / "static" / "company.html", "r") as f:
         return HTMLResponse(f.read())
 
+@app.get("/invoice")
+def invoice_page():
+    with open(BASE_DIR / "static" / "invoice.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
 
 @app.get("/invoice-page")
 def invoice_page():
@@ -76,6 +81,7 @@ app.include_router(invoice_router)
 app.include_router(packing_router)
 app.include_router(company_router)
 app.include_router(product_router)
+app.include_router(buyer_router)
 def load_invoices():
     if not DATA_FILE.exists():
         return []

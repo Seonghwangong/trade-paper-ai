@@ -312,7 +312,16 @@ def edit_packing(packing_no: str):
                 <input type="text" name="buyer" value="{packing.get('buyer','')}">
 
                 <p>Item Name</p>
-                <input type="text" name="item_name" value="{item_name}">
+                <p>Product</p>
+<select id="product_select" onchange="selectProduct()">
+    <option value="">Select Product</option>
+</select>
+
+<p>Item Name</p>
+<input id="item_name" type="text" name="item_name" placeholder="MacBook, Keyboard, Mouse">
+
+<p>HS Code</p>
+<input id="hs_code" type="text" name="hs_code" placeholder="HS Code">
 
                 <p>Carton</p>
                 <input type="text" name="carton" value="{carton}">
@@ -327,6 +336,7 @@ def edit_packing(packing_no: str):
                 <button type="submit">Update Packing</button>
 
             </form>
+
 
             <br>
             <a href="/packing-list">Back to Packing List</a>

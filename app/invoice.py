@@ -215,7 +215,7 @@ def edit_invoice(invoice_no: str):
 
                 <br><br>
                 <button type="submit">Update Invoice</button>
-            </form>
+            git status</form>
 
             <br>
             <a href="/invoice-list">Back to Invoice List</a>
@@ -319,6 +319,7 @@ def invoice_list(search: str = ""):
                 padding: 30px;
                 border-radius: 16px;
             }}
+            
             h1 {{
                 color: #111827;
                 margin-bottom: 10px;
@@ -403,8 +404,10 @@ def invoice_list(search: str = ""):
                     <th>Invoice No</th>
                     <th>Seller</th>
                     <th>Buyer</th>
-                    <th>Items</th>
+                    <th>Product</th>
+                    <th>Total</th>
                     <th>PDF</th>
+                    <th>Edit</th>
                     <th>Delete</th>
                 </tr>
     """
@@ -412,6 +415,11 @@ def invoice_list(search: str = ""):
     for inv in valid_invoices:
         items = inv.get("items", [])
         item_names = ", ".join([item.get("name", "") for item in items])
+        total = sum(
+    item.get("quantity", 0) * item.get("unit_price", 0)
+    for item in items
+)
+        
 
         html += f"""
                 <tr>
@@ -419,8 +427,9 @@ def invoice_list(search: str = ""):
                     <td>{inv.get("seller","")}</td>
                     <td>{inv.get("buyer","")}</td>
                     <td>{item_names}</td>
+                    <td>USD {total}</td>
                     <td><a class="pdf" href="/invoice-pdf/{inv.get('invoice_no','')}">PDF</a></td>
-                    <td><a class="pdf" href="/edit-invoice/{inv.get('invoice_no')}">Edit</a></td>
+                    <td><a class="edit" href="/edit-invoice/{inv.get('invoice_no')}">Edit</a></td>
                     <td><a class="delete" href="/delete-invoice/{inv.get('invoice_no','')}">Delete</a></td>
                 </tr>
         """

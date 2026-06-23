@@ -54,7 +54,13 @@ button{
 </select>
     <input id="buyer" placeholder="Buyer Name">
 
-    <input id="item" placeholder="Item Name">
+    <select id="productSelect" onchange="selectProduct()">
+    <option value="">Select Product</option>
+</select>
+
+<input id="item" placeholder="Item Name">
+
+<input id="hs_code" placeholder="HS Code">
     <input id="carton" type="number" placeholder="Carton">
 
     <input id="net_weight" placeholder="Net Weight">
@@ -67,6 +73,42 @@ button{
 
 <script>
 async function savePacking(){
+
+    let products = [];
+
+async function loadProducts(){
+
+    const response = await fetch("/product-data");
+    products = await response.json();
+
+    const select = document.getElementById("productSelect");
+
+    products.forEach((product, index) => {
+
+        select.innerHTML += `
+            <option value="${index}">
+                ${product.name}
+            </option>
+        `;
+
+    });
+
+}
+
+function selectProduct(){
+
+    const index = document.getElementById("productSelect").value;
+
+    if(index === "") return;
+
+    const product = products[index];
+
+    document.getElementById("item").value = product.name || "";
+    document.getElementById("hs_code").value = product.hs_code || "";
+
+}
+
+window.onload = loadProducts;
 
     const data = {
         invoice_no: document.getElementById("invoice_no").value,
