@@ -1,0 +1,496 @@
+from io import BytesIO
+from datetime import datetime
+from fastapi import APIRouter, Body, Response, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+import json
+from pathlib import Path
+
+COMPANY_FILE = Path("data/company.json")
+PACKING_FILE = Path("data/packing_lists.json")
+INVOICE_FILE = Path("data/invoices.json")
+
+router = APIRouter()
+
+
+def load_company():
+    if COMPANY_FILE.exists():
+        with open(COMPANY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def load_packing_lists():
+    if PACKING_FILE.exists():
+        with open(PACKING_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+
+def save_packing_lists(packing_lists):
+    with open(PACKING_FILE, "w", encoding="utf-8") as f:
+        json.dump(packing_lists, f, ensure_ascii=False, indent=4)
+
+
+@router.post("/packing-list")
+def create_packing_list(payload: dict = Body(...)):
+    packing_lists = load_packing_lists()
+
+    packing_no = f"PK-{len(packing_lists) + 1:03d}"
+    payload["packing_no"] = packing_no
+
+    packing_lists.append(payload)
+    save_packing_lists(packing_lists)
+
+    return payload
+
+
+@router.post("/packing-list/pdf")
+def create_packing_list_pdf(payload: dict = Body(...)):
+    company = load_company()
+
+    packing_no = payload.get("packing_no", "PK-001")
+    invoice_no = payload.get("invoice_no", "INV-001")
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    buyer = payload.get("buyer", "Unknown Buyer")
+    buyer_address = payload.get("buyer_address", "Dubai, UAE")
+    buyer_email = payload.get("buyer_email", "sales@abctrading.com")
+
+    seller = company.get("name") or payload.get("seller", "Unknown Seller")
+    seller_address = company.get("address") or payload.get("seller_address", "Seoul, Korea")
+    seller_email = company.get("email") or payload.get("seller_email", "contact@tradepaper.ai")
+
+    items = payload.get("items", [])
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+
+    pdf.setTitle(f"Packing List {packing_no}")
+
+    pdf.setFillColor(colors.HexColor("#1F2937"))
+    pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
+
+    pdf.setFillColor(colors.white)
+    pdf.setFont("Helvetica-Bold", 24)
+    pdf.drawString(50, height - 55, "COMMERCIAL PACKING LIST")
+
+    pdf.setFont("Helvetica", 10)
+    pdf.drawRightString(width - 50, height - 40, "Trade Paper AI")
+    pdf.drawRightString(width - 50, height - 58, "Automated Trade Document")
+
+    pdf.setFillColor(colors.black)
+    pdf.setFont("Helvetica-Bold", 12)
+    pdf.drawString(50, height - 125, f"Packing No: {packing_no}")
+    pdf.drawString(50, height - 145, f"Invoice No: {invoice_no}")
+    pdf.drawString(50, height - 165, f"Date: {today}")
+
+    pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+    pdf.setFillColor(colors.HexColor("#F9FAFB"))
+    pdf.roundRect(50, height - 255, 230, 80, 8, fill=1)
+    pdf.roundRect(315, height - 255, 230, 80, 8, fill=1)
+
+    pdf.setFillColor(colors.HexColor("#111827"))
+    pdf.setFont("Helvetica-Bold", 11)
+    pdf.drawString(65, height - 190, "SELLER")
+    pdf.drawString(330, height - 190, "BUYER")
+
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(65, height - 215, seller)
+    pdf.drawString(65, height - 230, seller_address)
+    pdf.drawString(65, height - 245, seller_email)
+
+    pdf.drawString(330, height - 215, buyer)
+    pdf.drawString(330, height - 230, buyer_address)
+    pdf.drawString(330, height - 245, buyer_email)
+
+    y = height - 310
+    pdf.setFillColor(colors.HexColor("#E5E7EB"))
+    pdf.rect(50, y, 495, 28, fill=1, stroke=0)
+
+    pdf.setFillColor(colors.black)
+    pdf.setFont("Helvetica-Bold", 10)
+    pdf.drawString(60, y + 10, "Item")
+    pdf.drawRightString(260, y + 10, "Carton")
+    pdf.drawRightString(390, y + 10, "Net Weight")
+    pdf.drawRightString(520, y + 10, "Gross Weight")
+
+    y -= 30
+    pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+    pdf.setFont("Helvetica", 10)
+
+    total_carton = 0
+
+    for item in items:
+        carton = int(item.get("carton", 1))
+        total_carton += carton
+
+        pdf.rect(50, y, 495, 30, fill=0)
+        pdf.drawString(60, y + 11, item.get("name", ""))
+        pdf.drawRightString(260, y + 11, str(carton))
+        pdf.drawRightString(390, y + 11, str(item.get("net_weight", "10KG")))
+        pdf.drawRightString(520, y + 11, str(item.get("gross_weight", "12KG")))
+
+        y -= 30
+
+    y -= 40
+    pdf.setFillColor(colors.HexColor("#111827"))
+    pdf.roundRect(335, y - 10, 210, 45, 8, fill=1, stroke=0)
+
+    pdf.setFillColor(colors.white)
+    pdf.setFont("Helvetica-Bold", 13)
+    pdf.drawRightString(525, y + 7, f"TOTAL CARTONS: {total_carton}")
+
+    pdf.setFillColor(colors.black)
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(50, 115, "Authorized Signature:")
+    pdf.line(170, 115, 330, 115)
+
+    pdf.setFillColor(colors.HexColor("#6B7280"))
+    pdf.setFont("Helvetica", 9)
+    pdf.drawString(50, 60, "This document was generated by Trade Paper AI.")
+    pdf.drawString(50, 45, "For trade documentation automation.")
+
+    pdf.showPage()
+    pdf.save()
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{packing_no}.pdf"'
+        }
+    )
+
+
+@router.get("/packing-list-pdf/{packing_no}")
+def packing_list_pdf(packing_no: str):
+    packing_lists = load_packing_lists()
+
+    for packing in packing_lists:
+        if packing.get("packing_no") == packing_no:
+            return create_packing_list_pdf(packing)
+
+    return {"error": "Packing list not found"}
+
+
+@router.get("/packing-list")
+def packing_list(search: str = ""):
+    packing_lists = load_packing_lists()
+    packing_lists = list(reversed(packing_lists))
+
+    if search:
+
+        packing_lists = [
+            p for p in packing_lists
+            if search.lower() in str(p.get("buyer", "")).lower()
+            or search.lower() in str(p.get("seller", "")).lower()
+            or search.lower() in str(p.get("items", "")).lower()
+        ]    
+
+    html = f"""
+<h1 style="font-family: Arial;">Packing List</h1>
+
+<form action="/packing-list" method="get" style="margin-bottom:20px;">
+<input
+    type="text"
+    name="search"
+    value="{search}"
+    placeholder="Search buyer, seller or item"
+    style="padding:10px; width:250px;"
+>
+<button type="submit">Search</button>
+</form>
+"""
+
+    html += f"""
+    <p><b>Total Packing Lists:</b> {len(packing_lists)}</p>
+    """
+
+    html += """
+    <table border="1" style="border-collapse: collapse; width: 90%; font-family: Arial;">
+        <tr style="background-color:#f3f4f6;">
+            <th style="padding:10px;">Packing No</th>
+            <th style="padding:10px;">Invoice No</th>
+            <th style="padding:10px;">Seller</th>
+            <th style="padding:10px;">Buyer</th>
+            <th style="padding:10px;">Items</th>
+            <th style="padding:10px;">PDF</th>
+            <th style="padding:10px;">Delete</th>
+        </tr>
+    """
+
+    for packing in packing_lists:
+        if not packing.get("packing_no"):
+            continue
+
+        items = packing.get("items", [])
+        item_names = ", ".join([item.get("name", "") for item in items])
+
+        html += f"""
+        <tr>
+            <td>{packing.get("packing_no", "")}</td>
+            <td>{packing.get("invoice_no", "")}</td>
+            <td>{packing.get("seller", "")}</td>
+            <td>{packing.get("buyer", "")}</td>
+            <td>{item_names}</td>
+            <td><a href="/packing-list-pdf/{packing.get("packing_no", "")}">PDF</a></td>
+            <td><a href="/edit-packing/{packing.get("packing_no", "")}">Edit</a></td>
+            <td><a href="/packing-delete/{packing.get("packing_no", "")}">Delete</a></td>
+        </tr>
+        """
+
+    html += """
+    </table>
+    """
+    with open("app/static/packing_form.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+@router.post("/packing")
+def save_packing(
+    invoice_no: str = Form(""),
+    seller: str = Form(""),
+    buyer: str = Form(""),
+    item_name: str = Form(""),
+    hs_code: str = Form(""),
+carton: int = Form(0),
+net_weight: float = Form(0),
+gross_weight: float = Form(0),
+):
+    packing_lists = load_packing_lists()
+
+    existing_numbers = [
+    int(p.get("packing_no", "PK-000").split("-")[1])
+    for p in packing_lists
+    if p.get("packing_no", "").startswith("PK-")
+]
+
+    next_no = max(existing_numbers, default=0) + 1
+    packing_no = f"PK-{next_no:03d}"
+
+    packing = {
+        "packing_no": packing_no,
+        "invoice_no": invoice_no,
+        "seller": seller,
+        "buyer": buyer,
+    "items": [{
+    "name": item_name,
+    "hs_code": hs_code,
+    "carton": carton,
+    "net_weight": net_weight,
+    "gross_weight": gross_weight
+}]
+}
+    packing_lists.append(packing)
+    save_packing_lists(packing_lists)
+
+    return RedirectResponse(url="/packing-list", status_code=303)
+
+@router.get("/edit-packing/{packing_no}")
+def edit_packing(packing_no: str):
+    packing_lists = load_packing_lists()
+
+    for packing in packing_lists:
+        if packing.get("packing_no") == packing_no:
+
+            items = packing.get("items", [])
+            item_name = items[0].get("name", "") if items else ""
+            carton = items[0].get("carton", "") if items else ""
+            net_weight = items[0].get("net_weight", "") if items else ""
+            gross_weight = items[0].get("gross_weight", "") if items else ""
+
+            html = f"""
+            <h1>Edit Packing List</h1>
+
+            <form action="/update-packing/{packing_no}" method="post">
+
+                <p>Invoice No</p>
+                <input type="text" name="invoice_no" value="{packing.get('invoice_no','')}">
+
+                <p>Seller</p>
+                <input type="text" name="seller" value="{packing.get('seller','')}">
+
+                <p>Buyer</p>
+                <input type="text" name="buyer" value="{packing.get('buyer','')}">
+
+                <p>Item Name</p>
+                <p>Product</p>
+<select id="product_select" onchange="selectProduct()">
+    <option value="">Select Product</option>
+</select>
+
+<p>Item Name</p>
+<input id="item_name" type="text" name="item_name" placeholder="MacBook, Keyboard, Mouse">
+
+<p>HS Code</p>
+<input id="hs_code" type="text" name="hs_code" placeholder="HS Code">
+
+                <p>Carton</p>
+                <input type="text" name="carton" value="{carton}">
+
+                <p>Net Weight</p>
+                <input type="text" name="net_weight" value="{net_weight}">
+
+                <p>Gross Weight</p>
+                <input type="text" name="gross_weight" value="{gross_weight}">
+
+                <br><br>
+                <button type="submit">Update Packing</button>
+
+            </form>
+
+
+            <br>
+            <a href="/packing-list">Back to Packing List</a>
+            """
+
+            return HTMLResponse(html)
+
+    return {"error": "Packing list not found"}
+@router.post("/update-packing/{packing_no}")
+def update_packing(
+    packing_no: str,
+    invoice_no: str = Form(""),
+    seller: str = Form(""),
+    buyer: str = Form(""),
+    item_name: str = Form(""),
+    carton: str = Form(""),
+    net_weight: str = Form(""),
+    gross_weight: str = Form(""),
+):
+    packing_lists = load_packing_lists()
+
+    for packing in packing_lists:
+        if packing.get("packing_no") == packing_no:
+            packing["invoice_no"] = invoice_no
+            packing["seller"] = seller
+            packing["buyer"] = buyer
+            packing["items"] = [
+                {
+                    "name": item_name,
+                    "carton": carton,
+                    "net_weight": net_weight,
+                    "gross_weight": gross_weight,
+                }
+            ]
+
+    save_packing_lists(packing_lists)
+
+    return RedirectResponse(url="/packing-list", status_code=303)
+
+@router.get("/packing-delete/{packing_no}")
+def delete_packing(packing_no: str):
+    packing_lists = load_packing_lists()
+
+    packing_lists = [
+        p for p in packing_lists
+        if p.get("packing_no") != packing_no
+    ]
+
+    save_packing_lists(packing_lists)
+
+    return RedirectResponse(url="/packing-list", status_code=303)
+@router.get("/packing-form")
+def packing_form():
+    invoices = []
+
+    if INVOICE_FILE.exists():
+        with open(INVOICE_FILE, "r", encoding="utf-8") as f:
+            invoices = json.load(f)
+
+    invoice_options = """
+<option value="">Select Invoice</option>
+"""
+    for invoice in invoices:
+        invoice_no = invoice.get("invoice_no", "")
+        seller = invoice.get("seller", "")
+        buyer = invoice.get("buyer", "")
+
+        if not invoice_no:
+            continue
+
+        invoice_options += f"""
+        <option value="{invoice_no}" data-seller="{seller}" data-buyer="{buyer}">{invoice_no} - {buyer}</option>
+        """
+
+    html = f"""
+    <h1>Packing Input</h1>
+
+    <form action="/packing" method="post">
+        <p>Invoice No</p>
+        <select id="invoice_no" name="invoice_no">
+            {invoice_options}
+        </select>
+
+        <p>Seller</p>
+        <input id="seller" type="text" name="seller">
+        <p>Buyer</p>
+        <input id="buyer" type="text" name="buyer">
+        <p>Product</p>
+<select id="product_select" onchange="selectProduct()">
+    <option value="">Select Product</option>
+</select>
+
+<p>Item Name</p>
+<input id="item_name" type="text" name="item_name">
+
+<p>HS Code</p>
+<input id="hs_code" type="text" name="hs_code">
+        <br><br>
+        <button type="submit">Save Packing</button>
+</form>
+
+<script>
+document.getElementById("invoice_no").addEventListener("change", function() {{
+
+    const selectedText =
+        this.options[this.selectedIndex].text;
+
+    const parts = selectedText.split(" - ");
+
+    if (parts.length > 1) {{
+        document.getElementById("buyer").value = parts[1];
+
+        document.getElementById("seller").value =
+    this.options[this.selectedIndex].dataset.seller;
+    }}
+}});
+
+let products = [];
+
+async function loadProducts(){{
+    const response = await fetch("/product-data");
+    products = await response.json();
+
+    const select = document.getElementById("product_select");
+
+    products.forEach((product, index) => {{
+        select.innerHTML += '<option value="' + index + '">' + product.name + '</option>';
+    }});
+}}
+
+function selectProduct(){{
+    const index = document.getElementById("product_select").value;
+
+    if(index === "") return;
+
+    const product = products[index];
+
+    document.getElementById("item_name").value = product.name || "";
+    document.getElementById("hs_code").value = product.hs_code || "";
+}}
+
+loadProducts();
+</script>
+
+<br>
+<a href="/">Back Home</a>
+    <br>
+    <a href="/packing-list">Back to Packing List</a>
+    """
+
+    return HTMLResponse(html)

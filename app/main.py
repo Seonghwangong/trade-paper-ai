@@ -77,8 +77,10 @@ def status():
     }
 from app.invoice import router as invoice_router
 from app.packing import router as packing_router
+from app.quotation import router as quotation_router
 app.include_router(invoice_router)
 app.include_router(packing_router)
+app.include_router(quotation_router)
 app.include_router(company_router)
 app.include_router(product_router)
 app.include_router(buyer_router)

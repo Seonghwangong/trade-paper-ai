@@ -51,5 +51,100 @@
                 "gross_weight": ""
             }
         ]
+    },
+    {
+        "packing_no": "PK-007",
+        "invoice_no": "INV-005",
+        "seller": "dnicorp",
+        "buyer": "apple",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "carton": "15",
+                "net_weight": "210",
+                "gross_weight": "220.0"
+            }
+        ]
+    },
+    {
+        "packing_no": "PK-008",
+        "invoice_no": "",
+        "seller": "",
+        "buyer": "",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "carton": "10",
+                "net_weight": "200",
+                "gross_weight": "220"
+            },
+            {
+                "name": "Keyboard",
+                "hs_code": "847160",
+                "carton": "5",
+                "net_weight": "30",
+                "gross_weight": "35"
+            },
+            {
+                "name": "Mouse",
+                "hs_code": "847160",
+                "carton": "3",
+                "net_weight": "10",
+                "gross_weight": "12"
+            }
+        ]
+    },
+    {
+        "packing_no": "PK-009",
+        "invoice_no": "",
+        "seller": "",
+        "buyer": "",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "carton": "10",
+                "net_weight": "200",
+                "gross_weight": "220"
+            },
+            {
+                "name": "Keyboard",
+                "hs_code": "847160",
+                "carton": "5",
+                "net_weight": "30",
+                "gross_weight": "35"
+            },
+            {
+                "name": "Mouse",
+                "hs_code": "847160",
+                "carton": "3",
+                "net_weight": "10",
+                "gross_weight": "12"
+            }
+        ]
+    },
+    {
+        "packing_no": "PK-010",
+        "invoice_no": "INV-003",
+        "seller": "sony",
+        "buyer": "google",
+        "items": [
+            {
+                "name": "Test Item",
+                "hs_code": "847130",
+                "carton": "1",
+                "net_weight": "10",
+                "gross_weight": "12"
+            },
+            {
+                "name": "ssd",
+                "hs_code": "847170",
+                "carton": "2",
+                "net_weight": "15",
+                "gross_weight": "17"
+            }
+        ]
     }
 ]

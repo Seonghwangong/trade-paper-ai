@@ -37,7 +37,15 @@ def create_invoice(payload: dict = Body(...)):
     with open(INVOICE_FILE, "w", encoding="utf-8") as f:
         json.dump(invoices, f, indent=4)
 
-    return payload    
+    return payload  
+
+@router.get("/invoice-data")
+def invoice_data():
+    if not INVOICE_FILE.exists():
+        return []
+
+    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)      
 
 @router.get("/invoice-pdf/{invoice_no}")
 def invoice_pdf(invoice_no: str):
