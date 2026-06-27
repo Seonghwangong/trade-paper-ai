@@ -146,5 +146,20 @@
                 "gross_weight": "17"
             }
         ]
+    },
+    {
+        "packing_no": "PK-011",
+        "invoice_no": "INV-006",
+        "seller": "dnicorp",
+        "buyer": "apple",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "carton": "10",
+                "net_weight": "200",
+                "gross_weight": "220"
+            }
+        ]
     }
 ]

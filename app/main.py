@@ -9,6 +9,7 @@ from app.buyer import router as buyer_router
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR.parent / "data" / "invoices.json"
+PACKING_FILE = BASE_DIR.parent / "data" / "packing_lists.json"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,38 +17,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-@app.get("/", response_class=HTMLResponse)
-def root():
-
-    invoice_count = 0
-    packing_count = 0
-
-    invoices_file = BASE_DIR.parent / "data" / "invoices.json"
-    packing_file = BASE_DIR.parent / "data" / "packing_lists.json"
-
-    if invoices_file.exists():
-        with open(invoices_file, "r", encoding="utf-8") as f:
-            invoices = json.load(f)
-            invoice_count = len([
-                inv for inv in invoices
-                if inv.get("invoice_no")
-            ])
-
-    if packing_file.exists():
-        with open(packing_file, "r", encoding="utf-8") as f:
-            packings = json.load(f)
-            packing_count = len([
-                p for p in packings
-                if p.get("packing_no")
-            ])
-
-    with open(BASE_DIR / "static" / "index.html", "r", encoding="utf-8") as f:
-        html = f.read()
-
-    html = html.replace("{{INVOICE_COUNT}}", str(invoice_count))
-    html = html.replace("{{PACKING_COUNT}}", str(packing_count))
-
-    return HTMLResponse(html)
 @app.get("/company")
 def company_page():
     with open(BASE_DIR / "static" / "company.html", "r") as f:
@@ -84,6 +53,12 @@ app.include_router(quotation_router)
 app.include_router(company_router)
 app.include_router(product_router)
 app.include_router(buyer_router)
+def load_packing_lists():
+    if not PACKING_FILE.exists():
+        return []
+
+    with open(PACKING_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 def load_invoices():
     if not DATA_FILE.exists():
         return []
@@ -125,7 +100,6 @@ def invoice_list(search: str = ""):
     html = """
     <html>
     <body style="font-family:Arial; background:#f4f7fb; padding:40px;">
-    <h1>Trade Paper AI</h1>
     <h2>Invoice Management</h2>
     <form action="/invoice-list" method="get" style="margin-bottom:20px;">
     <input
@@ -186,31 +160,54 @@ def invoice_pdf(index: int):
     from app.invoice import create_invoice_pdf
 
     return create_invoice_pdf(invoice)
+
 @app.get("/")
 def home():
-    html = """
-    <h1>Trade Paper AI</h1>
+    print("===== HOME FUNCTION =====")
+    invoices = load_invoices()
+    packing_lists = load_packing_lists()
 
-    <p><a href="/company">Company</a></p>
-    <p><a href="/invoice">Invoice</a></p>
-    <p><a href="/invoices">Invoice List</a></p>
-    <p><a href="/packing-form">Packing</a></p>
-    <p><a href="/packing-list">Packing List</a></p>
+    quotations = []
+    quotation_file = Path("data/quotations.json")
+    if quotation_file.exists():
+        with open(quotation_file, "r", encoding="utf-8") as f:
+            quotations = json.load(f)
 
-    <hr>
+    html = f"""
+<h1 style="font-family:Arial;text-align:center;font-size:48px;">Trade Paper AI Dashboard</h1>
 
-    <h2>Dashboard</h2>
+<div style="display:flex;gap:20px;justify-content:center;font-family:Arial;margin:40px;">
+    <div style="background:#111827;color:white;padding:35px;width:240px;border-radius:16px;">
+        <h2>Total Invoices</h2>
+        <h1>{len(invoices)}</h1>
+        <a style="color:white;" href="/invoice-list">View Invoice List</a>
+    </div>
 
-    <p>
-        <a href="/invoices">
-            <button style="padding:20px; width:250px;">Total Invoices</button>
-        </a>
-    </p>
+    <div style="background:#111827;color:white;padding:35px;width:240px;border-radius:16px;">
+        <h2>Total Packings</h2>
+        <h1>{len(packing_lists)}</h1>
+        <a style="color:white;" href="/packing-list">View Packing List</a>
+    </div>
 
-    <p>
-        <a href="/packing-list">
-            <button style="padding:20px; width:250px;">Total Packings</button>
-        </a>
-    </p>
-    """
+
+    <div style="background:#111827;color:white;padding:35px;width:240px;border-radius:16px;">
+        <h2>Total Quotations</h2>
+        <h1>{len(quotations)}</h1>
+        <a style="color:white;" href="/quotation-list">View Quotation List</a>
+    </div>
+</div>
+
+<div style="font-family:Arial;width:80%;margin:auto;">
+    <p><a href="/company"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Company</button></a></p>
+    <p><a href="/invoice"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Invoice</button></a></p>
+    <p><a href="/quotation-form"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Quotation</button></a></p>
+    <p><a href="/packing-form"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Packing</button></a></p>
+    <p><a href="/invoice-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Invoice List</button></a></p>
+    <p><a href="/quotation-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Quotation List</button></a></p>
+    <p><a href="/packing-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Packing List</button></a></p>
+    <p><a href="/product"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Product</button></a></p>
+    <p><a href="/buyer"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Buyer</button></a></p>
+</div>
+"""
+
     return HTMLResponse(html)

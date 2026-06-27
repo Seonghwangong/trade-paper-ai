@@ -1,0 +1,115 @@
+[
+    {
+        "quotation_no": "QT-001",
+        "buyer_name": "",
+        "buyer_address": "",
+        "buyer_email": "",
+        "seller": "",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "qty": "3",
+                "unit_price": "1000",
+                "amount": "3000"
+            }
+        ]
+    },
+    {
+        "quotation_no": "QT-002",
+        "buyer_name": "",
+        "buyer_address": "",
+        "buyer_email": "",
+        "seller": "",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "qty": "3",
+                "unit_price": "1000",
+                "amount": "3000"
+            }
+        ]
+    },
+    {
+        "quotation_no": "QT-003",
+        "buyer_name": "",
+        "buyer_address": "",
+        "buyer_email": "",
+        "seller": "",
+        "currency": "USD",
+        "items": []
+    },
+    {
+        "quotation_no": "QT-004",
+        "buyer_name": "",
+        "buyer_address": "",
+        "buyer_email": "",
+        "seller": "",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "qty": "2",
+                "unit_price": "1000",
+                "amount": "2000"
+            }
+        ]
+    },
+    {
+        "quotation_no": "QT-005",
+        "buyer_name": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "seller": "",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "qty": "5",
+                "unit_price": "1000",
+                "amount": "5000"
+            }
+        ]
+    },
+    {
+        "quotation_no": "QT-006",
+        "buyer_name": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "seller": "",
+        "valid_until": "2026-07-31",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "qty": "5",
+                "unit_price": "1000",
+                "amount": "5000"
+            }
+        ]
+    },
+    {
+        "quotation_no": "QT-007",
+        "buyer_name": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "seller": "",
+        "valid_until": "2026-07-31",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "qty": "5",
+                "unit_price": "1000",
+                "amount": "5000"
+            }
+        ]
+    }
+]
