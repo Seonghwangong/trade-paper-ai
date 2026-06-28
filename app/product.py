@@ -25,56 +25,103 @@ def save_products(products):
 
 
 @router.get("/products")
-def product_list():
+def product_list(search: str = ""):
     products = load_products()
 
-    html = """
-    <h1>Product Master</h1>
+    if search:
+        products = [
+            p for p in products
+            if search.lower() in p.get("name", "").lower()
+            or search.lower() in p.get("hs_code", "").lower()
+            or search.lower() in p.get("origin", "").lower()
+        ]
 
-    <p><a href="/product-form">Add Product</a></p>
-    <p><a href="/">Back Home</a></p>
+    html = f"""
+<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
+Product List
+</h1>
 
-    <table border="1" cellpadding="10">
-        <tr>
-            <th>No</th>
-            <th>Name</th>
-            <th>HS Code</th>
-            <th>Unit Price</th>
-            <th>Origin</th>
+<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;letter-spacing:0.5px;margin-top:0;margin-bottom:35px;">
+Manage all registered products
+</p>
+
+<div style="width:90%;margin:auto;font-family:Arial;">
+
+<p>
+<a href="/product-form">
+<button style="padding:12px 25px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
++ Add Product
+</button>
+</a>
+
+<a href="/" style="margin-left:10px;">
+<button style="padding:12px 25px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
+← Dashboard
+</button>
+</a>
+</p>
+
+<form action="/products" method="get" style="margin:25px 0;">
+<input type="text" name="search" value="{search}" placeholder="Search product name, HS code, or origin"
+style="padding:14px;width:280px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;">
+
+<button type="submit" style="padding:14px 30px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
+Search
+</button>
+
+<a href="/products" style="margin-left:15px;color:#6B7280;">Reset</a>
+</form>
+
+<p style="font-size:18px;font-weight:bold;margin:25px 0;">
+Total Products : {len(products)}
+</p>
+
+<table style="width:100%;border-collapse:collapse;background:white;border:1px solid #E5E7EB;">
+<tr style="background:#F9FAFB;">
+<th style="padding:15px;">No</th>
+<th>Name</th>
+<th>HS Code</th>
+<th>Unit Price</th>
+<th>Origin</th>
 <th>Edit</th>
 <th>Delete</th>
-        </tr>
-    """
+</tr>
+"""
 
-    for index, product in enumerate(products):
-        html += f"""
-        <tr>
-            <td>{index + 1}</td>
-            <td>{product.get("name", "")}</td>
-            <td>{product.get("hs_code", "")}</td>
-            <td>{product.get("unit_price", "")}</td>
-            <td>{product.get("origin", "")}</td>
-
-<td>
-<a href="/edit-product/{index}">
-Edit
-</a>
+    if not products:
+        html += """
+<tr>
+<td colspan="7" style="padding:30px;text-align:center;color:#6B7280;">
+No products have been registered yet.
 </td>
-
-<td>
-<a href="/delete-product/{index}">
-Delete
-</a>
+</tr>
+"""
+    else:
+        for index, product in enumerate(products):
+            html += f"""
+<tr style="border-bottom:1px solid #E5E7EB;">
+<td style="padding:15px;text-align:center;">{index + 1}</td>
+<td>{product.get("name", "")}</td>
+<td>{product.get("hs_code", "")}</td>
+<td>{product.get("unit_price", "")}</td>
+<td>{product.get("origin", "")}</td>
+<td align="center">
+<a href="/edit-product/{index}" style="color:#111827;text-decoration:none;font-weight:bold;">Edit</a>
 </td>
-        </tr>
-        """
+<td align="center">
+<a href="/delete-product/{index}" style="color:#DC2626;text-decoration:none;font-weight:bold;">Delete</a>
+</td>
+</tr>
+"""
 
     html += """
-    </table>
-    """
+</table>
+</div>
+"""
 
     return HTMLResponse(html)
-
+    
+        
 @router.get("/edit-product/{index}")
 def edit_product(index: int):
 
@@ -198,105 +245,54 @@ def update_product(
 def product_form():
 
     html = """
-<!DOCTYPE html>
-<html>
+<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
+Product Master
+</h1>
 
-<head>
+<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;letter-spacing:0.5px;margin-top:0;margin-bottom:35px;">
+Manage product information for trade documents
+</p>
 
-<title>Product Master</title>
+<div style="font-family:Arial;width:80%;margin:auto;">
 
-<style>
-
-body{
-    font-family:Arial,sans-serif;
-    background:#f3f4f6;
-    padding:40px;
-}
-
-.container{
-    max-width:800px;
-    margin:auto;
-    background:white;
-    padding:40px;
-    border-radius:14px;
-}
-
-h1{
-    margin-bottom:30px;
-}
-
-input{
-    width:100%;
-    padding:15px;
-    margin-bottom:18px;
-    border:1px solid #ddd;
-    border-radius:10px;
-    font-size:16px;
-    box-sizing:border-box;
-}
-
-button{
-    width:100%;
-    padding:16px;
-    background:#081B4B;
-    color:white;
-    border:none;
-    border-radius:10px;
-    font-size:18px;
-    cursor:pointer;
-}
-
-button:hover{
-    opacity:.9;
-}
-
-.back{
-    margin-bottom:30px;
-}
-
-</style>
-
-</head>
-
-<body>
-
-<div class="container">
-
-<div class="back">
-<a href="/products">← Back Product List</a>
-</div>
-
-<h1>Product Master</h1>
+<div style="background:#ffffff;border:1px solid #E5E7EB;border-radius:16px;padding:30px;margin-bottom:30px;">
+<h2 style="margin-top:0;">Add Product</h2>
 
 <form action="/save-product" method="post">
 
-<input
-name="name"
-placeholder="Product Name">
+    <p>Product Name</p>
+    <input name="name" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<input
-name="hs_code"
-placeholder="HS Code">
+    <p>HS Code</p>
+    <input name="hs_code" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<input
-name="unit_price"
-placeholder="Unit Price">
+    <p>Unit Price</p>
+    <input name="unit_price" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<input
-name="origin"
-placeholder="Country of Origin">
+    <p>Country of Origin</p>
+    <input name="origin" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<button type="submit">
-Save Product
-</button>
+    <br><br>
+    <button type="submit" style="width:100%;padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;">
+        Save Product
+    </button>
 
 </form>
-
 </div>
 
-</body>
+<a href="/products">
+    <button style="width:220px;padding:15px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;">
+        ← Product List
+    </button>
+</a>
 
-</html>
+<a href="/">
+    <button style="width:220px;padding:15px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;margin-left:10px;">
+        ← Dashboard
+    </button>
+</a>
+
+</div>
 """
 
     return HTMLResponse(html)

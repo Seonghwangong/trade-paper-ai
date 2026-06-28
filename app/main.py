@@ -6,6 +6,7 @@ from pathlib import Path
 from app.routers.company import router as company_router
 from app.product import router as product_router
 from app.buyer import router as buyer_router
+from app.customer import router as customer_router
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR.parent / "data" / "invoices.json"
@@ -53,6 +54,7 @@ app.include_router(quotation_router)
 app.include_router(company_router)
 app.include_router(product_router)
 app.include_router(buyer_router)
+app.include_router(customer_router)
 def load_packing_lists():
     if not PACKING_FILE.exists():
         return []
@@ -174,9 +176,15 @@ def home():
             quotations = json.load(f)
 
     html = f"""
-<h1 style="font-family:Arial;text-align:center;font-size:48px;">Trade Paper AI Dashboard</h1>
+<h1 style="font-family:Arial;text-align:center;font-size:56px;margin-bottom:10px;">
+Trade Paper AI
+</h1>
+<p style="font-family:Arial;text-align:center;font-size:18px;color:#6B7280;letter-spacing:0.5px;margin-top:0;margin-bottom:25px;">
+Automated Trade Documentation
+</p>
 
 <div style="display:flex;gap:20px;justify-content:center;font-family:Arial;margin:40px;">
+
     <div style="background:#111827;color:white;padding:35px;width:240px;border-radius:16px;">
         <h2>Total Invoices</h2>
         <h1>{len(invoices)}</h1>
@@ -189,24 +197,34 @@ def home():
         <a style="color:white;" href="/packing-list">View Packing List</a>
     </div>
 
-
     <div style="background:#111827;color:white;padding:35px;width:240px;border-radius:16px;">
         <h2>Total Quotations</h2>
         <h1>{len(quotations)}</h1>
         <a style="color:white;" href="/quotation-list">View Quotation List</a>
     </div>
+
 </div>
 
 <div style="font-family:Arial;width:80%;margin:auto;">
-    <p><a href="/company"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Company</button></a></p>
-    <p><a href="/invoice"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Invoice</button></a></p>
-    <p><a href="/quotation-form"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Quotation</button></a></p>
-    <p><a href="/packing-form"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Packing</button></a></p>
-    <p><a href="/invoice-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Invoice List</button></a></p>
-    <p><a href="/quotation-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Quotation List</button></a></p>
-    <p><a href="/packing-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Packing List</button></a></p>
-    <p><a href="/product"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Product</button></a></p>
-    <p><a href="/buyer"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Buyer</button></a></p>
+<p><a href="/company"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Company</button></a></p>
+
+<p><a href="/customer"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Customer</button></a></p>
+
+<p><a href="/product"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Product</button></a></p>
+
+<p><a href="/buyer"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Buyer</button></a></p>
+
+<p><a href="/invoice"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Invoice</button></a></p>
+
+<p><a href="/quotation-form"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Quotation</button></a></p>
+
+<p><a href="/packing-form"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Packing</button></a></p>
+
+<p><a href="/invoice-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Invoice List</button></a></p>
+
+<p><a href="/quotation-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Quotation List</button></a></p>
+
+<p><a href="/packing-list"><button style="width:100%;padding:25px;margin:10px;background:#111827;color:white;border-radius:12px;font-size:24px;">Packing List</button></a></p>
 </div>
 """
 
