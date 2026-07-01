@@ -2,7 +2,19 @@
     {
         "name": "MacBook Pro",
         "hs_code": "847130",
-        "unit_price": "1000",
+        "unit_price": "1200",
+        "origin": "Korea"
+    },
+    {
+        "name": "Keyboard",
+        "hs_code": "847160",
+        "unit_price": "50",
+        "origin": "Korea"
+    },
+    {
+        "name": "Mouse",
+        "hs_code": "847160",
+        "unit_price": "20",
         "origin": "Korea"
     }
 ]

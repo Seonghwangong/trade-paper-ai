@@ -35,45 +35,110 @@ def save_packing_lists(packing_lists):
         json.dump(packing_lists, f, ensure_ascii=False, indent=4)
 
 
+def next_packing_no(packing_lists):
+    existing_numbers = [
+        int(p.get("packing_no", "PK-000").split("-")[1])
+        for p in packing_lists
+        if p.get("packing_no", "").startswith("PK-")
+    ]
+
+    next_no = max(existing_numbers, default=0) + 1
+    return f"PK-{next_no:03d}"
+
+
+@router.post("/packing-list")
+def create_packing_list(payload: dict = Body(...)):
+    packing_lists = load_packing_lists()
+    packing_no = next_packing_no(packing_lists)
+
+    payload["packing_no"] = packing_no
+
+    packing_lists.append(payload)
+    save_packing_lists(packing_lists)
+
+    return payload
+
+
 @router.get("/packing-list")
 def packing_list(search: str = ""):
     packing_lists = load_packing_lists()
     packing_lists = list(reversed(packing_lists))
 
     if search:
+        search_lower = search.lower()
         packing_lists = [
             p for p in packing_lists
-            if search.lower() in str(p.get("buyer", "")).lower()
-            or search.lower() in str(p.get("seller", "")).lower()
-            or search.lower() in str(p.get("items", "")).lower()
+            if search_lower in str(p.get("packing_no", "")).lower()
+            or search_lower in str(p.get("invoice_no", "")).lower()
+            or search_lower in str(p.get("seller", "")).lower()
+            or search_lower in str(p.get("buyer", "")).lower()
+            or search_lower in str(p.get("items", "")).lower()
         ]
 
     html = f"""
-<h1 style="font-family: Arial;">Packing List</h1>
+<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
+Packing List
+</h1>
 
-<form action="/packing-list" method="get" style="margin-bottom:20px;">
-<input type="text" name="search" value="{search}" placeholder="Search buyer, seller or item" style="padding:10px; width:250px;">
-<button type="submit">Search</button>
+<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;margin-top:0;margin-bottom:35px;">
+Manage all packing documents
+</p>
+
+<div style="font-family:Arial;width:94%;margin:auto;">
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;gap:20px;">
+
+<div style="display:flex;gap:12px;">
+<a href="/packing-page">
+<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
++ New Packing List
+</button>
+</a>
+
+<a href="/">
+<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
+← Dashboard
+</button>
+</a>
+</div>
+
+<form action="/packing-list" method="get" style="display:flex;gap:10px;align-items:center;margin:0;">
+<input
+type="text"
+name="search"
+value="{search}"
+placeholder="Search packing, invoice, buyer, seller or item"
+style="padding:13px;width:360px;border:1px solid #D1D5DB;border-radius:10px;font-size:15px;">
+
+<button type="submit" style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:15px;">
+Search
+</button>
+
+<a href="/packing-list" style="color:#6B7280;font-weight:bold;">Reset</a>
 </form>
 
-<p><b>Total Packing Lists:</b> {len(packing_lists)}</p>
+</div>
 
-<p><a href="/packing-form">+ New Packing List</a></p>
+<p style="font-size:18px;font-weight:bold;margin:25px 0;">
+Total Packing Lists : {len(packing_lists)}
+</p>
 
-<table border="1" style="border-collapse: collapse; width: 100%; font-family: Arial;">
-<tr style="background-color:#f3f4f6;">
-    <th style="padding:8px;">Packing No</th>
-    <th style="padding:8px;">Invoice No</th>
-    <th style="padding:8px;">Seller</th>
-    <th style="padding:8px;">Buyer</th>
-    <th style="padding:8px;">Item</th>
-    <th style="padding:8px;">HS Code</th>
-    <th style="padding:8px;">Carton</th>
-    <th style="padding:8px;">Net Weight</th>
-    <th style="padding:8px;">Gross Weight</th>
-    <th style="padding:8px;">PDF</th>
-    <th style="padding:8px;">Edit</th>
-    <th style="padding:8px;">Delete</th>
+<div style="background:white;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
+
+<table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+<tr style="background:#F9FAFB;">
+<th style="padding:14px;width:9%;">Packing<br>No</th>
+<th style="width:9%;">Invoice<br>No</th>
+<th style="width:10%;">Seller</th>
+<th style="width:10%;">Buyer</th>
+<th style="width:16%;">Item</th>
+<th style="width:10%;">HS<br>Code</th>
+<th style="width:7%;">Carton</th>
+<th style="width:7%;">Net</th>
+<th style="width:7%;">Gross</th>
+<th style="width:5%;">PDF</th>
+<th style="width:5%;">Edit</th>
+<th style="width:5%;">Delete</th>
 </tr>
 """
 
@@ -82,32 +147,52 @@ def packing_list(search: str = ""):
             continue
 
         items = packing.get("items", [])
-        first_item = items[0] if items else {}
+
         item_names = "<br>".join(item.get("name", "") for item in items)
         hs_codes = "<br>".join(item.get("hs_code", "") for item in items)
         cartons = "<br>".join(str(item.get("carton", "")) for item in items)
         net_weights = "<br>".join(str(item.get("net_weight", "")) for item in items)
         gross_weights = "<br>".join(str(item.get("gross_weight", "")) for item in items)
+
         html += f"""
-<tr>
-    <td style="padding:8px;">{packing.get("packing_no", "")}</td>
-    <td style="padding:8px;">{packing.get("invoice_no", "")}</td>
-    <td style="padding:8px;">{packing.get("seller", "")}</td>
-    <td style="padding:8px;">{packing.get("buyer", "")}</td>
-    <td style="padding:8px;">{item_names}</td>
-    <td style="padding:8px;">{hs_codes}</td>
-    <td style="padding:8px;">{cartons}</td>
-    <td style="padding:8px;">{net_weights}</td>
-    <td style="padding:8px;">{gross_weights}</td>
-    <td style="padding:8px;"><a href="/packing-list-pdf/{packing.get("packing_no", "")}">PDF</a></td>
-    <td style="padding:8px;"><a href="/edit-packing/{packing.get("packing_no", "")}">Edit</a></td>
-    <td style="padding:8px;"><a href="/packing-delete/{packing.get("packing_no", "")}">Delete</a></td>
+<tr style="border-top:1px solid #E5E7EB;">
+<td style="padding:14px;text-align:center;">{packing.get("packing_no","")}</td>
+<td style="text-align:center;">{packing.get("invoice_no","")}</td>
+<td style="padding:10px;word-break:break-word;">{packing.get("seller","")}</td>
+<td style="padding:10px;word-break:break-word;">{packing.get("buyer","")}</td>
+<td style="padding:10px;word-break:break-word;">{item_names}</td>
+<td style="padding:10px;text-align:center;word-break:break-word;">{hs_codes}</td>
+<td style="text-align:center;">{cartons}</td>
+<td style="text-align:center;">{net_weights}</td>
+<td style="text-align:center;">{gross_weights}</td>
+
+<td style="text-align:center;">
+<a href="/packing-list-pdf/{packing.get('packing_no','')}" style="color:#2563EB;font-weight:bold;text-decoration:none;">
+PDF
+</a>
+</td>
+
+<td style="text-align:center;">
+<a href="/edit-packing/{packing.get('packing_no','')}" style="color:#111827;font-weight:bold;text-decoration:none;">
+Edit
+</a>
+</td>
+
+<td style="text-align:center;">
+<a href="/packing-delete/{packing.get('packing_no','')}" style="color:#DC2626;font-weight:bold;text-decoration:none;">
+Delete
+</a>
+</td>
 </tr>
 """
 
-    html += "</table>"
-    return HTMLResponse(html)
+    html += """
+</table>
+</div>
+</div>
+"""
 
+    return HTMLResponse(html)
 
 @router.post("/packing")
 def save_packing(
@@ -121,15 +206,7 @@ def save_packing(
     gross_weight: List[str] = Form([]),
 ):
     packing_lists = load_packing_lists()
-
-    existing_numbers = [
-        int(p.get("packing_no", "PK-000").split("-")[1])
-        for p in packing_lists
-        if p.get("packing_no", "").startswith("PK-")
-    ]
-
-    next_no = max(existing_numbers, default=0) + 1
-    packing_no = f"PK-{next_no:03d}"
+    packing_no = next_packing_no(packing_lists)
 
     items = []
 
@@ -158,6 +235,7 @@ def save_packing(
 
     return RedirectResponse(url="/packing-list", status_code=303)
 
+
 @router.get("/edit-packing/{packing_no}")
 def edit_packing(packing_no: str):
     packing_lists = load_packing_lists()
@@ -166,123 +244,86 @@ def edit_packing(packing_no: str):
         if packing.get("packing_no") == packing_no:
             items = packing.get("items", [])
 
+            if not items:
+                items = [{}]
+
             html = f"""
-<h1>Edit Packing List</h1>
+<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
+Edit Packing List
+</h1>
+
+<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;margin-bottom:35px;">
+Update packing list information
+</p>
+
+<div style="font-family:Arial;width:80%;margin:auto;">
+
+<div style="background:white;border:1px solid #E5E7EB;border-radius:16px;padding:30px;margin-bottom:30px;">
+<h2 style="margin-top:0;">Packing Information</h2>
 
 <form action="/update-packing/{packing_no}" method="post">
 
 <p>Invoice No</p>
-<input type="text" name="invoice_no" value="{packing.get('invoice_no','')}">
+<input type="text" name="invoice_no" value="{packing.get('invoice_no','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
 <p>Seller</p>
-<input type="text" name="seller" value="{packing.get('seller','')}">
+<input type="text" name="seller" value="{packing.get('seller','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
 <p>Buyer</p>
-<input type="text" name="buyer" value="{packing.get('buyer','')}">
+<input type="text" name="buyer" value="{packing.get('buyer','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<h3>Items</h3>
-
-<div id="items_area">
+<h2>Items</h2>
 """
 
             for item in items:
                 html += f"""
-<div class="item-row" style="border:1px solid #ddd;padding:10px;margin-bottom:10px;">
-
-<p>Product</p>
-<select onchange="selectProduct(this)">
-    <option value="">Select Product</option>
-</select>
+<div style="border:1px solid #E5E7EB;border-radius:14px;padding:20px;margin-bottom:20px;background:#F9FAFB;">
 
 <p>Item Name</p>
-<input type="text" name="item_name" value="{item.get('name','')}">
+<input type="text" name="item_name" value="{item.get('name','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
 <p>HS Code</p>
-<input type="text" name="hs_code" value="{item.get('hs_code','')}">
+<input type="text" name="hs_code" value="{item.get('hs_code','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
+
+<p>Carton</p>
+<input type="text" name="carton" value="{item.get('carton','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
+
+<p>Net Weight</p>
+<input type="text" name="net_weight" value="{item.get('net_weight','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
 <p>Gross Weight</p>
-<input type="text" name="gross_weight" value="{item.get('gross_weight','')}">
-
-<button type="button" onclick="removeItem(this)">Remove Item</button>
+<input type="text" name="gross_weight" value="{item.get('gross_weight','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
 </div>
 """
 
             html += """
-</div>
-
-<button type="button" onclick="addItem()">+ Add Item</button>
-
-<br><br>
-<button type="submit">Update Packing</button>
+<br>
+<button type="submit" style="width:100%;padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;">
+Update Packing
+</button>
 
 </form>
+</div>
 
-<script>
-let products = [];
+<a href="/packing-list">
+<button style="width:240px;padding:15px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;">
+← Packing List
+</button>
+</a>
 
-async function loadProducts() {
-    const response = await fetch("/product-data");
-    products = await response.json();
+<a href="/">
+<button style="width:240px;padding:15px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;margin-left:10px;">
+← Dashboard
+</button>
+</a>
 
-    document.querySelectorAll(".item-row select").forEach(fillSelect);
-}
-
-function fillSelect(select) {
-    select.innerHTML = '<option value="">Select Product</option>';
-
-    products.forEach((product, index) => {
-        select.innerHTML += `<option value="${index}">${product.name}</option>`;
-    });
-}
-
-function selectProduct(select) {
-    const index = select.value;
-    if (index === "") return;
-
-    const row = select.closest(".item-row");
-    const product = products[index];
-
-    row.querySelector('input[name="item_name"]').value = product.name || "";
-    row.querySelector('input[name="hs_code"]').value = product.hs_code || "";
-}
-
-function addItem() {
-    const area = document.getElementById("items_area");
-    const firstRow = document.querySelector(".item-row");
-    const newRow = firstRow.cloneNode(true);
-
-    newRow.querySelectorAll("input").forEach(input => input.value = "");
-    newRow.querySelector("select").selectedIndex = 0;
-
-    area.appendChild(newRow);
-
-    fillSelect(newRow.querySelector("select"));
-}
-
-function removeItem(button) {
-    const rows = document.querySelectorAll(".item-row");
-
-    if (rows.length <= 1) {
-        alert("At least one item is required.");
-        return;
-    }
-
-    button.closest(".item-row").remove();
-}
-
-loadProducts();
-</script>
-
-<br>
-<a href="/packing-list">Back to Packing List</a>
+</div>
 """
 
             return HTMLResponse(html)
 
     return {"error": "Packing List not found"}
-
-
 
 @router.post("/update-packing/{packing_no}")
 def update_packing(
@@ -322,7 +363,13 @@ def update_packing(
 
     save_packing_lists(packing_lists)
 
-    return RedirectResponse(url="/packing-list", status_code=303)
+    return HTMLResponse("""
+<script>
+alert("Packing Updated");
+window.location.href = "/packing-list";
+</script>
+""")
+
 
 @router.get("/packing-delete/{packing_no}")
 def delete_packing(packing_no: str):
@@ -337,138 +384,21 @@ def delete_packing(packing_no: str):
 
     return RedirectResponse(url="/packing-list", status_code=303)
 
-
 @router.get("/packing-form")
 def packing_form():
-    invoices = []
+    return HTMLResponse("""
+<h1 style="font-family:Arial;text-align:center;font-size:48px;">Packing Form</h1>
+<p style="font-family:Arial;text-align:center;color:#6B7280;">Use /packing-page for the new Packing UI.</p>
 
-    if INVOICE_FILE.exists():
-        with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-            invoices = json.load(f)
+<div style="font-family:Arial;width:80%;margin:auto;text-align:center;">
+<a href="/packing-page">
+<button style="padding:15px 25px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;">
+Go to New Packing Page
+</button>
+</a>
+</div>
+""")
 
-    invoice_options = '<option value="">Select Invoice</option>'
-
-    for invoice in invoices:
-        invoice_no = invoice.get("invoice_no", "")
-        seller = invoice.get("seller", "")
-        buyer = invoice.get("buyer", "")
-
-        if not invoice_no:
-            continue
-
-        invoice_options += f"""
-<option value="{invoice_no}" data-seller="{seller}" data-buyer="{buyer}">
-    {invoice_no} - {buyer}
-</option>
-"""
-
-    html = f"""
-<h1>Packing Input</h1>
-
-<form action="/packing" method="post">
-    <p>Invoice No</p>
-    <select id="invoice_no" name="invoice_no">
-        {invoice_options}
-    </select>
-
-    <p>Seller</p>
-    <input id="seller" type="text" name="seller">
-
-    <p>Buyer</p>
-    <input id="buyer" type="text" name="buyer">
-
-    <h3>Items</h3>
-
-    <div id="items_area">
-        <div class="item-row" style="border:1px solid #ddd; padding:10px; margin-bottom:10px;">
-            <p>Product</p>
-            <select onchange="selectProduct(this)">
-                <option value="">Select Product</option>
-            </select>
-
-            <p>Item Name</p>
-            <input type="text" name="item_name">
-
-            <p>HS Code</p>
-            <input type="text" name="hs_code">
-
-            <p>Carton</p>
-            <input type="text" name="carton">
-
-            <p>Net Weight</p>
-            <input type="text" name="net_weight">
-
-            <p>Gross Weight</p>
-            <input type="text" name="gross_weight">
-        </div>
-    </div>
-
-    <button type="button" onclick="addItem()">+ Add Item</button>
-
-    <br><br>
-    <button type="submit">Save Packing</button>
-</form>
-
-<script>
-document.getElementById("invoice_no").addEventListener("change", function() {{
-    const selected = this.options[this.selectedIndex];
-
-    document.getElementById("seller").value = selected.dataset.seller || "";
-    document.getElementById("buyer").value = selected.dataset.buyer || "";
-}});
-
-let products = [];
-
-async function loadProducts() {{
-    const response = await fetch("/product-data");
-    products = await response.json();
-
-    fillProductSelects();
-}}
-
-function fillProductSelects() {{
-    document.querySelectorAll(".item-row select").forEach(select => {{
-        if (select.options.length > 1) return;
-
-        products.forEach((product, index) => {{
-            select.innerHTML += '<option value="' + index + '">' + product.name + '</option>';
-        }});
-    }});
-}}
-
-function selectProduct(select) {{
-    const index = select.value;
-    if (index === "") return;
-
-    const row = select.closest(".item-row");
-    const product = products[index];
-
-    row.querySelector('input[name="item_name"]').value = product.name || "";
-    row.querySelector('input[name="hs_code"]').value = product.hs_code || "";
-}}
-
-function addItem() {{
-    const area = document.getElementById("items_area");
-    const firstRow = document.querySelector(".item-row");
-    const newRow = firstRow.cloneNode(true);
-
-    newRow.querySelectorAll("input").forEach(input => input.value = "");
-    newRow.querySelector("select").selectedIndex = 0;
-
-    area.appendChild(newRow);
-    fillProductSelects();
-}}
-
-loadProducts();
-</script>
-
-<br>
-<a href="/">Back Home</a>
-<br>
-<a href="/packing-list">Back to Packing List</a>
-"""
-
-    return HTMLResponse(html)
 
 @router.post("/packing-list/pdf")
 def create_packing_list_pdf(payload: dict = Body(...)):
@@ -608,6 +538,7 @@ def create_packing_list_pdf(payload: dict = Body(...)):
             "Content-Disposition": f'attachment; filename="{packing_no}.pdf"'
         },
     )
+
 
 @router.get("/packing-list-pdf/{packing_no}")
 def packing_list_pdf(packing_no: str):

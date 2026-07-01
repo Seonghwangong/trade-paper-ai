@@ -45,40 +45,46 @@ Product List
 Manage all registered products
 </p>
 
-<div style="width:90%;margin:auto;font-family:Arial;">
+<div style="width:86%;margin:auto;font-family:Arial;">
 
-<p>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;">
+
+<div>
 <a href="/product-form">
-<button style="padding:12px 25px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
+<button style="padding:12px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
 + Add Product
 </button>
 </a>
 
 <a href="/" style="margin-left:10px;">
-<button style="padding:12px 25px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
+<button style="padding:12px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
 ← Dashboard
 </button>
 </a>
-</p>
+</div>
 
-<form action="/products" method="get" style="margin:25px 0;">
-<input type="text" name="search" value="{search}" placeholder="Search product name, HS code, or origin"
-style="padding:14px;width:280px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;">
+<form action="/products" method="get" style="margin:0;">
+<input type="text" name="search" value="{search}" placeholder="Search product"
+style="padding:12px;width:240px;border:1px solid #D1D5DB;border-radius:10px;font-size:15px;">
 
-<button type="submit" style="padding:14px 30px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
+<button type="submit" style="padding:12px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:15px;">
 Search
 </button>
 
-<a href="/products" style="margin-left:15px;color:#6B7280;">Reset</a>
+<a href="/products" style="margin-left:10px;color:#6B7280;">Reset</a>
 </form>
+
+</div>
 
 <p style="font-size:18px;font-weight:bold;margin:25px 0;">
 Total Products : {len(products)}
 </p>
 
-<table style="width:100%;border-collapse:collapse;background:white;border:1px solid #E5E7EB;">
+<div style="background:white;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
+
+<table style="width:100%;border-collapse:collapse;">
 <tr style="background:#F9FAFB;">
-<th style="padding:15px;">No</th>
+<th style="padding:16px;">No</th>
 <th>Name</th>
 <th>HS Code</th>
 <th>Unit Price</th>
@@ -91,7 +97,7 @@ Total Products : {len(products)}
     if not products:
         html += """
 <tr>
-<td colspan="7" style="padding:30px;text-align:center;color:#6B7280;">
+<td colspan="7" style="padding:35px;text-align:center;color:#6B7280;">
 No products have been registered yet.
 </td>
 </tr>
@@ -99,8 +105,8 @@ No products have been registered yet.
     else:
         for index, product in enumerate(products):
             html += f"""
-<tr style="border-bottom:1px solid #E5E7EB;">
-<td style="padding:15px;text-align:center;">{index + 1}</td>
+<tr style="border-top:1px solid #E5E7EB;">
+<td style="padding:16px;text-align:center;">{index + 1}</td>
 <td>{product.get("name", "")}</td>
 <td>{product.get("hs_code", "")}</td>
 <td>{product.get("unit_price", "")}</td>
@@ -116,6 +122,7 @@ No products have been registered yet.
 
     html += """
 </table>
+</div>
 </div>
 """
 
@@ -133,88 +140,54 @@ def edit_product(index: int):
     product = products[index]
 
     html = f"""
-<!DOCTYPE html>
-<html>
+<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
+Edit Product
+</h1>
 
-<head>
+<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;letter-spacing:0.5px;margin-top:0;margin-bottom:35px;">
+Update registered product information
+</p>
 
-<title>Edit Product</title>
+<div style="font-family:Arial;width:80%;margin:auto;">
 
-<style>
-
-body{{
-    font-family:Arial,sans-serif;
-    background:#f3f4f6;
-    padding:40px;
-}}
-
-.container{{
-    max-width:800px;
-    margin:auto;
-    background:white;
-    padding:40px;
-    border-radius:14px;
-}}
-
-input{{
-    width:100%;
-    padding:15px;
-    margin-bottom:18px;
-    border:1px solid #ddd;
-    border-radius:10px;
-    font-size:16px;
-    box-sizing:border-box;
-}}
-
-button{{
-    width:100%;
-    padding:16px;
-    background:#081B4B;
-    color:white;
-    border:none;
-    border-radius:10px;
-    font-size:18px;
-}}
-
-</style>
-
-</head>
-
-<body>
-
-<div class="container">
-
-<h1>Edit Product</h1>
+<div style="background:#ffffff;border:1px solid #E5E7EB;border-radius:16px;padding:30px;margin-bottom:30px;">
+<h2 style="margin-top:0;">Product Information</h2>
 
 <form action="/update-product/{index}" method="post">
 
-<input
-name="name"
-value="{product.get('name','')}">
+    <p>Product Name</p>
+    <input name="name" value="{product.get('name','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<input
-name="hs_code"
-value="{product.get('hs_code','')}">
+    <p>HS Code</p>
+    <input name="hs_code" value="{product.get('hs_code','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<input
-name="unit_price"
-value="{product.get('unit_price','')}">
+    <p>Unit Price</p>
+    <input name="unit_price" value="{product.get('unit_price','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<input
-name="origin"
-value="{product.get('origin','')}">
+    <p>Country of Origin</p>
+    <input name="origin" value="{product.get('origin','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
 
-<button type="submit">
-Update Product
-</button>
+    <br><br>
+    <button type="submit" style="width:100%;padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;">
+        Update Product
+    </button>
 
 </form>
-
 </div>
 
-</body>
+<a href="/products">
+    <button style="width:220px;padding:15px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;">
+        ← Product List
+    </button>
+</a>
 
-</html>
+<a href="/">
+    <button style="width:220px;padding:15px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;margin-left:10px;">
+        ← Dashboard
+    </button>
+</a>
+
+</div>
 """
 
     return HTMLResponse(html)

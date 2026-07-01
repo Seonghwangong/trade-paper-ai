@@ -53,5 +53,35 @@
             }
         ],
         "invoice_no": "INV-006"
+    },
+    {
+        "seller": "",
+        "buyer": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "quantity": 0,
+                "unit_price": 1200
+            }
+        ],
+        "invoice_no": "INV-007"
+    },
+    {
+        "seller": "dnicorp Ltd",
+        "buyer": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "quantity": 1,
+                "unit_price": 1200
+            }
+        ],
+        "invoice_no": "INV-008"
     }
 ]

@@ -3,123 +3,277 @@
 <head>
 <meta charset="UTF-8">
 <title>Packing List</title>
-<style>
-body{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;}
-.container{max-width:900px;margin:auto;background:white;padding:30px;border-radius:12px;}
-h1{
-    color:#0b1736;
-    margin-bottom:5px;
-}
 
-h2{
-    color:#666;
-    margin-top:0;
-    margin-bottom:30px;
+<style>
+body{
+    font-family:Arial,sans-serif;
+    background:#f3f4f6;
+    padding:40px;
 }
-input,select,button{
+.container{
+    max-width:900px;
+    margin:auto;
+    background:white;
+    padding:35px;
+    border-radius:16px;
+}
+h1{
+    text-align:center;
+    font-size:48px;
+    margin-bottom:10px;
+}
+.sub{
+    text-align:center;
+    color:#6B7280;
+    margin-bottom:35px;
+}
+.card{
+    border:1px solid #E5E7EB;
+    border-radius:16px;
+    padding:25px;
+    margin-bottom:25px;
+    background:#fff;
+}
+.item-card{
+    border:1px solid #E5E7EB;
+    border-radius:14px;
+    padding:20px;
+    margin-bottom:20px;
+    background:#F9FAFB;
+}
+input,select{
     width:100%;
-    padding:15px;
-    margin-bottom:15px;
-    border-radius:8px;
+    padding:14px;
+    margin-bottom:14px;
+    border:1px solid #D1D5DB;
+    border-radius:10px;
     font-size:16px;
     box-sizing:border-box;
 }
-
-.form-grid select{
-    margin-bottom:0;
-}
-
 button{
-    background:#0b1736;
+    padding:16px;
+    background:#111827;
     color:white;
     border:none;
+    border-radius:12px;
+    font-size:18px;
     cursor:pointer;
+}
+.full{
+    width:100%;
     margin-top:10px;
 }
-
-.form-grid{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:20px;
+.small{
+    width:220px;
+    margin-bottom:25px;
+}
+.add{
+    width:100%;
+    background:#374151;
+    margin-bottom:20px;
+}
+.remove{
+    background:#DC2626;
+    width:180px;
+    font-size:15px;
+    padding:12px;
 }
 </style>
 </head>
+
 <body>
 <div class="container">
-<h1>Trade Paper AI</h1>
-<h2>Packing List</h2>
-<div class="form-grid">
-    <select id="invoice_no" onchange="loadInvoiceData()">
-    <option value="">Select Invoice No</option>
+
+<a href="/">
+<button class="small">← Dashboard</button>
+</a>
+
+<h1>Packing List</h1>
+<p class="sub">Create packing list from invoice and product data</p>
+
+<div class="card">
+<h2>Invoice Information</h2>
+
+<select id="invoice_no" onchange="loadInvoiceData()">
+<option value="">Select Invoice No</option>
 </select>
-    <input id="buyer" placeholder="Buyer Name">
 
-    <select id="productSelect" onchange="selectProduct()">
-    <option value="">Select Product</option>
+<input id="seller" placeholder="Seller Name">
+<input id="buyer" placeholder="Buyer Name">
+</div>
+
+<div class="card">
+<h2>Product Information</h2>
+
+<div id="items_area">
+
+<div class="item-card">
+<select class="productSelect" onchange="selectProduct(this)">
+<option value="">Select Product</option>
 </select>
 
-<input id="item" placeholder="Item Name">
+<input class="item" placeholder="Item Name">
+<input class="hs_code" placeholder="HS Code">
+<input class="carton" type="number" placeholder="Carton">
+<input class="net_weight" placeholder="Net Weight">
+<input class="gross_weight" placeholder="Gross Weight">
 
-<input id="hs_code" placeholder="HS Code">
-    <input id="carton" type="number" placeholder="Carton">
-
-    <input id="net_weight" placeholder="Net Weight">
-    <input id="gross_weight" placeholder="Gross Weight">
+<button type="button" class="remove" onclick="removeItem(this)">Remove Item</button>
+</div>
 
 </div>
-<button onclick="savePacking()">Save Packing List</button>
-<button onclick="generatePackingPDF()">Generate Packing PDF</button>
+
+<button type="button" class="add" onclick="addItem()">+ Add Item</button>
+</div>
+
+<button class="full" onclick="savePacking()">Save Packing List</button>
+<button class="full" onclick="generatePackingPDF()">Generate Packing PDF</button>
+
 </div>
 
 <script>
-async function savePacking(){
-
-    let products = [];
+let products = [];
 
 async function loadProducts(){
+    try{
+        const response = await fetch("/product-data");
+        products = await response.json();
+    }catch(e){
+        products = [];
+    }
 
-    const response = await fetch("/product-data");
-    products = await response.json();
-
-    const select = document.getElementById("productSelect");
-
-    products.forEach((product, index) => {
-
-        select.innerHTML += `
-            <option value="${index}">
-                ${product.name}
-            </option>
-        `;
-
-    });
-
+    document.querySelectorAll(".productSelect").forEach(fillProductSelect);
 }
 
-function selectProduct(){
+function fillProductSelect(select){
+    select.innerHTML = '<option value="">Select Product</option>';
+    products.forEach((product, index)=>{
+        select.innerHTML += `<option value="${index}">${product.name}</option>`;
+    });
+}
 
-    const index = document.getElementById("productSelect").value;
+function addItem(){
+    const area = document.getElementById("items_area");
+    const card = document.createElement("div");
+    card.className = "item-card";
 
+    card.innerHTML = `
+<select class="productSelect" onchange="selectProduct(this)">
+<option value="">Select Product</option>
+</select>
+<input class="item" placeholder="Item Name">
+<input class="hs_code" placeholder="HS Code">
+<input class="carton" type="number" placeholder="Carton">
+<input class="net_weight" placeholder="Net Weight">
+<input class="gross_weight" placeholder="Gross Weight">
+<button type="button" class="remove" onclick="removeItem(this)">Remove Item</button>
+`;
+
+    area.appendChild(card);
+    fillProductSelect(card.querySelector(".productSelect"));
+}
+
+function removeItem(button){
+    const cards = document.querySelectorAll(".item-card");
+    if(cards.length <= 1){
+        alert("At least one item is required.");
+        return;
+    }
+    button.closest(".item-card").remove();
+}
+
+function selectProduct(select){
+    const index = select.value;
     if(index === "") return;
 
     const product = products[index];
+    const card = select.closest(".item-card");
 
-    document.getElementById("item").value = product.name || "";
-    document.getElementById("hs_code").value = product.hs_code || "";
-
+    card.querySelector(".item").value = product.name || "";
+    card.querySelector(".hs_code").value = product.hs_code || "";
 }
 
-window.onload = loadProducts;
+async function loadInvoiceOptions(){
+    const response = await fetch("/invoices");
+    const invoices = await response.json();
 
-    const data = {
+    const select = document.getElementById("invoice_no");
+    select.innerHTML = '<option value="">Select Invoice No</option>';
+
+    invoices.forEach(inv=>{
+        if(inv.invoice_no){
+            select.innerHTML += `<option value="${inv.invoice_no}">${inv.invoice_no} - ${inv.buyer || ""}</option>`;
+        }
+    });
+}
+
+async function loadInvoiceData(){
+    const invoiceNo = document.getElementById("invoice_no").value;
+    if(!invoiceNo) return;
+
+    const response = await fetch("/invoices");
+    const invoices = await response.json();
+    const invoice = invoices.find(inv => inv.invoice_no === invoiceNo);
+    if(!invoice) return;
+
+    document.getElementById("seller").value = invoice.seller || "";
+    document.getElementById("buyer").value = invoice.buyer || "";
+
+    const area = document.getElementById("items_area");
+    area.innerHTML = "";
+
+    if(invoice.items && invoice.items.length > 0){
+        invoice.items.forEach(item=>{
+            addItem();
+
+            const cards = document.querySelectorAll(".item-card");
+            const card = cards[cards.length - 1];
+
+            const index = products.findIndex(p =>
+                (p.name || "").toLowerCase() === (item.name || "").toLowerCase()
+            );
+
+            card.querySelector(".item").value = item.name || "";
+            card.querySelector(".hs_code").value = item.hs_code || (index >= 0 ? products[index].hs_code || "" : "");
+
+    if(index >= 0){
+        card.querySelector(".productSelect").value = index;
+        selectProduct(card.querySelector(".productSelect"));
+    
+    }
+        });
+    }else{
+        addItem();
+    }
+}
+
+function getPackingData(){
+    const items = [];
+
+    document.querySelectorAll(".item-card").forEach(card=>{
+        const name = card.querySelector(".item").value;
+        if(name){
+            items.push({
+                name: name,
+                unit_price: Number(card.querySelector(".unit_price")?.value || 0),
+                hs_code: card.querySelector(".hs_code").value,
+                carton: Number(card.querySelector(".carton").value || 0),
+                net_weight: card.querySelector(".net_weight").value,
+                gross_weight: card.querySelector(".gross_weight").value
+            });
+        }
+    });
+
+    return {
         invoice_no: document.getElementById("invoice_no").value,
+        seller: document.getElementById("seller").value,
         buyer: document.getElementById("buyer").value,
-        items: [{
-            name: document.getElementById("item").value,
-            carton: Number(document.getElementById("carton").value),
-            net_weight: document.getElementById("net_weight").value,
-            gross_weight: document.getElementById("gross_weight").value
-        }]
+        items: items
     };
+}
+
+async function savePacking(){
+    const data = getPackingData();
 
     const res = await fetch("/packing-list", {
         method: "POST",
@@ -128,24 +282,12 @@ window.onload = loadProducts;
     });
 
     const result = await res.json();
-alert("Packing Saved : " + result.packing_no);
-
-window.location.href = "/packing-list";
-
+    alert("Packing Saved : " + result.packing_no);
+    window.location.href = "/packing-list";
 }
 
 async function generatePackingPDF(){
-
-    const data = {
-        invoice_no: document.getElementById("invoice_no").value,
-        buyer: document.getElementById("buyer").value,
-        items: [{
-            name: document.getElementById("item").value,
-            carton: Number(document.getElementById("carton").value),
-            net_weight: document.getElementById("net_weight").value,
-            gross_weight: document.getElementById("gross_weight").value
-        }]
-    };
+    const data = getPackingData();
 
     const res = await fetch("/packing-list/pdf", {
         method: "POST",
@@ -155,56 +297,22 @@ async function generatePackingPDF(){
 
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
-
     window.open(url);
 }
 
-async function loadInvoiceOptions(){
+window.onload = async function(){
+    await loadProducts();
+    await loadInvoiceOptions();
 
-    const response = await fetch("/invoices");
-    const invoices = await response.json();
+    const params = new URLSearchParams(window.location.search);
+    const invoiceNo = params.get("invoice_no");
 
-    let optionHtml = '<option value="">Select Invoice No</option>';
-
-    invoices.forEach(function(inv){
-
-        if(inv.invoice_no){
-            optionHtml += '<option value="' + inv.invoice_no + '">' +
-                inv.invoice_no + ' - ' + (inv.buyer || '') +
-                '</option>';
-        }
-    });
-
-    document.getElementById("invoice_no").innerHTML = optionHtml;
-}
-
-async function loadInvoiceData(){
-
-    const invoiceNo = document.getElementById("invoice_no").value;
-
-    if(!invoiceNo){
-        return;
+    if(invoiceNo){
+        document.getElementById("invoice_no").value = invoiceNo;
+        loadInvoiceData();
     }
-
-    const response = await fetch("/invoices");
-    const invoices = await response.json();
-
-    const invoice = invoices.find(function(inv){
-        return inv.invoice_no === invoiceNo;
-    });
-
-    if(!invoice){
-        return;
-    }
-
-    document.getElementById("buyer").value = invoice.buyer || "";
-
-    if(invoice.items && invoice.items.length > 0){
-        document.getElementById("item").value = invoice.items[0].name || "";
-    }
-}
-loadInvoiceOptions();
-
+};
 </script>
+
 </body>
 </html>

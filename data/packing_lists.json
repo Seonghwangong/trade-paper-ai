@@ -119,7 +119,7 @@
             {
                 "name": "Mouse",
                 "hs_code": "847160",
-                "carton": "3",
+                "carton": "4",
                 "net_weight": "10",
                 "gross_weight": "12"
             }
@@ -161,5 +161,92 @@
                 "gross_weight": "220"
             }
         ]
+    },
+    {
+        "invoice_no": "INV-005",
+        "buyer": "apple",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "carton": 10,
+                "net_weight": "200",
+                "gross_weight": "220"
+            }
+        ],
+        "packing_no": "PK-012"
+    },
+    {
+        "invoice_no": "",
+        "buyer": "google",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "carton": 0,
+                "net_weight": "",
+                "gross_weight": ""
+            }
+        ],
+        "packing_no": "PK-013"
+    },
+    {
+        "invoice_no": "INV-006",
+        "buyer": "apple",
+        "seller": "dnicorp",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "carton": "10",
+                "net_weight": "200",
+                "gross_weight": "225"
+            }
+        ],
+        "packing_no": "PK-014"
+    },
+    {
+        "invoice_no": "INV-003",
+        "buyer": "google",
+        "seller": "sony",
+        "items": [
+            {
+                "name": "keyboard",
+                "hs_code": "",
+                "carton": 0,
+                "net_weight": "",
+                "gross_weight": ""
+            }
+        ],
+        "packing_no": "PK-015"
+    },
+    {
+        "invoice_no": "INV-008",
+        "buyer": "Apple",
+        "seller": "dnicorp Ltd",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "carton": 10,
+                "net_weight": "200",
+                "gross_weight": "220"
+            }
+        ],
+        "packing_no": "PK-016"
+    },
+    {
+        "invoice_no": "INV-003",
+        "seller": "sony",
+        "buyer": "google",
+        "items": [
+            {
+                "name": "Keyboard",
+                "unit_price": 0,
+                "hs_code": "847160",
+                "carton": 0,
+                "net_weight": "",
+                "gross_weight": ""
+            }
+        ],
+        "packing_no": "PK-017"
     }
 ]
