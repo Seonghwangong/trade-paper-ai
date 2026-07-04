@@ -114,7 +114,9 @@ button{
 
 <input class="item" placeholder="Item Name">
 <input class="hs_code" placeholder="HS Code">
-<input class="carton" type="number" placeholder="Carton">
+<input class="unit_price" placeholder="Unit Price" readonly>
+<input class="amount" placeholder="Amount" readonly>
+<input class="carton" type="number" placeholder="Carton" oninput="calculateAmount(this.closest('.item-card'))">
 <input class="net_weight" placeholder="Net Weight">
 <input class="gross_weight" placeholder="Gross Weight">
 
@@ -163,7 +165,9 @@ function addItem(){
 </select>
 <input class="item" placeholder="Item Name">
 <input class="hs_code" placeholder="HS Code">
-<input class="carton" type="number" placeholder="Carton">
+<input class="unit_price" placeholder="Unit Price" readonly>
+<input class="amount" placeholder="Amount" readonly>
+<input class="carton" type="number" placeholder="Carton" oninput="calculateAmount(this.closest('.item-card'))">
 <input class="net_weight" placeholder="Net Weight">
 <input class="gross_weight" placeholder="Gross Weight">
 <button type="button" class="remove" onclick="removeItem(this)">Remove Item</button>
@@ -191,6 +195,17 @@ function selectProduct(select){
 
     card.querySelector(".item").value = product.name || "";
     card.querySelector(".hs_code").value = product.hs_code || "";
+    card.querySelector(".unit_price").value = product.unit_price || 0;
+
+    calculateAmount(card);
+}
+
+function calculateAmount(card){
+    const unitPrice = Number(card.querySelector(".unit_price").value || 0);
+    const carton = Number(card.querySelector(".carton").value || 0);
+    const amount = unitPrice * carton;
+
+    card.querySelector(".amount").value = amount;
 }
 
 async function loadInvoiceOptions(){

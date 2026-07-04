@@ -132,6 +132,7 @@ Total Packing Lists : {len(packing_lists)}
 <th style="width:10%;">Seller</th>
 <th style="width:10%;">Buyer</th>
 <th style="width:16%;">Item</th>
+<th style="width:8%;">Unit<br>Price</th>
 <th style="width:10%;">HS<br>Code</th>
 <th style="width:7%;">Carton</th>
 <th style="width:7%;">Net</th>
@@ -149,6 +150,7 @@ Total Packing Lists : {len(packing_lists)}
         items = packing.get("items", [])
 
         item_names = "<br>".join(item.get("name", "") for item in items)
+        unit_prices = "<br>".join(str(item.get("unit_price", "")) for item in items)
         hs_codes = "<br>".join(item.get("hs_code", "") for item in items)
         cartons = "<br>".join(str(item.get("carton", "")) for item in items)
         net_weights = "<br>".join(str(item.get("net_weight", "")) for item in items)
@@ -161,6 +163,7 @@ Total Packing Lists : {len(packing_lists)}
 <td style="padding:10px;word-break:break-word;">{packing.get("seller","")}</td>
 <td style="padding:10px;word-break:break-word;">{packing.get("buyer","")}</td>
 <td style="padding:10px;word-break:break-word;">{item_names}</td>
+<td style="text-align:center;">{unit_prices}</td>
 <td style="padding:10px;text-align:center;word-break:break-word;">{hs_codes}</td>
 <td style="text-align:center;">{cartons}</td>
 <td style="text-align:center;">{net_weights}</td>
@@ -422,7 +425,6 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.setTitle(f"Packing List {packing_no}")
 
     pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 24)
@@ -452,10 +454,10 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.drawString(60, height - 220, seller)
     pdf.drawString(60, height - 235, seller_address)
     pdf.drawString(60, height - 250, seller_email)
-
     pdf.drawString(325, height - 220, buyer)
 
     y = height - 315
+
     pdf.setFillColor(colors.HexColor("#E5E7EB"))
     pdf.rect(45, y, 505, 28, fill=1, stroke=0)
 
@@ -463,9 +465,11 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.setFont("Helvetica-Bold", 8)
     pdf.drawString(52, y + 10, "No")
     pdf.drawString(80, y + 10, "Item")
-    pdf.drawString(205, y + 10, "HS Code")
-    pdf.drawRightString(330, y + 10, "Carton")
-    pdf.drawRightString(430, y + 10, "Net Weight")
+    pdf.drawRightString(220, y + 10, "Unit Price")
+    pdf.drawRightString(290, y + 10, "Amount")
+    pdf.drawString(315, y + 10, "HS Code")
+    pdf.drawRightString(390, y + 10, "Carton")
+    pdf.drawRightString(465, y + 10, "Net Weight")
     pdf.drawRightString(540, y + 10, "Gross Weight")
 
     y -= 28
@@ -475,11 +479,13 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     total_carton = 0
     total_net_weight = 0.0
     total_gross_weight = 0.0
+    total_amount = 0.0
 
     for index, item in enumerate(items, start=1):
         carton = item.get("carton", "")
         net_weight = item.get("net_weight", "")
         gross_weight = item.get("gross_weight", "")
+        unit_price = item.get("unit_price", 0)
 
         try:
             total_carton += int(float(carton or 0))
@@ -496,26 +502,37 @@ def create_packing_list_pdf(payload: dict = Body(...)):
         except:
             pass
 
+        try:
+            amount = float(unit_price or 0) * float(carton or 0)
+            total_amount += amount
+        except:
+            amount = 0
+
         pdf.rect(45, y, 505, 26, fill=0)
 
         pdf.drawString(52, y + 9, str(index))
-        pdf.drawString(80, y + 9, str(item.get("name", ""))[:25])
-        pdf.drawString(205, y + 9, str(item.get("hs_code", "")))
-        pdf.drawRightString(330, y + 9, str(carton))
-        pdf.drawRightString(430, y + 9, str(net_weight))
+        pdf.drawString(80, y + 9, str(item.get("name", ""))[:16])
+        pdf.drawRightString(220, y + 9, str(unit_price))
+        pdf.drawRightString(290, y + 9, f"{amount:g}")
+        pdf.drawString(315, y + 9, str(item.get("hs_code", "")))
+        pdf.drawRightString(390, y + 9, str(carton))
+        pdf.drawRightString(465, y + 9, str(net_weight))
         pdf.drawRightString(540, y + 9, str(gross_weight))
 
         y -= 26
 
-    y -= 25
+    y -= 35
+
     pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.roundRect(325, y - 5, 225, 65, 8, fill=1, stroke=0)
+    pdf.rect(325, y - 25, 225, 90, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
+
     pdf.setFont("Helvetica-Bold", 10)
     pdf.drawString(340, y + 42, f"Total Cartons: {total_carton}")
     pdf.drawString(340, y + 24, f"Total Net Weight: {total_net_weight:g}")
     pdf.drawString(340, y + 6, f"Total Gross Weight: {total_gross_weight:g}")
+    pdf.drawString(340, y - 12, f"Total Amount: {total_amount:g}")
 
     pdf.setFillColor(colors.black)
     pdf.setFont("Helvetica", 10)
