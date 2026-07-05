@@ -312,5 +312,21 @@
             }
         ],
         "packing_no": "PK-021"
+    },
+    {
+        "invoice_no": "INV-003",
+        "seller": "sony",
+        "buyer": "google",
+        "items": [
+            {
+                "name": "Keyboard",
+                "unit_price": 50,
+                "hs_code": "847160",
+                "carton": 10,
+                "net_weight": "",
+                "gross_weight": ""
+            }
+        ],
+        "packing_no": "PK-022"
     }
 ]

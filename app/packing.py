@@ -425,6 +425,7 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.setTitle(f"Packing List {packing_no}")
 
     pdf.setFillColor(colors.HexColor("#111827"))
+    pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 24)
@@ -523,16 +524,25 @@ def create_packing_list_pdf(payload: dict = Body(...)):
 
     y -= 35
 
+    summary_w = 225
+    summary_x = 550 - summary_w
+    summary_h = 105
+    summary_top = y - 12
+    summary_bottom = summary_top - summary_h
+
     pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.rect(325, y - 25, 225, 90, fill=1, stroke=0)
+    pdf.roundRect(summary_x, summary_bottom, summary_w, summary_h, 8, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
 
     pdf.setFont("Helvetica-Bold", 10)
-    pdf.drawString(340, y + 42, f"Total Cartons: {total_carton}")
-    pdf.drawString(340, y + 24, f"Total Net Weight: {total_net_weight:g}")
-    pdf.drawString(340, y + 6, f"Total Gross Weight: {total_gross_weight:g}")
-    pdf.drawString(340, y - 12, f"Total Amount: {total_amount:g}")
+    text_x = summary_x + 15
+    text_y = summary_top - 28
+    line_gap = 18
+    pdf.drawString(text_x, text_y, f"Total Cartons: {total_carton}")
+    pdf.drawString(text_x, text_y - line_gap, f"Total Net Weight: {total_net_weight:g}")
+    pdf.drawString(text_x, text_y - line_gap * 2, f"Total Gross Weight: {total_gross_weight:g}")
+    pdf.drawString(text_x, text_y - line_gap * 3, f"Total Amount: {total_amount:g}")
 
     pdf.setFillColor(colors.black)
     pdf.setFont("Helvetica", 10)
