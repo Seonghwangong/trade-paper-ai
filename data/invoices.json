@@ -70,16 +70,13 @@
         "invoice_no": "INV-007"
     },
     {
-        "seller": "dnicorp Ltd",
-        "buyer": "Apple",
+        "seller": "dnicorp Ltd test",
+        "buyer": "Apple test",
         "buyer_address": "California, USA",
         "buyer_email": "sales@apple.com",
         "items": [
             {
-                "name": "MacBook Pro",
-                "hs_code": "847130",
-                "quantity": 1,
-                "unit_price": 1200
+                "name": "MacBook Pro"
             }
         ],
         "invoice_no": "INV-008"

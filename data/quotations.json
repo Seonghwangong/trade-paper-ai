@@ -111,5 +111,59 @@
                 "amount": "5000"
             }
         ]
+    },
+    {
+        "quotation_no": "QT-008",
+        "buyer_name": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "seller": "",
+        "valid_until": "",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "qty": "10",
+                "unit_price": "1200",
+                "amount": "12000"
+            }
+        ]
+    },
+    {
+        "quotation_no": "QT-009",
+        "buyer_name": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "seller": "",
+        "valid_until": "",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "MacBook Pro",
+                "hs_code": "847130",
+                "qty": "5",
+                "unit_price": "1200",
+                "amount": "6000"
+            }
+        ]
+    },
+    {
+        "quotation_no": "QT-010",
+        "buyer_name": "Apple Test",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "seller": "",
+        "valid_until": "2026-08-06",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "Keyboard",
+                "hs_code": "847160",
+                "qty": "10",
+                "unit_price": "50",
+                "amount": "500"
+            }
+        ]
     }
 ]

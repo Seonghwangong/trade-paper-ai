@@ -91,7 +91,7 @@ Manage all packing documents
 <div style="display:flex;gap:12px;">
 <a href="/packing-page">
 <button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
-+ New Packing List
++ New Packing
 </button>
 </a>
 

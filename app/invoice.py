@@ -105,91 +105,128 @@ def create_invoice_pdf(payload: dict = Body(...)):
 
     pdf.setTitle(f"Invoice {invoice_no}")
 
-    pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
+    table_x = 45
+    table_w = 505
+    table_right = table_x + table_w
+    table_header_h = 28
+    row_h = 30
+    row_min_bottom = 145
+    total_w = 225
+    total_h = 45
+    total_gap = 20
 
-    pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 24)
+    def draw_document_header():
+        pdf.setFillColor(colors.HexColor("#111827"))
+        pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
-    logo_path = Path("app/static/logo.png")
-    # if logo_path.exists():
-    #     pdf.drawImage(
-    #         str(logo_path),
-    #         470,
-    #         720,
-    #         width=60,
-    #         height=60,
-    #         mask="auto"
-    #     )
+        pdf.setFillColor(colors.white)
+        pdf.setFont("Helvetica-Bold", 24)
+        pdf.drawString(45, height - 55, "COMMERCIAL INVOICE")
 
-    pdf.drawString(50, height - 55, "COMMERCIAL INVOICE")
+        pdf.setFont("Helvetica", 9)
+        pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
+        pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
 
-    pdf.setFont("Helvetica", 10)
-    pdf.drawRightString(width - 50, height - 40, "Trade Paper AI")
-    pdf.drawRightString(width - 50, height - 58, "Automated Trade Document")
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(45, height - 125, f"Invoice No: {invoice_no}")
+        pdf.drawString(45, height - 145, f"Date: {today}")
 
-    pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica-Bold", 12)
-    pdf.drawString(50, height - 125, f"Invoice No: {invoice_no}")
-    pdf.drawString(50, height - 145, f"Date: {today}")
+        pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+        pdf.setFillColor(colors.HexColor("#F9FAFB"))
+        pdf.roundRect(45, height - 260, 240, 80, 8, fill=1)
+        pdf.roundRect(310, height - 260, 240, 80, 8, fill=1)
 
-    pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
-    pdf.setFillColor(colors.HexColor("#F9FAFB"))
-    pdf.roundRect(50, height - 235, 230, 80, 8, fill=1)
-    pdf.roundRect(315, height - 235, 230, 80, 8, fill=1)
+        pdf.setFillColor(colors.HexColor("#111827"))
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(60, height - 197, "SELLER")
+        pdf.drawString(325, height - 197, "BUYER")
 
-    pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(65, height - 170, "SELLER")
-    pdf.drawString(330, height - 170, "BUYER")
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(60, height - 220, seller)
+        pdf.drawString(60, height - 235, seller_address)
+        pdf.drawString(60, height - 250, seller_email)
 
-    pdf.setFont("Helvetica", 10)
-    pdf.drawString(65, height - 195, seller)
-    pdf.drawString(65, height - 210, seller_address)
-    pdf.drawString(65, height - 220, seller_email)
+        pdf.drawString(325, height - 220, buyer)
+        pdf.drawString(325, height - 235, buyer_address)
+        pdf.drawString(325, height - 250, buyer_email)
 
-    pdf.drawString(330, height - 195, buyer)
-    pdf.drawString(330, height - 210, buyer_address)
-    pdf.drawString(330, height - 220, buyer_email)
+    def draw_table_header():
+        header_y = height - 315
 
-    y = height - 290
-    pdf.setFillColor(colors.HexColor("#E5E7EB"))
-    pdf.rect(50, y, 495, 28, fill=1, stroke=0)
+        pdf.setFillColor(colors.HexColor("#E5E7EB"))
+        pdf.rect(table_x, header_y, table_w, table_header_h, fill=1, stroke=0)
 
-    pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica-Bold", 10)
-    pdf.drawString(60, y + 10, "Item")
-    pdf.drawRightString(320, y + 10, "Qty")
-    pdf.drawRightString(430, y + 10, "Unit Price")
-    pdf.drawRightString(540, y + 10, "Total")
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 10)
+        pdf.drawString(60, header_y + 10, "Item")
+        pdf.drawRightString(320, header_y + 10, "Qty")
+        pdf.drawRightString(430, header_y + 10, "Unit Price")
+        pdf.drawRightString(540, header_y + 10, "Total")
 
-    y -= 30
-    pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
-    pdf.setFont("Helvetica", 10)
+        pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+        pdf.setFont("Helvetica", 10)
+        return header_y - table_header_h
 
-    for item in items:
-        pdf.rect(50, y, 495, 30, fill=0)
+    def start_table_page():
+        draw_document_header()
+        return draw_table_header()
+
+    def draw_signature_footer():
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica", 10)
+        pdf.drawString(45, 115, "Authorized Signature:")
+        pdf.line(170, 115, 330, 115)
+
+        pdf.setFillColor(colors.HexColor("#6B7280"))
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
+        pdf.drawString(45, 45, "For trade documentation automation.")
+
+    y = start_table_page()
+
+    item_count = len(items)
+
+    for index, item in enumerate(items, start=1):
         quantity = int(item.get("quantity", 1))
         unit_price = float(item.get("unit_price", 0))
         line_total = quantity * unit_price
+
+        is_last_row = index == item_count
+        if is_last_row:
+            required_bottom = row_min_bottom + total_h + total_gap + row_h
+        else:
+            required_bottom = row_min_bottom
+
+        if y < required_bottom:
+            pdf.showPage()
+            y = start_table_page()
+
+        pdf.rect(table_x, y, table_w, row_h, fill=0)
         pdf.drawString(60, y + 11, item["name"])
         pdf.drawRightString(320, y + 11, str(quantity))
         pdf.drawRightString(430, y + 11, f"USD {unit_price:,.2f}")
         pdf.drawRightString(540, y + 11, f"USD {line_total:,.2f}")
-        y -= 30
+        y -= row_h
 
-    y -= 60
+    total_x = table_right - total_w
+    total_top = y - total_gap
+    total_bottom = total_top - total_h
+
+    if total_bottom < row_min_bottom:
+        pdf.showPage()
+        y = start_table_page()
+        total_top = y - total_gap
+        total_bottom = total_top - total_h
+
     pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.roundRect(335, y - 10, 210, 45, 8, fill=1, stroke=0)
+    pdf.roundRect(total_x, total_bottom, total_w, total_h, 8, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 13)
-    pdf.drawRightString(525, y + 7, f"TOTAL: USD {total:,.2f}")
+    pdf.drawRightString(total_x + total_w - 20, total_bottom + 17, f"TOTAL: USD {total:,.2f}")
 
-    pdf.setFillColor(colors.HexColor("#6B7280"))
-    pdf.setFont("Helvetica", 9)
-    pdf.drawString(50, 60, "This document was generated by Trade Paper AI.")
-    pdf.drawString(50, 45, "For trade documentation automation.")
+    draw_signature_footer()
 
     pdf.showPage()
     pdf.save()
@@ -214,24 +251,114 @@ def edit_invoice(invoice_no: str):
             item_name = items[0].get("name", "") if items else ""
 
             html = f"""
-            <h1>Edit Invoice</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Edit Invoice</title>
+<style>
+body{{
+    font-family:Arial,sans-serif;
+    background:#f3f4f6;
+    padding:40px;
+}}
+.container{{
+    max-width:900px;
+    margin:auto;
+    background:white;
+    padding:35px;
+    border-radius:16px;
+}}
+h1{{
+    text-align:center;
+    font-size:48px;
+    margin-bottom:10px;
+}}
+.sub{{
+    text-align:center;
+    color:#6B7280;
+    margin-bottom:35px;
+}}
+.card{{
+    border:1px solid #E5E7EB;
+    border-radius:16px;
+    padding:25px;
+    margin-bottom:25px;
+    background:#fff;
+}}
+input{{
+    width:100%;
+    padding:14px;
+    margin-bottom:14px;
+    border:1px solid #D1D5DB;
+    border-radius:10px;
+    font-size:16px;
+    box-sizing:border-box;
+}}
+button{{
+    padding:16px;
+    background:#111827;
+    color:white;
+    border:none;
+    border-radius:12px;
+    font-size:18px;
+    cursor:pointer;
+}}
+.full{{
+    width:100%;
+    margin-top:10px;
+}}
+.small{{
+    width:220px;
+    margin-bottom:25px;
+}}
+.nav-row{{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:25px;
+}}
+</style>
+</head>
 
-            <form action="/update-invoice/{invoice_no}" method="post">
-                <p>Seller</p>
-                <input type="text" name="seller" value="{inv.get('seller', '')}">
+<body>
+<div class="container">
 
-                <p>Buyer</p>
-                <input type="text" name="buyer" value="{inv.get('buyer', '')}">
+<div class="nav-row">
+<a href="/">
+<button class="small">← Dashboard</button>
+</a>
 
-                <p>Item Name</p>
-                <input type="text" name="item_name" value="{item_name}">
+<a href="/invoice-list">
+<button class="small">← Invoice List</button>
+</a>
+</div>
 
-                <br><br>
-                <button type="submit">Update Invoice</button>
-            git status</form>
+<h1>Edit Invoice</h1>
+<p class="sub">Update invoice information</p>
 
-            <br>
-            <a href="/invoice-list">Back to Invoice List</a>
+<form action="/update-invoice/{invoice_no}" method="post">
+
+<div class="card">
+<h2>Invoice Information</h2>
+
+<input type="text" name="seller" value="{inv.get('seller', '')}" placeholder="Seller Name">
+<input type="text" name="buyer" value="{inv.get('buyer', '')}" placeholder="Buyer Name">
+</div>
+
+<div class="card">
+<h2>Product Information</h2>
+
+<input type="text" name="item_name" value="{item_name}" placeholder="Item Name">
+</div>
+
+<button class="full" type="submit">Update Invoice</button>
+
+</form>
+
+</div>
+</body>
+</html>
             """
 
             return HTMLResponse(html)

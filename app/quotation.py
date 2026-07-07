@@ -34,30 +34,86 @@ def save_quotations(quotations):
 
 
 @router.get("/quotation-list")
-def quotation_list():
+def quotation_list(search: str = ""):
     quotations = load_quotations()
     quotations = list(reversed(quotations))
 
-    html = """
-<h1>Quotation List</h1>
+    if search:
+        search_lower = search.lower()
+        quotations = [
+            q for q in quotations
+            if search_lower in str(q.get("quotation_no", "")).lower()
+            or search_lower in str(q.get("buyer_name", "")).lower()
+            or search_lower in str(q.get("items", "")).lower()
+        ]
 
-<p><a href="/quotation-form">+ New Quotation</a></p>
+    html = f"""
+<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
+Quotation List
+</h1>
 
-<table border="1" style="border-collapse:collapse;width:100%;">
-<tr>
-    <th>Quotation No</th>
-    <th>Buyer</th>
-    <th>Total</th>
-    <th>PDF</th>
-    <th>Edit</th>
-    <th>Delete</th>
+<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;margin-top:0;margin-bottom:35px;">
+Manage all quotation documents
+</p>
+
+<div style="font-family:Arial;width:94%;margin:auto;">
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;gap:20px;">
+
+<div style="display:flex;gap:12px;">
+<a href="/quotation-form">
+<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
++ New Quotation
+</button>
+</a>
+
+<a href="/">
+<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
+← Dashboard
+</button>
+</a>
+</div>
+
+<form action="/quotation-list" method="get" style="display:flex;gap:10px;align-items:center;margin:0;">
+<input
+type="text"
+name="search"
+value="{search}"
+placeholder="Search quotation, buyer or item"
+style="padding:13px;width:360px;border:1px solid #D1D5DB;border-radius:10px;font-size:15px;">
+
+<button type="submit" style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:15px;">
+Search
+</button>
+
+<a href="/quotation-list" style="color:#6B7280;font-weight:bold;">Reset</a>
+</form>
+
+</div>
+
+<p style="font-size:18px;font-weight:bold;margin:25px 0;">
+Total Quotations : {len(quotations)}
+</p>
+
+<div style="background:white;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
+
+<table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+<tr style="background:#F9FAFB;">
+    <th style="padding:14px;width:16%;">Quotation<br>No</th>
+    <th style="width:28%;">Buyer</th>
+    <th style="width:18%;">Total</th>
+    <th style="width:10%;">PDF</th>
+    <th style="width:10%;">Edit</th>
+    <th style="width:10%;">Delete</th>
 </tr>
 """
 
     if not quotations:
         html += """
 <tr>
-    <td colspan="6" align="center">No Quotations</td>
+    <td colspan="6" style="padding:35px;text-align:center;color:#6B7280;">
+    No quotations have been registered yet.
+    </td>
 </tr>
 """
     else:
@@ -72,21 +128,26 @@ def quotation_list():
                     pass
 
             html += f"""
-<tr>
-    <td>{quotation.get("quotation_no", "")}</td>
-    <td>{quotation.get("buyer_name", "")}</td>
-    <td>{quotation.get("currency", "USD")} {total:g}</td>
-    <td><a href="/quotation-pdf/{quotation.get('quotation_no','')}">PDF</a></td>
-    <td><a href="/edit-quotation/{quotation.get('quotation_no','')}">Edit</a></td>
-    <td><a href="/delete-quotation/{quotation.get('quotation_no','')}">Delete</a></td>
+<tr style="border-top:1px solid #E5E7EB;">
+    <td style="padding:14px;text-align:center;">{quotation.get("quotation_no", "")}</td>
+    <td style="padding:10px;word-break:break-word;">{quotation.get("buyer_name", "")}</td>
+    <td style="text-align:center;">{quotation.get("currency", "USD")} {total:g}</td>
+    <td style="text-align:center;">
+        <a href="/quotation-pdf/{quotation.get('quotation_no','')}" style="color:#2563EB;font-weight:bold;text-decoration:none;">PDF</a>
+    </td>
+    <td style="text-align:center;">
+        <a href="/edit-quotation/{quotation.get('quotation_no','')}" style="color:#111827;font-weight:bold;text-decoration:none;">Edit</a>
+    </td>
+    <td style="text-align:center;">
+        <a href="/delete-quotation/{quotation.get('quotation_no','')}" style="color:#DC2626;font-weight:bold;text-decoration:none;">Delete</a>
+    </td>
 </tr>
 """
 
     html += """
 </table>
-
-<br>
-<a href="/">Back Home</a>
+</div>
+</div>
 """
 
     return HTMLResponse(html)
@@ -95,73 +156,159 @@ def quotation_list():
 def quotation_form():
 
     html = """
-<h1>Quotation Input</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quotation</title>
+<style>
+body{
+    font-family:Arial,sans-serif;
+    background:#f3f4f6;
+    padding:40px;
+}
+.container{
+    max-width:900px;
+    margin:auto;
+    background:white;
+    padding:35px;
+    border-radius:16px;
+}
+h1{
+    text-align:center;
+    font-size:48px;
+    margin-bottom:10px;
+}
+.sub{
+    text-align:center;
+    color:#6B7280;
+    margin-bottom:35px;
+}
+.card{
+    border:1px solid #E5E7EB;
+    border-radius:16px;
+    padding:25px;
+    margin-bottom:25px;
+    background:#fff;
+}
+.item-row{
+    border:1px solid #E5E7EB;
+    border-radius:14px;
+    padding:20px;
+    margin-bottom:20px;
+    background:#F9FAFB;
+}
+input,select{
+    width:100%;
+    padding:14px;
+    margin-bottom:14px;
+    border:1px solid #D1D5DB;
+    border-radius:10px;
+    font-size:16px;
+    box-sizing:border-box;
+}
+button{
+    padding:16px;
+    background:#111827;
+    color:white;
+    border:none;
+    border-radius:12px;
+    font-size:18px;
+    cursor:pointer;
+}
+.full{
+    width:100%;
+    margin-top:10px;
+}
+.small{
+    width:220px;
+    margin-bottom:25px;
+}
+.add{
+    width:100%;
+    background:#374151;
+    margin-bottom:20px;
+}
+.nav-row{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:25px;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<div class="nav-row">
+<a href="/">
+<button class="small">← Dashboard</button>
+</a>
+
+<a href="/quotation-list">
+<button class="small">← Quotation List</button>
+</a>
+</div>
+
+<h1>Quotation</h1>
+<p class="sub">Create quotation from buyer and product master data</p>
+
 <form action="/quotation" method="post">
 
-<p>Buyer</p>
+<div class="card">
+<h2>Buyer Information</h2>
+
 <select id="buyer">
     <option value="">Select Buyer</option>
 </select>
 
-<br><br>
 <input id="buyer_name" type="text" name="buyer_name" placeholder="Buyer Name">
-
-<br><br>
 <input id="buyer_address" type="text" name="buyer_address" placeholder="Address">
-
-<br><br>
 <input id="buyer_email" type="text" name="buyer_email" placeholder="Email">
+</div>
 
-<p>Seller</p>
-<input id="seller" type="text">
+<div class="card">
+<h2>Quotation Information</h2>
 
-<p>Valid Until</p>
-<input type="date" name="valid_until">
+<input id="seller" type="text" name="seller" placeholder="Seller Name">
+<input id="valid_until" type="date" name="valid_until">
 
-<p>Currency</p>
-<select>
+<select name="currency">
     <option>USD</option>
     <option>EUR</option>
     <option>KRW</option>
 </select>
+</div>
 
-<p>Items</p>
+<div class="card">
+<h2>Product Information</h2>
 
 <div id="items_area">
 
-<div class="item-row" style="border:1px solid #ddd;padding:10px;margin-bottom:10px;">
+<div class="item-row">
 
-<p>Product</p>
 <select onchange="selectProduct(this)">
     <option value="">Select Product</option>
 </select>
 
-<p>Item</p>
-<input type="text" name="item_name">
-
-<p>HS Code</p>
-<input type="text" name="hs_code">
-
-<p>Qty</p>
-<input type="text" name="qty" oninput="calculateAmount(this)">
-
-<p>Unit Price</p>
-<input type="text" name="unit_price" oninput="calculateAmount(this)">
-
-<p>Amount</p>
-<input type="text" name="amount" readonly>
+<input type="text" name="item_name" placeholder="Item Name">
+<input type="text" name="hs_code" placeholder="HS Code">
+<input type="text" name="qty" placeholder="Qty" oninput="calculateAmount(this)">
+<input type="text" name="unit_price" placeholder="Unit Price" oninput="calculateAmount(this)">
+<input type="text" name="amount" placeholder="Amount" readonly>
 
 </div>
 
 </div>
 
-<button type="button" onclick="addItem()">+ Add Item</button>
+<button class="add" type="button" onclick="addItem()">+ Add Item</button>
+</div>
 
-<br>
-<button type="submit">Save Quotation</button>
+<button class="full" type="submit">Save Quotation</button>
 </form>
-<br><br>
-<a href="/quotation-list">Back to List</a>
+
+</div>
 
 
 <script>
@@ -225,12 +372,24 @@ function selectProduct(select) {
     if (row.querySelector('input[name="unit_price"]')) {
         row.querySelector('input[name="unit_price"]').value = product.unit_price || "";
     }
+
+    calculateAmount(row);
 }
 
 loadBuyers();
-function calculateAmount(input) {
+function setDefaultValidUntil() {
+    const input = document.getElementById("valid_until");
+    const date = new Date();
+    date.setDate(date.getDate() + 30);
+    input.value = date.toISOString().slice(0, 10);
+}
 
-    const row = input.closest(".item-row");
+setDefaultValidUntil();
+function calculateAmount(target) {
+
+    const row = target.classList && target.classList.contains("item-row")
+        ? target
+        : target.closest(".item-row");
 
     const qty = parseFloat(row.querySelector('input[name="qty"]').value) || 0;
 
@@ -256,6 +415,9 @@ function addItem() {
 }
 loadProducts();
 </script>
+
+</body>
+</html>
 """
 
     return HTMLResponse(html)
@@ -269,63 +431,153 @@ def edit_quotation(quotation_no: str):
             items = quotation.get("items", [])
 
             html = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Edit Quotation</title>
+<style>
+body{{
+    font-family:Arial,sans-serif;
+    background:#f3f4f6;
+    padding:40px;
+}}
+.container{{
+    max-width:900px;
+    margin:auto;
+    background:white;
+    padding:35px;
+    border-radius:16px;
+}}
+h1{{
+    text-align:center;
+    font-size:48px;
+    margin-bottom:10px;
+}}
+.sub{{
+    text-align:center;
+    color:#6B7280;
+    margin-bottom:35px;
+}}
+.card{{
+    border:1px solid #E5E7EB;
+    border-radius:16px;
+    padding:25px;
+    margin-bottom:25px;
+    background:#fff;
+}}
+.item-row{{
+    border:1px solid #E5E7EB;
+    border-radius:14px;
+    padding:20px;
+    margin-bottom:20px;
+    background:#F9FAFB;
+}}
+input,select{{
+    width:100%;
+    padding:14px;
+    margin-bottom:14px;
+    border:1px solid #D1D5DB;
+    border-radius:10px;
+    font-size:16px;
+    box-sizing:border-box;
+}}
+input[readonly]{{
+    background:#F9FAFB;
+    color:#6B7280;
+}}
+button{{
+    padding:16px;
+    background:#111827;
+    color:white;
+    border:none;
+    border-radius:12px;
+    font-size:18px;
+    cursor:pointer;
+}}
+.full{{
+    width:100%;
+    margin-top:10px;
+}}
+.small{{
+    width:220px;
+    margin-bottom:25px;
+}}
+.nav-row{{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:25px;
+}}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<div class="nav-row">
+<a href="/">
+<button class="small">← Dashboard</button>
+</a>
+
+<a href="/quotation-list">
+<button class="small">← Quotation List</button>
+</a>
+</div>
+
 <h1>Edit Quotation</h1>
+<p class="sub">Update quotation information</p>
 
 <form action="/update-quotation/{quotation_no}" method="post">
 
-<p>Buyer Name</p>
-<input type="text" name="buyer_name" value="{quotation.get('buyer_name','')}">
+<div class="card">
+<h2>Buyer Information</h2>
 
-<p>Buyer Address</p>
-<input type="text" name="buyer_address" value="{quotation.get('buyer_address','')}">
+<input type="text" name="buyer_name" value="{quotation.get('buyer_name','')}" placeholder="Buyer Name">
+<input type="text" name="buyer_address" value="{quotation.get('buyer_address','')}" placeholder="Buyer Address">
+<input type="text" name="buyer_email" value="{quotation.get('buyer_email','')}" placeholder="Buyer Email">
+</div>
 
-<p>Buyer Email</p>
-<input type="text" name="buyer_email" value="{quotation.get('buyer_email','')}">
+<div class="card">
+<h2>Quotation Information</h2>
 
-<p>Seller</p>
-<input type="text" name="seller" value="{quotation.get('seller','')}">
+<input type="text" name="seller" value="{quotation.get('seller','')}" placeholder="Seller Name">
+<input type="text" value="{quotation.get('valid_until','')}" placeholder="Valid Until" readonly>
+<input type="text" name="currency" value="{quotation.get('currency','USD')}" placeholder="Currency">
+</div>
 
-<p>Currency</p>
-<input type="text" name="currency" value="{quotation.get('currency','USD')}">
-
-<h3>Items</h3>
+<div class="card">
+<h2>Product Information</h2>
 
 <div id="items_area">
 """
 
             for item in items:
                 html += f"""
-<div class="item-row" style="border:1px solid #ddd;padding:10px;margin-bottom:10px;">
+<div class="item-row">
 
-<p>Item</p>
-<input type="text" name="item_name" value="{item.get('name','')}">
-
-<p>HS Code</p>
-<input type="text" name="hs_code" value="{item.get('hs_code','')}">
-
-<p>Qty</p>
-<input type="text" name="qty" value="{item.get('qty','')}" oninput="calculateAmount(this)">
-
-<p>Unit Price</p>
-<input type="text" name="unit_price" value="{item.get('unit_price','')}" oninput="calculateAmount(this)">
-
-<p>Amount</p>
-<input type="text" name="amount" value="{item.get('amount','')}" readonly>
+<input type="text" name="item_name" value="{item.get('name','')}" placeholder="Item Name">
+<input type="text" name="hs_code" value="{item.get('hs_code','')}" placeholder="HS Code">
+<input type="text" name="qty" value="{item.get('qty','')}" placeholder="Qty" oninput="calculateAmount(this)">
+<input type="text" name="unit_price" value="{item.get('unit_price','')}" placeholder="Unit Price" oninput="calculateAmount(this)">
+<input type="text" name="amount" value="{item.get('amount','')}" placeholder="Amount" readonly>
 
 </div>
 """
 
             html += """
 </div>
+</div>
 
-<br>
-<button type="submit">Update Quotation</button>
+<button class="full" type="submit">Update Quotation</button>
 
 </form>
 
 <script>
-function calculateAmount(input) {
-    const row = input.closest(".item-row");
+function calculateAmount(target) {
+    const row = target.classList && target.classList.contains("item-row")
+        ? target
+        : target.closest(".item-row");
 
     const qty = parseFloat(row.querySelector('input[name="qty"]').value) || 0;
     const unitPrice = parseFloat(row.querySelector('input[name="unit_price"]').value) || 0;
@@ -334,8 +586,9 @@ function calculateAmount(input) {
 }
 </script>
 
-<br>
-<a href="/quotation-list">Back to List</a>
+</div>
+</body>
+</html>
 """
 
             return HTMLResponse(html)
@@ -481,110 +734,140 @@ def create_quotation_pdf(payload: dict = Body(...)):
     width, height = A4
 
     pdf.setTitle(f"Quotation {quotation_no}")
-    pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
-    pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 24)
-    pdf.drawString(45, height - 55, "QUOTATION")
+    table_x = 45
+    table_w = 505
+    table_right = table_x + table_w
+    table_header_h = 28
+    row_h = 26
+    row_min_bottom = 145
+    summary_w = 225
+    summary_h = 65
+    summary_gap = 20
 
-    pdf.setFont("Helvetica", 9)
-    pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
-    pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
+    def draw_document_header():
+        pdf.setFillColor(colors.HexColor("#111827"))
+        pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
-    pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(45, height - 125, f"Quotation No: {quotation_no}")
-    pdf.drawString(45, height - 143, f"Valid Until: {valid_until}")
-    pdf.drawString(45, height - 161, f"Date: {today}")
+        pdf.setFillColor(colors.white)
+        pdf.setFont("Helvetica-Bold", 24)
+        pdf.drawString(45, height - 55, "QUOTATION")
 
-    pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
-    pdf.setFillColor(colors.HexColor("#F9FAFB"))
-    pdf.roundRect(45, height - 260, 240, 80, 8, fill=1)
-    pdf.roundRect(310, height - 260, 240, 80, 8, fill=1)
+        pdf.setFont("Helvetica", 9)
+        pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
+        pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
 
-    pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(60, height - 197, "SELLER")
-    pdf.drawString(325, height - 197, "BUYER")
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(45, height - 125, f"Quotation No: {quotation_no}")
+        pdf.drawString(45, height - 143, f"Valid Until: {valid_until}")
+        pdf.drawString(45, height - 161, f"Date: {today}")
 
-    pdf.setFont("Helvetica", 9)
-    pdf.drawString(60, height - 220, seller)
-    pdf.drawString(60, height - 235, seller_address)
-    pdf.drawString(60, height - 250, seller_email)
+        pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+        pdf.setFillColor(colors.HexColor("#F9FAFB"))
+        pdf.roundRect(45, height - 260, 240, 80, 8, fill=1)
+        pdf.roundRect(310, height - 260, 240, 80, 8, fill=1)
 
-    pdf.drawString(325, height - 220, buyer_name)
-    pdf.drawString(325, height - 235, buyer_address)
-    pdf.drawString(325, height - 250, buyer_email)
+        pdf.setFillColor(colors.HexColor("#111827"))
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(60, height - 197, "SELLER")
+        pdf.drawString(325, height - 197, "BUYER")
 
-    y = height - 315
-    pdf.setFillColor(colors.HexColor("#E5E7EB"))
-    pdf.rect(45, y, 505, 28, fill=1, stroke=0)
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(60, height - 220, seller)
+        pdf.drawString(60, height - 235, seller_address)
+        pdf.drawString(60, height - 250, seller_email)
 
-    pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica-Bold", 8)
-    pdf.drawString(52, y + 10, "No")
-    pdf.drawString(80, y + 10, "Item")
-    pdf.drawString(205, y + 10, "HS Code")
-    pdf.drawRightString(330, y + 10, "Qty")
-    pdf.drawRightString(430, y + 10, "Unit Price")
-    pdf.drawRightString(540, y + 10, "Amount")
+        pdf.drawString(325, height - 220, buyer_name)
+        pdf.drawString(325, height - 235, buyer_address)
+        pdf.drawString(325, height - 250, buyer_email)
 
-    y -= 28
-    pdf.setFont("Helvetica", 8)
-    pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+    def draw_table_header():
+        header_y = height - 315
 
-    total_carton = 0
-    total_net_weight = 0.0
-    total_gross_weight = 0.0
+        pdf.setFillColor(colors.HexColor("#E5E7EB"))
+        pdf.rect(table_x, header_y, table_w, table_header_h, fill=1, stroke=0)
+
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawString(52, header_y + 10, "No")
+        pdf.drawString(80, header_y + 10, "Item")
+        pdf.drawString(205, header_y + 10, "HS Code")
+        pdf.drawRightString(330, header_y + 10, "Qty")
+        pdf.drawRightString(430, header_y + 10, "Unit Price")
+        pdf.drawRightString(540, header_y + 10, "Amount")
+
+        pdf.setFont("Helvetica", 8)
+        pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+        return header_y - table_header_h
+
+    def start_table_page():
+        draw_document_header()
+        return draw_table_header()
+
+    def draw_signature_footer():
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica", 10)
+        pdf.drawString(45, 115, "Authorized Signature:")
+        pdf.line(170, 115, 330, 115)
+
+        pdf.setFillColor(colors.HexColor("#6B7280"))
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
+        pdf.drawString(45, 45, "For trade documentation automation.")
+
+    y = start_table_page()
+
+    item_count = len(items)
 
     for index, item in enumerate(items, start=1):
-        carton = item.get("carton", "")
-        net_weight = item.get("net_weight", "")
-        gross_weight = item.get("gross_weight", "")
-
-        try:
-            total_carton += int(float(carton or 0))
-        except:
-            pass
-
-        try:
-            total_net_weight += float(net_weight or 0)
-        except:
-            pass
-
         try:
             total_amount += float(item.get("amount", 0) or 0)
         except:
             pass
 
-        pdf.rect(45, y, 505, 26, fill=0)
+        is_last_row = index == item_count
+        if is_last_row:
+            required_bottom = row_min_bottom + summary_h + summary_gap + row_h
+        else:
+            required_bottom = row_min_bottom
+
+        if y < required_bottom:
+            pdf.showPage()
+            y = start_table_page()
+
+        pdf.rect(table_x, y, table_w, row_h, fill=0)
         pdf.drawString(52, y + 9, str(index))
         pdf.drawString(80, y + 9, str(item.get("name", ""))[:25])
         pdf.drawString(205, y + 9, str(item.get("hs_code", "")))
         pdf.drawRightString(330, y + 9, str(item.get("qty", "")))
         pdf.drawRightString(430, y + 9, str(item.get("unit_price", "")))
         pdf.drawRightString(540, y + 9, str(item.get("amount", "")))
-        y -= 26
+        y -= row_h
 
-    y -= 25
+    summary_x = table_right - summary_w
+    summary_top = y - summary_gap
+    summary_bottom = summary_top - summary_h
+
+    if summary_bottom < row_min_bottom:
+        pdf.showPage()
+        y = start_table_page()
+        summary_top = y - summary_gap
+        summary_bottom = summary_top - summary_h
+
     pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.roundRect(325, y - 5, 225, 65, 8, fill=1, stroke=0)
+    pdf.roundRect(summary_x, summary_bottom, summary_w, summary_h, 8, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
     pdf.setFont("Helvetica-Bold", 10)
-    pdf.drawString(340, y + 42, f"Total Amount: {currency} {total_amount:,.2f}")
-    pdf.drawString(340, y + 24, f"Currency: {currency}")
-    pdf.drawString(340, y + 6, f"Valid Until: {valid_until}")
-    pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica", 10)
-    pdf.drawString(45, 115, "Authorized Signature:")
-    pdf.line(170, 115, 330, 115)
+    text_x = summary_x + 15
+    text_y = summary_top - 23
+    line_gap = 18
+    pdf.drawString(text_x, text_y, f"Total Amount: {currency} {total_amount:,.2f}")
+    pdf.drawString(text_x, text_y - line_gap, f"Currency: {currency}")
+    pdf.drawString(text_x, text_y - line_gap * 2, f"Valid Until: {valid_until}")
 
-    pdf.setFillColor(colors.HexColor("#6B7280"))
-    pdf.setFont("Helvetica", 8)
-    pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
-    pdf.drawString(45, 45, "For trade documentation automation.")
+    draw_signature_footer()
 
     pdf.showPage()
     pdf.save()
