@@ -424,63 +424,94 @@ def create_packing_list_pdf(payload: dict = Body(...)):
 
     pdf.setTitle(f"Packing List {packing_no}")
 
-    pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
+    table_x = 45
+    table_w = 505
+    table_right = table_x + table_w
+    table_header_h = 28
+    row_h = 26
+    row_min_bottom = 145
+    summary_w = 225
+    summary_h = 115
+    summary_gap = 20
 
-    pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 24)
-    pdf.drawString(45, height - 55, "PACKING LIST")
+    def draw_document_header():
+        pdf.setFillColor(colors.HexColor("#111827"))
+        pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
-    pdf.setFont("Helvetica", 9)
-    pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
-    pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
+        pdf.setFillColor(colors.white)
+        pdf.setFont("Helvetica-Bold", 24)
+        pdf.drawString(45, height - 55, "PACKING LIST")
 
-    pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(45, height - 125, f"Packing No: {packing_no}")
-    pdf.drawString(45, height - 143, f"Invoice No: {invoice_no}")
-    pdf.drawString(45, height - 161, f"Date: {today}")
+        pdf.setFont("Helvetica", 9)
+        pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
+        pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
 
-    pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
-    pdf.setFillColor(colors.HexColor("#F9FAFB"))
-    pdf.roundRect(45, height - 260, 240, 80, 8, fill=1)
-    pdf.roundRect(310, height - 260, 240, 80, 8, fill=1)
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(45, height - 125, f"Packing No: {packing_no}")
+        pdf.drawString(45, height - 143, f"Invoice No: {invoice_no}")
+        pdf.drawString(45, height - 161, f"Date: {today}")
 
-    pdf.setFillColor(colors.HexColor("#111827"))
-    pdf.setFont("Helvetica-Bold", 11)
-    pdf.drawString(60, height - 197, "SELLER")
-    pdf.drawString(325, height - 197, "BUYER")
+        pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+        pdf.setFillColor(colors.HexColor("#F9FAFB"))
+        pdf.roundRect(45, height - 260, 240, 80, 8, fill=1)
+        pdf.roundRect(310, height - 260, 240, 80, 8, fill=1)
 
-    pdf.setFont("Helvetica", 9)
-    pdf.drawString(60, height - 220, seller)
-    pdf.drawString(60, height - 235, seller_address)
-    pdf.drawString(60, height - 250, seller_email)
-    pdf.drawString(325, height - 220, buyer)
+        pdf.setFillColor(colors.HexColor("#111827"))
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(60, height - 197, "SELLER")
+        pdf.drawString(325, height - 197, "BUYER")
 
-    y = height - 315
+        pdf.setFont("Helvetica", 9)
+        pdf.drawString(60, height - 220, seller)
+        pdf.drawString(60, height - 235, seller_address)
+        pdf.drawString(60, height - 250, seller_email)
+        pdf.drawString(325, height - 220, buyer)
 
-    pdf.setFillColor(colors.HexColor("#E5E7EB"))
-    pdf.rect(45, y, 505, 28, fill=1, stroke=0)
+    def draw_table_header():
+        header_y = height - 315
 
-    pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica-Bold", 8)
-    pdf.drawString(52, y + 10, "No")
-    pdf.drawString(80, y + 10, "Item")
-    pdf.drawRightString(220, y + 10, "Unit Price")
-    pdf.drawRightString(290, y + 10, "Amount")
-    pdf.drawString(315, y + 10, "HS Code")
-    pdf.drawRightString(390, y + 10, "Carton")
-    pdf.drawRightString(465, y + 10, "Net Weight")
-    pdf.drawRightString(540, y + 10, "Gross Weight")
+        pdf.setFillColor(colors.HexColor("#E5E7EB"))
+        pdf.rect(table_x, header_y, table_w, table_header_h, fill=1, stroke=0)
 
-    y -= 28
-    pdf.setFont("Helvetica", 8)
-    pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica-Bold", 8)
+        pdf.drawString(52, header_y + 10, "No")
+        pdf.drawString(80, header_y + 10, "Item")
+        pdf.drawRightString(220, header_y + 10, "Unit Price")
+        pdf.drawRightString(290, header_y + 10, "Amount")
+        pdf.drawString(315, header_y + 10, "HS Code")
+        pdf.drawRightString(390, header_y + 10, "Carton")
+        pdf.drawRightString(465, header_y + 10, "Net Weight")
+        pdf.drawRightString(540, header_y + 10, "Gross Weight")
+
+        pdf.setFont("Helvetica", 8)
+        pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
+        return header_y - table_header_h
+
+    def start_table_page():
+        draw_document_header()
+        return draw_table_header()
+
+    def draw_signature_footer():
+        pdf.setFillColor(colors.black)
+        pdf.setFont("Helvetica", 10)
+        pdf.drawString(45, 115, "Authorized Signature:")
+        pdf.line(170, 115, 330, 115)
+
+        pdf.setFillColor(colors.HexColor("#6B7280"))
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
+        pdf.drawString(45, 45, "For trade documentation automation.")
+
+    y = start_table_page()
 
     total_carton = 0
     total_net_weight = 0.0
     total_gross_weight = 0.0
     total_amount = 0.0
+
+    item_count = len(items)
 
     for index, item in enumerate(items, start=1):
         carton = item.get("carton", "")
@@ -509,7 +540,17 @@ def create_packing_list_pdf(payload: dict = Body(...)):
         except:
             amount = 0
 
-        pdf.rect(45, y, 505, 26, fill=0)
+        is_last_row = index == item_count
+        if is_last_row:
+            required_bottom = row_min_bottom + summary_h + summary_gap + row_h
+        else:
+            required_bottom = row_min_bottom
+
+        if y < required_bottom:
+            pdf.showPage()
+            y = start_table_page()
+
+        pdf.rect(table_x, y, table_w, row_h, fill=0)
 
         pdf.drawString(52, y + 9, str(index))
         pdf.drawString(80, y + 9, str(item.get("name", ""))[:16])
@@ -520,15 +561,17 @@ def create_packing_list_pdf(payload: dict = Body(...)):
         pdf.drawRightString(465, y + 9, str(net_weight))
         pdf.drawRightString(540, y + 9, str(gross_weight))
 
-        y -= 26
+        y -= row_h
 
-    y -= 35
-
-    summary_w = 225
-    summary_x = 550 - summary_w
-    summary_h = 105
-    summary_top = y - 12
+    summary_x = table_right - summary_w
+    summary_top = y - summary_gap
     summary_bottom = summary_top - summary_h
+
+    if summary_bottom < row_min_bottom:
+        pdf.showPage()
+        y = start_table_page()
+        summary_top = y - summary_gap
+        summary_bottom = summary_top - summary_h
 
     pdf.setFillColor(colors.HexColor("#111827"))
     pdf.roundRect(summary_x, summary_bottom, summary_w, summary_h, 8, fill=1, stroke=0)
@@ -544,15 +587,7 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.drawString(text_x, text_y - line_gap * 2, f"Total Gross Weight: {total_gross_weight:g}")
     pdf.drawString(text_x, text_y - line_gap * 3, f"Total Amount: {total_amount:g}")
 
-    pdf.setFillColor(colors.black)
-    pdf.setFont("Helvetica", 10)
-    pdf.drawString(45, 115, "Authorized Signature:")
-    pdf.line(170, 115, 330, 115)
-
-    pdf.setFillColor(colors.HexColor("#6B7280"))
-    pdf.setFont("Helvetica", 8)
-    pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
-    pdf.drawString(45, 45, "For trade documentation automation.")
+    draw_signature_footer()
 
     pdf.showPage()
     pdf.save()
