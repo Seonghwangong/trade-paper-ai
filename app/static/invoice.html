@@ -28,12 +28,28 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 <p class="sub">Create invoice from customer and product master data</p>
 
 <div class="card">
-<h2>Buyer Information</h2>
+<h2>Invoice Information</h2>
+<input id="currency" name="currency" value="USD" placeholder="Currency">
+</div>
+
+<div class="card">
+<h2>Seller Information</h2>
+
+<select id="sellerSelect" onchange="selectSeller()">
+<option value="">Select Seller Company</option>
+</select>
 
 <input id="seller" placeholder="Seller Name">
+<input id="seller_address" placeholder="Seller Address">
+<input id="seller_email" placeholder="Seller Email">
+<input id="seller_phone" placeholder="Seller Phone">
+</div>
 
-<select id="buyerSelect" onchange="selectBuyer()">
-<option value="">Select Buyer</option>
+<div class="card">
+<h2>Buyer Information</h2>
+
+<select id="buyerCompanySelect" onchange="selectBuyerCompany()">
+<option value="">Select Buyer Company</option>
 </select>
 
 <input id="buyer" placeholder="Buyer Name">
@@ -45,7 +61,7 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 <h2>Product Information</h2>
 
 <select id="product1" onchange="selectProduct(1)">
-<option value="">Select Product</option>
+<option value="">Select Product Master</option>
 </select>
 
 <input id="item1" placeholder="Product Name">
@@ -63,13 +79,19 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 
 <script>
 let products = [];
-let buyers = [];
+let companies = [];
+
+function getPiNoFromUrl(){
+    const params = new URLSearchParams(window.location.search);
+    return params.get("pi_no");
+}
 
 async function loadProducts(){
     const response = await fetch("/product-data");
     products = await response.json();
 
     const select = document.getElementById("product1");
+    select.innerHTML = '<option value="">Select Product Master</option>';
 
     products.forEach((product, index) => {
         const option = document.createElement("option");
@@ -111,31 +133,10 @@ function calculateTotal(){
     document.getElementById("total").innerHTML = "Total: USD " + total;
 }
 
-async function loadBuyers(){
-    const response = await fetch("/buyer-data");
-    buyers = await response.json();
-
-    const select = document.getElementById("buyerSelect");
-
-    buyers.forEach((buyer,index)=>{
-        select.innerHTML += `<option value="${index}">${buyer.name}</option>`;
-    });
-}
-
-function selectBuyer(){
-    const index = document.getElementById("buyerSelect").value;
-    if(index === "") return;
-
-    const buyer = buyers[index];
-
-    document.getElementById("buyer").value = buyer.name || "";
-    document.getElementById("buyer_address").value = buyer.address || "";
-    document.getElementById("buyer_email").value = buyer.email || "";
-}
-
 async function saveInvoice(){
     const data = {
         seller: document.getElementById("seller").value,
+        currency: document.getElementById("currency").value,
         buyer: document.getElementById("buyer").value,
         buyer_address: document.getElementById("buyer_address").value,
         buyer_email: document.getElementById("buyer_email").value,
@@ -150,16 +151,15 @@ async function saveInvoice(){
 
     const result = await response.json();
     alert("Invoice Saved : " + result.invoice_no);
+    window.location.href = "/invoice-list";
 }
 
 async function generatePDF(){
-    const companyResponse = await fetch("/company-data");
-    const company = await companyResponse.json();
-
     const data = {
-        seller: company.name || document.getElementById("seller").value,
-        seller_address: company.address || "",
-        seller_email: company.email || "",
+        seller: document.getElementById("seller").value,
+        seller_address: document.getElementById("seller_address").value,
+        seller_email: document.getElementById("seller_email").value,
+        seller_phone: document.getElementById("seller_phone").value,
         buyer: document.getElementById("buyer").value,
         buyer_address: document.getElementById("buyer_address").value,
         buyer_email: document.getElementById("buyer_email").value,
@@ -179,15 +179,90 @@ async function generatePDF(){
 
 async function loadCompany(){
     const response = await fetch("/company-data");
-    const company = await response.json();
+    const data = await response.json();
+    companies = Array.isArray(data) ? data : [data];
 
-    document.getElementById("seller").value = company.name || "";
+    const sellerSelect = document.getElementById("sellerSelect");
+    const buyerCompanySelect = document.getElementById("buyerCompanySelect");
+    sellerSelect.innerHTML = '<option value="">Select Seller Company</option>';
+    buyerCompanySelect.innerHTML = '<option value="">Select Buyer Company</option>';
+
+    companies.forEach((company, index) => {
+        if(company && (company.name || company.address || company.email || company.phone)){
+            const name = company.name || "Company";
+            sellerSelect.innerHTML += `<option value="${index}">${name}</option>`;
+            buyerCompanySelect.innerHTML += `<option value="${index}">${name}</option>`;
+        }
+    });
+
+    if(companies.length === 1 && !getPiNoFromUrl()){
+        sellerSelect.value = "0";
+        selectSeller();
+    }
 }
 
-window.onload = function(){
-    loadCompany();
-    loadBuyers();
-    loadProducts();
+function selectSeller(){
+    const index = document.getElementById("sellerSelect").value;
+    if(index === "") return;
+
+    const company = companies[index] || {};
+
+    document.getElementById("seller").value = company.name || "";
+    document.getElementById("seller_address").value = company.address || "";
+    document.getElementById("seller_email").value = company.email || "";
+    document.getElementById("seller_phone").value = company.phone || "";
+}
+
+function selectBuyerCompany(){
+    const index = document.getElementById("buyerCompanySelect").value;
+    if(index === "") return;
+
+    const company = companies[index] || {};
+
+    document.getElementById("buyer").value = company.name || "";
+    document.getElementById("buyer_address").value = company.address || "";
+    document.getElementById("buyer_email").value = company.email || "";
+}
+
+async function loadProformaPrefill(){
+    const piNo = getPiNoFromUrl();
+    if(!piNo) return;
+
+    const response = await fetch("/proforma-data/" + encodeURIComponent(piNo));
+    if(!response.ok) return;
+
+    const proforma = await response.json();
+    const firstItem = proforma.items && proforma.items.length > 0 ? proforma.items[0] : {};
+
+    if(proforma.currency){
+        document.getElementById("currency").value = proforma.currency;
+    }
+
+    document.getElementById("seller").value = proforma.seller || "";
+
+    const matchedCompany = companies.find(company => company.name === proforma.seller);
+    if(matchedCompany){
+        document.getElementById("seller_address").value = matchedCompany.address || "";
+        document.getElementById("seller_email").value = matchedCompany.email || "";
+        document.getElementById("seller_phone").value = matchedCompany.phone || "";
+    }
+
+    document.getElementById("buyer").value = proforma.buyer || "";
+    document.getElementById("buyer_address").value = proforma.buyer_address || "";
+    document.getElementById("buyer_email").value = proforma.buyer_email || "";
+
+    document.getElementById("item1").value = firstItem.name || "";
+    document.getElementById("hs1").value = firstItem.hs_code || "";
+    document.getElementById("qty1").value = firstItem.qty || "";
+    document.getElementById("price1").value = firstItem.unit_price || "";
+
+    calculateTotal();
+}
+
+window.onload = async function(){
+    await loadCompany();
+    await loadProducts();
+    await loadProformaPrefill();
 };
 
 </script>

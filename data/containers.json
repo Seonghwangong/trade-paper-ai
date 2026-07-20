@@ -1,0 +1,36 @@
+[
+    {
+        "container_record_no": "CON-001",
+        "container_date": "2026-07-11",
+        "shipment_no": "SHP-001",
+        "packing_no": "PK-026",
+        "bl_no": "BL-002",
+        "invoice_no": "INV-012",
+        "container_no": "MSCU1234567",
+        "seal_no": "SEAL-001",
+        "container_type": "40HC",
+        "carrier": "MSC",
+        "vessel": "Ever Glory",
+        "voyage_no": "EV123",
+        "etd": "2026-07-15",
+        "eta": "2026-07-28",
+        "port_of_loading": "Busan",
+        "port_of_discharge": "Los Angeles",
+        "place_of_delivery": "California",
+        "loading_place": "Busan Warehouse",
+        "remarks": "",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "quantity": "25",
+                "carton": "10",
+                "net_weight": "20",
+                "gross_weight": "30"
+            }
+        ],
+        "total_carton": "10",
+        "total_net_weight": "20",
+        "total_gross_weight": "30"
+    }
+]

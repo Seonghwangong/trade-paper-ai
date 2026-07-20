@@ -1,0 +1,21 @@
+[
+    {
+        "pi_no": "PI-001",
+        "seller": "dnicorp Ltd",
+        "buyer": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "pi_date": "2026-07-10",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "qty": "22",
+                "unit_price": "25",
+                "amount": "550"
+            }
+        ],
+        "total_amount": "550"
+    }
+]

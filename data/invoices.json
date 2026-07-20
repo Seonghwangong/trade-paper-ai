@@ -80,5 +80,71 @@
             }
         ],
         "invoice_no": "INV-008"
+    },
+    {
+        "seller": "dnicorp Ltd",
+        "buyer": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "items": [],
+        "invoice_no": "INV-009"
+    },
+    {
+        "seller": "dnicorp Ltd",
+        "buyer": "dnicorp Ltd",
+        "buyer_address": "changwon, korea",
+        "buyer_email": "dnicorp1@gmail.com",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "quantity": 5,
+                "unit_price": 25
+            }
+        ],
+        "invoice_no": "INV-010"
+    },
+    {
+        "seller": "dnicorp Ltd",
+        "buyer": "dnicorp Ltd",
+        "buyer_address": "changwon, korea",
+        "buyer_email": "dnicorp1@gmail.com",
+        "items": [
+            {
+                "name": "Wireless Mouse"
+            }
+        ],
+        "invoice_no": "INV-011"
+    },
+    {
+        "seller": "dnicorp Ltd",
+        "buyer": "dnicorp Ltd",
+        "buyer_address": "changwon, korea",
+        "buyer_email": "dnicorp1@gmail.com",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "quantity": 25,
+                "unit_price": 25.0
+            }
+        ],
+        "invoice_no": "INV-012"
+    },
+    {
+        "seller": "dnicorp Ltd",
+        "currency": "USD",
+        "buyer": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "quantity": 22,
+                "unit_price": 25
+            }
+        ],
+        "invoice_no": "INV-013"
     }
 ]

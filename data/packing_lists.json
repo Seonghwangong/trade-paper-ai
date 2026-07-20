@@ -226,7 +226,7 @@
             {
                 "name": "MacBook Pro",
                 "hs_code": "847130",
-                "carton": 10,
+                "carton": "10",
                 "net_weight": "200",
                 "gross_weight": "220"
             }
@@ -360,5 +360,53 @@
             }
         ],
         "packing_no": "PK-023"
+    },
+    {
+        "invoice_no": "",
+        "seller": "dnicorp Ltd",
+        "buyer": "dnicorp Ltd",
+        "items": [
+            {
+                "name": "Keyboard",
+                "unit_price": 50,
+                "hs_code": "847160",
+                "carton": 10,
+                "net_weight": "2",
+                "gross_weight": "2"
+            }
+        ],
+        "packing_no": "PK-024"
+    },
+    {
+        "invoice_no": "INV-003",
+        "seller": "sony",
+        "buyer": "google",
+        "items": [
+            {
+                "name": "keyboard",
+                "quantity": 2,
+                "hs_code": "847160",
+                "carton": 10,
+                "net_weight": "5",
+                "gross_weight": "10"
+            }
+        ],
+        "packing_no": "PK-025"
+    },
+    {
+        "invoice_no": "INV-012",
+        "seller": "dnicorp Ltd",
+        "buyer": "dnicorp Ltd",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "quantity": 25,
+                "hs_code": "847160",
+                "carton": 10,
+                "net_weight": "20",
+                "gross_weight": "30"
+            }
+        ],
+        "packing_no": "PK-026"
     }
 ]

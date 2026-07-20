@@ -1,0 +1,28 @@
+[
+    {
+        "insurance_no": "INS-001",
+        "insurance_date": "2026-07-10",
+        "bl_no": "BL-002",
+        "packing_no": "PK-026",
+        "invoice_no": "INV-012",
+        "exporter": "dnicorp Ltd",
+        "consignee": "dnicorp Ltd",
+        "insurance_company": "",
+        "policy_no": "",
+        "insured_amount": "",
+        "currency": "USD",
+        "inspection_location": "",
+        "coverage_type": "",
+        "remarks": "",
+        "port_of_loading": "Busan",
+        "port_of_discharge": "Los Angeles",
+        "transport_details": "Ever Glory EV123",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "quantity": "25"
+            }
+        ]
+    }
+]

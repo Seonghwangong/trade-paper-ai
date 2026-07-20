@@ -1,24 +1,20 @@
 from fastapi import APIRouter, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pathlib import Path
-import json
+from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation
+from app.validation import ensure_unique_name_casefold, require_text
+from app.referential_integrity import confirmed_indexed_delete, indexed_delete_confirmation
 
 router = APIRouter()
 
-CUSTOMER_FILE = Path("data/customers.json")
+CUSTOMER_FILE = data_path("customers.json")
 
 
 def load_customers():
-    if CUSTOMER_FILE.exists():
-        with open(CUSTOMER_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    return load_json_strict(CUSTOMER_FILE, [], list)
 
 
 def save_customers(customers):
-    CUSTOMER_FILE.parent.mkdir(exist_ok=True)
-    with open(CUSTOMER_FILE, "w", encoding="utf-8") as f:
-        json.dump(customers, f, indent=4, ensure_ascii=False)
+    atomic_write_json(CUSTOMER_FILE, customers, list)
 
 
 @router.get("/customer", response_class=HTMLResponse)
@@ -109,31 +105,29 @@ def save_customer(
     phone: str = Form(""),
     pic: str = Form(""),
 ):
-    customers = load_customers()
-
-    customers.append({
+    company = require_text("Customer company", company)
+    def add_customer(customers):
+        ensure_unique_name_casefold(customers, "company", company)
+        customers.append({
         "company": company,
         "country": country,
         "address": address,
         "email": email,
         "phone": phone,
         "pic": pic,
-    })
-
-    save_customers(customers)
+        })
+    locked_json_mutation(CUSTOMER_FILE, [], add_customer, list)
 
     return RedirectResponse(url="/customer", status_code=303)
 
 
 @router.get("/delete-customer/{index}")
 def delete_customer(index: int):
-    customers = load_customers()
+    return indexed_delete_confirmation("Customer", "Customer", index, CUSTOMER_FILE, "company", f"/delete-customer/{index}", "/customer")
 
-    if 0 <= index < len(customers):
-        customers.pop(index)
-        save_customers(customers)
-
-    return RedirectResponse(url="/customer", status_code=303)
+@router.post("/delete-customer/{index}")
+def confirm_delete_customer(index: int, expected_name: str = Form("")):
+    return confirmed_indexed_delete("Customer", "Customer", index, expected_name, CUSTOMER_FILE, "company", f"/delete-customer/{index}", "/customer", "/customer")
 
 
 @router.get("/customer-data")

@@ -165,5 +165,41 @@
                 "amount": "500"
             }
         ]
+    },
+    {
+        "quotation_no": "QT-011",
+        "buyer_name": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "seller": "dnicorp Ltd",
+        "valid_until": "2026-08-08",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "qty": "10",
+                "unit_price": "25",
+                "amount": "250"
+            }
+        ]
+    },
+    {
+        "quotation_no": "QT-012",
+        "buyer_name": "Apple",
+        "buyer_address": "California, USA",
+        "buyer_email": "sales@apple.com",
+        "seller": "dnicorp Ltd",
+        "valid_until": "2026-08-09",
+        "currency": "USD",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "qty": "30",
+                "unit_price": "35",
+                "amount": "1050"
+            }
+        ]
     }
 ]

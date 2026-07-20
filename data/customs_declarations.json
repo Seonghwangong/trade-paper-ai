@@ -1,0 +1,45 @@
+[
+    {
+        "customs_record_no": "CD-001",
+        "customs_date": "2026-07-12",
+        "declaration_no": "",
+        "shipment_no": "SHP-001",
+        "booking_record_no": "BK-001",
+        "invoice_no": "INV-013",
+        "packing_no": "PK-026",
+        "container_record_no": "",
+        "bl_no": "BL-002",
+        "exporter": "dnicorp Ltd",
+        "consignee": "Apple",
+        "country_of_origin": "Korea",
+        "destination_country": "California",
+        "port_of_loading": "Busan",
+        "port_of_discharge": "Los Angeles",
+        "vessel": "Ever Glory",
+        "voyage_no": "EV123",
+        "container_no": "",
+        "seal_no": "",
+        "customs_office": "",
+        "declaration_type": "Export",
+        "incoterms": "",
+        "currency": "USD",
+        "total_invoice_value": "550",
+        "remarks": "",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "quantity": "22",
+                "unit_price": "25",
+                "amount": "550",
+                "origin": "Korea",
+                "net_weight": "",
+                "gross_weight": ""
+            }
+        ],
+        "total_quantity": "22",
+        "total_net_weight": "0",
+        "total_gross_weight": "0",
+        "total_amount": "550"
+    }
+]

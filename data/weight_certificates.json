@@ -1,0 +1,29 @@
+[
+    {
+        "weight_no": "WT-001",
+        "weight_date": "2026-07-10",
+        "bl_no": "BL-002",
+        "packing_no": "PK-026",
+        "invoice_no": "INV-012",
+        "exporter": "dnicorp Ltd",
+        "consignee": "dnicorp Ltd",
+        "transport_details": "Ever Glory / EV123",
+        "port_of_loading": "Busan",
+        "port_of_discharge": "Los Angeles",
+        "weighing_place": "",
+        "weighing_method": "",
+        "remarks": "",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "hs_code": "847160",
+                "quantity": "25",
+                "carton": "10",
+                "net_weight": "20",
+                "gross_weight": "30"
+            }
+        ],
+        "total_net_weight": "20",
+        "total_gross_weight": "30"
+    }
+]

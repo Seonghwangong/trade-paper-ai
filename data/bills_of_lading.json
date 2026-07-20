@@ -1,0 +1,56 @@
+[
+    {
+        "bl_no": "BL-001",
+        "packing_no": "PK-026",
+        "invoice_no": "INV-012",
+        "shipper": "dnicorp Ltd",
+        "consignee": "dnicorp Ltd",
+        "notify_party": "",
+        "vessel": "",
+        "voyage_no": "",
+        "port_of_loading": "",
+        "port_of_discharge": "",
+        "place_of_delivery": "",
+        "bl_date": "2026-07-10",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "quantity": "25",
+                "hs_code": "847160",
+                "carton": "10",
+                "net_weight": "20",
+                "gross_weight": "30"
+            }
+        ],
+        "total_carton": "10",
+        "total_net_weight": "20",
+        "total_gross_weight": "30"
+    },
+    {
+        "bl_no": "BL-002",
+        "packing_no": "PK-026",
+        "invoice_no": "INV-012",
+        "shipper": "dnicorp Ltd",
+        "consignee": "dnicorp Ltd",
+        "notify_party": "Apple Logistics",
+        "vessel": "Ever Glory",
+        "voyage_no": "EV123",
+        "port_of_loading": "Busan",
+        "port_of_discharge": "Los Angeles",
+        "place_of_delivery": "California",
+        "bl_date": "2026-07-10",
+        "items": [
+            {
+                "name": "Wireless Mouse",
+                "quantity": "25",
+                "hs_code": "847160",
+                "carton": "10",
+                "net_weight": "20",
+                "gross_weight": "30"
+            }
+        ],
+        "total_carton": "10",
+        "total_net_weight": "20",
+        "total_gross_weight": "30"
+    }
+]

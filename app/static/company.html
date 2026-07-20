@@ -12,40 +12,59 @@ body{
     padding:40px;
 }
 .container{
-    max-width:800px;
+    max-width:900px;
     margin:auto;
     background:white;
-    padding:30px;
-    border-radius:12px;
+    padding:35px;
+    border-radius:16px;
 }
-h1{ margin-bottom:30px; }
+h1{
+    text-align:center;
+    font-size:48px;
+    margin-bottom:10px;
+}
+.sub{
+    text-align:center;
+    color:#6B7280;
+    margin-bottom:35px;
+}
+.card{
+    border:1px solid #E5E7EB;
+    border-radius:16px;
+    padding:25px;
+    margin-bottom:25px;
+    background:#fff;
+}
 input{
     width:100%;
-    padding:15px;
-    margin-bottom:15px;
-    border:1px solid #ddd;
-    border-radius:8px;
+    padding:14px;
+    margin-bottom:14px;
+    border:1px solid #D1D5DB;
+    border-radius:10px;
     font-size:16px;
     box-sizing:border-box;
 }
 button{
-    width:100%;
     padding:16px;
-    background:#0b1736;
+    background:#111827;
     color:white;
     border:none;
-    border-radius:10px;
+    border-radius:12px;
     font-size:18px;
     cursor:pointer;
 }
+.full{
+    width:100%;
+    margin-top:10px;
+}
+.small{
+    width:220px;
+    margin-bottom:25px;
+}
 .result{
     margin-top:20px;
-    color:green;
+    color:#059669;
     font-weight:bold;
-}
-.back{
-    display:block;
-    margin-bottom:20px;
 }
 </style>
 </head>
@@ -53,16 +72,23 @@ button{
 <body>
 <div class="container">
 
-<a class="back" href="/">← Back Home</a>
+<a href="/">
+<button class="small">← Dashboard</button>
+</a>
 
 <h1>Company Information</h1>
+<p class="sub">Manage company information for trade documents</p>
+
+<div class="card">
+<h2>Company Master</h2>
 
 <input id="name" placeholder="Company Name">
 <input id="address" placeholder="Address">
 <input id="email" placeholder="Email">
 <input id="phone" placeholder="Phone">
+</div>
 
-<button onclick="saveCompany()">Save Company</button>
+<button class="full" onclick="saveCompany()">Save Company</button>
 
 <div class="result" id="result"></div>
 
@@ -70,13 +96,19 @@ button{
 
 <script>
 async function loadCompany(){
-    const response = await fetch("/company-data");
-    const data = await response.json();
+    try{
+        const response = await fetch("/company-data");
+        const data = await response.json();
 
-    document.getElementById("name").value = data.name || "";
-    document.getElementById("address").value = data.address || "";
-    document.getElementById("email").value = data.email || "";
-    document.getElementById("phone").value = data.phone || "";
+        document.getElementById("name").value = data.name || "";
+        document.getElementById("address").value = data.address || "";
+        document.getElementById("email").value = data.email || "";
+        document.getElementById("phone").value = data.phone || "";
+    }catch(e){
+        document.getElementById("result").innerHTML =
+            "Failed to load company information.";
+        document.getElementById("result").style.color = "#DC2626";
+    }
 }
 
 async function saveCompany(){
@@ -87,16 +119,28 @@ async function saveCompany(){
         phone: document.getElementById("phone").value
     };
 
-    await fetch("/save-company",{
-        method:"POST",
-        headers:{
-            "Content-Type":"application/json"
-        },
-        body:JSON.stringify(data)
-    });
+    try{
+        const response = await fetch("/save-company",{
+            method:"POST",
+            headers:{
+                "Content-Type":"application/json"
+            },
+            body:JSON.stringify(data)
+        });
 
-    document.getElementById("result").innerHTML =
-        "Company saved successfully";
+        if(!response.ok){
+            throw new Error("Save failed");
+        }
+
+        document.getElementById("result").innerHTML =
+            "✓ Company saved successfully.";
+        document.getElementById("result").style.color = "#059669";
+        if(window.tpMarkSaved) window.tpMarkSaved();
+    }catch(e){
+        document.getElementById("result").innerHTML =
+            "Failed to save company information.";
+        document.getElementById("result").style.color = "#DC2626";
+    }
 }
 
 loadCompany();

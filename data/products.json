@@ -16,5 +16,11 @@
         "hs_code": "847160",
         "unit_price": "20",
         "origin": "Korea"
+    },
+    {
+        "name": "Wireless Mouse",
+        "hs_code": "847160",
+        "unit_price": "25",
+        "origin": "Korea"
     }
 ]

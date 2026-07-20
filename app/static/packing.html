@@ -92,13 +92,31 @@ button{
 <p class="sub">Create packing list from invoice and product data</p>
 
 <div class="card">
-<h2>Invoice Information</h2>
+<h2>Packing Information</h2>
 
+<input id="packing_no" placeholder="Packing No" readonly>
 <select id="invoice_no" onchange="loadInvoiceData()">
 <option value="">Select Invoice No</option>
 </select>
+</div>
+
+<div class="card">
+<h2>Seller Information</h2>
+
+<select id="sellerCompanySelect" onchange="selectSellerCompany()">
+<option value="">Select Seller Company</option>
+</select>
 
 <input id="seller" placeholder="Seller Name">
+</div>
+
+<div class="card">
+<h2>Buyer Information</h2>
+
+<select id="buyerCompanySelect" onchange="selectBuyerCompany()">
+<option value="">Select Buyer Company</option>
+</select>
+
 <input id="buyer" placeholder="Buyer Name">
 </div>
 
@@ -113,10 +131,9 @@ button{
 </select>
 
 <input class="item" placeholder="Item Name">
+<input class="quantity" type="number" placeholder="Quantity">
 <input class="hs_code" placeholder="HS Code">
-<input class="unit_price" placeholder="Unit Price" readonly>
-<input class="amount" placeholder="Amount" readonly>
-<input class="carton" type="number" placeholder="Carton" oninput="calculateAmount(this.closest('.item-card'))">
+<input class="carton" type="number" placeholder="Carton">
 <input class="net_weight" placeholder="Net Weight">
 <input class="gross_weight" placeholder="Gross Weight">
 
@@ -135,6 +152,14 @@ button{
 
 <script>
 let products = [];
+let companies = [];
+
+function setValueIfExists(selector, value){
+    const element = document.querySelector(selector);
+    if(element){
+        element.value = value || "";
+    }
+}
 
 async function loadProducts(){
     try{
@@ -148,10 +173,55 @@ async function loadProducts(){
 }
 
 function fillProductSelect(select){
-    select.innerHTML = '<option value="">Select Product</option>';
+    select.innerHTML = '<option value="">Select Product Master</option>';
     products.forEach((product, index)=>{
         select.innerHTML += `<option value="${index}">${product.name}</option>`;
     });
+}
+
+async function loadCompanies(){
+    try{
+        const response = await fetch("/company-data");
+        const data = await response.json();
+        companies = Array.isArray(data) ? data : [data];
+    }catch(e){
+        companies = [];
+    }
+
+    const sellerSelect = document.getElementById("sellerCompanySelect");
+    const buyerSelect = document.getElementById("buyerCompanySelect");
+    sellerSelect.innerHTML = '<option value="">Select Seller Company</option>';
+    buyerSelect.innerHTML = '<option value="">Select Buyer Company</option>';
+
+    companies.forEach((company, index)=>{
+        if(company && (company.name || company.address || company.email || company.phone)){
+            const name = company.name || "Company";
+            sellerSelect.innerHTML += `<option value="${index}">${name}</option>`;
+            buyerSelect.innerHTML += `<option value="${index}">${name}</option>`;
+        }
+    });
+
+}
+
+function fillCompanyFields(prefix, company){
+    setValueIfExists(`#${prefix}`, company.name);
+    setValueIfExists(`#${prefix}_address`, company.address);
+    setValueIfExists(`#${prefix}_email`, company.email);
+    setValueIfExists(`#${prefix}_phone`, company.phone);
+}
+
+function selectSellerCompany(){
+    const index = document.getElementById("sellerCompanySelect").value;
+    if(index === "") return;
+
+    fillCompanyFields("seller", companies[index] || {});
+}
+
+function selectBuyerCompany(){
+    const index = document.getElementById("buyerCompanySelect").value;
+    if(index === "") return;
+
+    fillCompanyFields("buyer", companies[index] || {});
 }
 
 function addItem(){
@@ -164,10 +234,9 @@ function addItem(){
 <option value="">Select Product</option>
 </select>
 <input class="item" placeholder="Item Name">
+<input class="quantity" type="number" placeholder="Quantity">
 <input class="hs_code" placeholder="HS Code">
-<input class="unit_price" placeholder="Unit Price" readonly>
-<input class="amount" placeholder="Amount" readonly>
-<input class="carton" type="number" placeholder="Carton" oninput="calculateAmount(this.closest('.item-card'))">
+<input class="carton" type="number" placeholder="Carton">
 <input class="net_weight" placeholder="Net Weight">
 <input class="gross_weight" placeholder="Gross Weight">
 <button type="button" class="remove" onclick="removeItem(this)">Remove Item</button>
@@ -180,7 +249,7 @@ function addItem(){
 function removeItem(button){
     const cards = document.querySelectorAll(".item-card");
     if(cards.length <= 1){
-        alert("At least one item is required.");
+        alert("Please add at least one item before saving.");
         return;
     }
     button.closest(".item-card").remove();
@@ -195,17 +264,6 @@ function selectProduct(select){
 
     card.querySelector(".item").value = product.name || "";
     card.querySelector(".hs_code").value = product.hs_code || "";
-    card.querySelector(".unit_price").value = product.unit_price || 0;
-
-    calculateAmount(card);
-}
-
-function calculateAmount(card){
-    const unitPrice = Number(card.querySelector(".unit_price").value || 0);
-    const carton = Number(card.querySelector(".carton").value || 0);
-    const amount = unitPrice * carton;
-
-    card.querySelector(".amount").value = amount;
 }
 
 async function loadInvoiceOptions(){
@@ -249,13 +307,12 @@ async function loadInvoiceData(){
             );
 
             card.querySelector(".item").value = item.name || "";
+            card.querySelector(".quantity").value = item.quantity !== undefined ? item.quantity : "";
             card.querySelector(".hs_code").value = item.hs_code || (index >= 0 ? products[index].hs_code || "" : "");
 
-    if(index >= 0){
-        card.querySelector(".productSelect").value = index;
-        selectProduct(card.querySelector(".productSelect"));
-    
-    }
+            if(index >= 0){
+                card.querySelector(".productSelect").value = index;
+            }
         });
     }else{
         addItem();
@@ -270,7 +327,7 @@ function getPackingData(){
         if(name){
             items.push({
                 name: name,
-                unit_price: Number(card.querySelector(".unit_price")?.value || 0),
+                quantity: Number(card.querySelector(".quantity").value || 0),
                 hs_code: card.querySelector(".hs_code").value,
                 carton: Number(card.querySelector(".carton").value || 0),
                 net_weight: card.querySelector(".net_weight").value,
@@ -288,6 +345,11 @@ function getPackingData(){
 }
 
 async function savePacking(){
+    if(!document.getElementById("invoice_no").value){
+        alert("Please select Invoice No.");
+        return;
+    }
+
     const data = getPackingData();
 
     const res = await fetch("/packing-list", {
@@ -302,6 +364,11 @@ async function savePacking(){
 }
 
 async function generatePackingPDF(){
+    if(!document.getElementById("invoice_no").value){
+        alert("Please select Invoice No.");
+        return;
+    }
+
     const data = getPackingData();
 
     const res = await fetch("/packing-list/pdf", {
@@ -316,6 +383,7 @@ async function generatePackingPDF(){
 }
 
 window.onload = async function(){
+    await loadCompanies();
     await loadProducts();
     await loadInvoiceOptions();
 

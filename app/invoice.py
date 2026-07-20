@@ -1,66 +1,66 @@
 from io import BytesIO
 from datetime import datetime
-from fastapi import APIRouter, Body, Response, Form
+from fastapi import APIRouter, Body, Response, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 import json
+import html as html_lib
 import os
 from pathlib import Path
 
-COMPANY_FILE = Path("data/company.json")
-INVOICE_FILE = Path("data/invoices.json")
-PACKING_FILE = Path("data/packing_lists.json")
+from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
+from app.validation import require_existing_reference, require_items, require_text
+from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.shipment import link_direct_document
+from app.ui import badge, button, form_css, form_footer, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
+
+COMPANY_FILE = data_path("company.json")
+INVOICE_FILE = data_path("invoices.json")
+PACKING_FILE = data_path("packing_lists.json")
+PROFORMA_FILE = data_path("proformas.json")
 
 router = APIRouter()
 def load_packing_lists():
-    if PACKING_FILE.exists():
-        with open(PACKING_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    return load_json_strict(PACKING_FILE, [], list)
+
+
+def load_invoices():
+    return load_json_strict(INVOICE_FILE, [], list)
+
+
+def save_invoices(records):
+    atomic_write_json(INVOICE_FILE, records, list)
+
+
+def load_proformas():
+    return load_json_strict(PROFORMA_FILE, [], list)
 
 
 @router.post("/invoice")
 def create_invoice(payload: dict = Body(...)):
-
-    invoices = []
-
-    if INVOICE_FILE.exists():
-        with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-            invoices = json.load(f)
-
-    if invoices:
-        last_no = int(invoices[-1]["invoice_no"].split("-")[1])
-        invoice_no = f"INV-{last_no + 1:03d}"
-    else:
-        invoice_no = "INV-001"
-
-    payload["invoice_no"] = invoice_no
-
-    invoices.append(payload)
-
-    with open(INVOICE_FILE, "w", encoding="utf-8") as f:
-        json.dump(invoices, f, indent=4)
-
-    return payload  
+    record = dict(payload)
+    shipment_no = str(record.pop("shipment_no", "") or "").strip()
+    record["seller"] = require_text("Seller", record.get("seller", ""))
+    record["buyer"] = require_text("Buyer", record.get("buyer", ""))
+    require_items(record.get("items", []))
+    require_existing_reference("Proforma Invoice", record.get("pi_no", ""), load_proformas(), "pi_no")
+    def add_invoice(invoices):
+        record["invoice_no"] = next_identifier(invoices, "invoice_no", "INV")
+        invoices.append(record)
+    locked_json_mutation(INVOICE_FILE, [], add_invoice, list)
+    link_direct_document(shipment_no, "invoice_no", record["invoice_no"])
+    return record
 
 @router.get("/invoice-data")
 def invoice_data():
-    if not INVOICE_FILE.exists():
-        return []
-
-    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)      
+    return load_invoices()
 
 @router.get("/invoice-pdf/{invoice_no}")
 def invoice_pdf(invoice_no: str):
 
-    invoices = []
-
-    if INVOICE_FILE.exists():
-        with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-            invoices = json.load(f)
+    invoices = load_invoices()
 
     for inv in invoices:
         if inv.get("invoice_no") == invoice_no:
@@ -69,11 +69,7 @@ def invoice_pdf(invoice_no: str):
 
 @router.post("/invoice/pdf")
 def create_invoice_pdf(payload: dict = Body(...)):
-    company = {}
-
-    if COMPANY_FILE.exists():
-        with open(COMPANY_FILE, "r", encoding="utf-8") as f:
-            company = json.load(f)
+    company = load_json_strict(COMPANY_FILE, {}, dict)
 
     invoice_no = payload.get("invoice_no", "INV-001")
     today = datetime.now().strftime("%Y-%m-%d")
@@ -243,12 +239,15 @@ def create_invoice_pdf(payload: dict = Body(...)):
 def edit_invoice(invoice_no: str):  
     if not INVOICE_FILE.exists():
         return {"error": "No invoices"}
-    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-        invoices = json.load(f)
+    invoices = load_invoices()
     for inv in invoices:
         if inv.get("invoice_no") == invoice_no:
             items = inv.get("items", [])
-            item_name = items[0].get("name", "") if items else ""
+            item = items[0] if items else {}
+            item_name = item.get("name", "")
+            hs_code = item.get("hs_code", "")
+            quantity = item.get("quantity", "")
+            unit_price = item.get("unit_price", "")
 
             html = f"""
 <!DOCTYPE html>
@@ -256,107 +255,94 @@ def edit_invoice(invoice_no: str):
 <head>
 <meta charset="UTF-8">
 <title>Edit Invoice</title>
-<style>
-body{{
-    font-family:Arial,sans-serif;
-    background:#f3f4f6;
-    padding:40px;
-}}
-.container{{
-    max-width:900px;
-    margin:auto;
-    background:white;
-    padding:35px;
-    border-radius:16px;
-}}
-h1{{
-    text-align:center;
-    font-size:48px;
-    margin-bottom:10px;
-}}
-.sub{{
-    text-align:center;
-    color:#6B7280;
-    margin-bottom:35px;
-}}
-.card{{
-    border:1px solid #E5E7EB;
-    border-radius:16px;
-    padding:25px;
-    margin-bottom:25px;
-    background:#fff;
-}}
-input{{
-    width:100%;
-    padding:14px;
-    margin-bottom:14px;
-    border:1px solid #D1D5DB;
-    border-radius:10px;
-    font-size:16px;
-    box-sizing:border-box;
-}}
-button{{
-    padding:16px;
-    background:#111827;
-    color:white;
-    border:none;
-    border-radius:12px;
-    font-size:18px;
-    cursor:pointer;
-}}
-.full{{
-    width:100%;
-    margin-top:10px;
-}}
-.small{{
-    width:220px;
-    margin-bottom:25px;
-}}
-.nav-row{{
-    display:flex;
-    gap:12px;
-    flex-wrap:wrap;
-    margin-bottom:25px;
-}}
-</style>
+<style>{form_css()}</style>
 </head>
 
 <body>
 <div class="container">
 
-<div class="nav-row">
-<a href="/">
-<button class="small">← Dashboard</button>
-</a>
-
-<a href="/invoice-list">
-<button class="small">← Invoice List</button>
-</a>
-</div>
+{navigation_footer("/invoice-list", "← Invoice List", state="Editing")}
 
 <h1>Edit Invoice</h1>
 <p class="sub">Update invoice information</p>
 
 <form action="/update-invoice/{invoice_no}" method="post">
 
-<div class="card">
-<h2>Invoice Information</h2>
-
-<input type="text" name="seller" value="{inv.get('seller', '')}" placeholder="Seller Name">
-<input type="text" name="buyer" value="{inv.get('buyer', '')}" placeholder="Buyer Name">
-</div>
+{section_card("Invoice Information", metadata([
+    ("Currency", f'<input type="text" name="currency" value="{inv.get("currency", "USD")}" placeholder="Currency">'),
+    ("Seller", f'<input type="text" name="seller" value="{inv.get("seller", "")}" placeholder="Seller Name">'),
+    ("Buyer", f'<input type="text" name="buyer" value="{inv.get("buyer", "")}" placeholder="Buyer Name">'),
+    ("Buyer Address", f'<input type="text" name="buyer_address" value="{inv.get("buyer_address", "")}" placeholder="Buyer Address">'),
+    ("Buyer Email", f'<input type="text" name="buyer_email" value="{inv.get("buyer_email", "")}" placeholder="Buyer Email">'),
+]))}
 
 <div class="card">
 <h2>Product Information</h2>
 
+<select id="product1" onchange="selectProduct(1)">
+<option value="">Select Product Master</option>
+</select>
+
 <input type="text" name="item_name" value="{item_name}" placeholder="Item Name">
+<input type="text" name="hs_code" id="hs1" value="{hs_code}" placeholder="HS Code">
+<input type="number" name="quantity" id="qty1" value="{quantity}" placeholder="Quantity" oninput="calculateTotal()">
+<input type="number" name="unit_price" id="price1" value="{unit_price}" placeholder="Unit Price" oninput="calculateTotal()">
 </div>
 
-<button class="full" type="submit">Update Invoice</button>
+<div class="total" id="total">Total: USD 0</div>
+
+{form_footer("/invoice-list", "Update Invoice")}
 
 </form>
 
 </div>
+<script>
+let products = [];
+
+async function loadProducts(){{
+    const response = await fetch("/product-data");
+    products = await response.json();
+
+    const select = document.getElementById("product1");
+    select.innerHTML = '<option value="">Select Product Master</option>';
+
+    products.forEach((product, index) => {{
+        const option = document.createElement("option");
+        option.value = index;
+        option.textContent = product.name;
+        select.appendChild(option);
+    }});
+
+    const currentName = document.querySelector('input[name="item_name"]').value.toLowerCase();
+    const selectedIndex = products.findIndex(product => (product.name || "").toLowerCase() === currentName);
+    if(selectedIndex >= 0){{
+        select.value = selectedIndex;
+    }}
+}}
+
+function selectProduct(number){{
+    const index = document.getElementById("product" + number).value;
+    if(index === "") return;
+
+    const product = products[index];
+
+    document.querySelector('input[name="item_name"]').value = product.name || "";
+    document.getElementById("price" + number).value = product.unit_price || 0;
+    document.getElementById("hs" + number).value = product.hs_code || "";
+    calculateTotal();
+}}
+
+function calculateTotal(){{
+    const quantity = Number(document.getElementById("qty1").value || 0);
+    const unitPrice = Number(document.getElementById("price1").value || 0);
+    document.getElementById("total").innerHTML = "Total: USD " + (quantity * unitPrice);
+}}
+
+window.onload = function(){{
+    loadProducts();
+    calculateTotal();
+}};
+</script>
 </body>
 </html>
             """
@@ -368,55 +354,63 @@ button{{
 def update_invoice(
     invoice_no: str,
     seller: str = Form(""),
+    currency: str = Form(""),
     buyer: str = Form(""),
+    buyer_address: str = Form(""),
+    buyer_email: str = Form(""),
     item_name: str = Form(""),
+    hs_code: str = Form(""),
+    quantity: str = Form(""),
+    unit_price: str = Form(""),
 ):
-    if not INVOICE_FILE.exists():
-        return {"error": "No invoices"}
+    seller = require_text("Seller", seller)
+    buyer = require_text("Buyer", buyer)
+    require_items([item_name])
+    def replace_invoice(invoices):
+        for inv in invoices:
+            if inv.get("invoice_no") != invoice_no:
+                continue
+            try:
+                quantity_value = int(quantity)
+            except:
+                quantity_value = quantity
 
-    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-        invoices = json.load(f)
+            try:
+                unit_price_value = float(unit_price)
+            except:
+                unit_price_value = unit_price
 
-    for inv in invoices:
-        if inv.get("invoice_no") == invoice_no:
             inv["seller"] = seller
+            inv["currency"] = currency
             inv["buyer"] = buyer
-            inv["items"] = [{"name": item_name}]
-
-    with open(INVOICE_FILE, "w", encoding="utf-8") as f:
-        json.dump(invoices, f, indent=4)
+            inv["buyer_address"] = buyer_address
+            inv["buyer_email"] = buyer_email
+            inv["items"] = [{
+                "name": item_name,
+                "hs_code": hs_code,
+                "quantity": quantity_value,
+                "unit_price": unit_price_value
+            }]
+            return
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    locked_json_mutation(INVOICE_FILE, [], replace_invoice, list)
 
     return RedirectResponse(url="/invoice-list", status_code=303)     
 @router.get("/delete-invoice/{invoice_no}")
 
 def delete_invoice(invoice_no: str):
+    return identifier_delete_confirmation("Commercial Invoice", "Commercial Invoice", invoice_no, INVOICE_FILE, "invoice_no", f"/delete-invoice/{invoice_no}", "/invoice-list")
 
-    if not INVOICE_FILE.exists():
-        return {"error": "No invoices"}
-
-    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-        invoices = json.load(f)
-
-    invoices = [
-        inv for inv in invoices
-        if inv.get("invoice_no") != invoice_no
-    ]
-
-    with open(INVOICE_FILE, "w", encoding="utf-8") as f:
-        json.dump(invoices, f, indent=4)
-
-    return RedirectResponse(
-        url="/invoice-list",
-        status_code=302
-    )    
+@router.post("/delete-invoice/{invoice_no}")
+def confirm_delete_invoice(invoice_no: str):
+    return confirmed_identifier_delete("Commercial Invoice", "Commercial Invoice", invoice_no, INVOICE_FILE, "invoice_no", f"/delete-invoice/{invoice_no}", "/invoice-list", "/invoice-list")
 @router.get("/invoice-list")
 def invoice_list(search: str = ""):
 
     if not os.path.exists(INVOICE_FILE):
         return HTMLResponse("<h1>No Invoices</h1>")
 
-    with open(INVOICE_FILE, "r", encoding="utf-8") as f:
-        invoices = json.load(f)
+    invoices = load_invoices()
 
     valid_invoices = [
         inv for inv in invoices
@@ -440,119 +434,28 @@ def invoice_list(search: str = ""):
             or search_lower in str(inv.get("items", "")).lower()
         ]
 
-    html = f"""
-<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
-Invoice List
-</h1>
-
-<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;margin-top:0;margin-bottom:35px;">
-Manage all invoice documents
-</p>
-
-<div style="font-family:Arial;width:94%;margin:auto;">
-
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;gap:20px;">
-
-<div style="display:flex;gap:12px;">
-<a href="/invoice">
-<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
-+ New Invoice
-</button>
-</a>
-
-<a href="/">
-<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
-← Dashboard
-</button>
-</a>
-</div>
-
-<form action="/invoice-list" method="get" style="display:flex;gap:10px;align-items:center;margin:0;">
-<input
-type="text"
-name="search"
-value="{search}"
-placeholder="Search invoice, buyer, seller or item"
-style="padding:13px;width:360px;border:1px solid #D1D5DB;border-radius:10px;font-size:15px;">
-
-<button type="submit" style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:15px;">
-Search
-</button>
-
-<a href="/invoice-list" style="color:#6B7280;font-weight:bold;">Reset</a>
-</form>
-
-</div>
-
-<p style="font-size:18px;font-weight:bold;margin:25px 0;">
-Total Invoices : {len(valid_invoices)}
-</p>
-
-<div style="background:white;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
-
-<table style="width:100%;border-collapse:collapse;table-layout:fixed;">
-<tr style="background:#F9FAFB;">
-<th style="padding:14px;width:12%;">Invoice<br>No</th>
-<th style="width:18%;">Seller</th>
-<th style="width:16%;">Buyer</th>
-<th style="width:22%;">Product</th>
-<th style="width:12%;">Total</th>
-<th style="width:7%;">PDF</th>
-<th style="width:8%;">Packing</th>
-<th style="width:6%;">Edit</th>
-<th style="width:7%;">Delete</th>
-</tr>
-"""
-
+    rows = []
     for inv in valid_invoices:
-        packing_exists = any(p.get("invoice_no") == inv.get("invoice_no") for p in load_packing_lists())
+        packing_no = next((p.get("packing_no") for p in load_packing_lists() if p.get("invoice_no") == inv.get("invoice_no")), "")
+        packing_exists = bool(packing_no)
+        packing_href = f"/edit-packing/{packing_no}" if packing_exists else f"/packing-page?invoice_no={inv.get('invoice_no', '')}"
         items = inv.get("items", [])
-        item_names = "<br>".join([item.get("name", "") for item in items])
+        item_names = "<br>".join(html_lib.escape(str(item.get("name", "") or "")) for item in items)
 
         total = sum(
             item.get("quantity", 0) * item.get("unit_price", 0)
             for item in items
         )
 
-        html += f"""
-<tr style="border-top:1px solid #E5E7EB;">
-<td style="padding:14px;text-align:center;">{inv.get("invoice_no","")}</td>
-<td style="padding:10px;word-break:break-word;">{inv.get("seller","")}</td>
-<td style="padding:10px;word-break:break-word;">{inv.get("buyer","")}</td>
-<td style="padding:10px;word-break:break-word;">{item_names}</td>
-<td style="text-align:center;">USD {total:g}</td>
-
-<td style="text-align:center;">
-<a href="/invoice-pdf/{inv.get('invoice_no','')}" style="color:#2563EB;font-weight:bold;text-decoration:none;">
-PDF
-</a>
-</td>
-
-<td style="text-align:center;">
-<a href="{'/edit-packing/' + next((p.get('packing_no') for p in load_packing_lists() if p.get('invoice_no') == inv.get('invoice_no')), '')}"
-style="color:{'#2563EB' if packing_exists else '#059669'};font-weight:bold;text-decoration:none;">
-{"Created" if packing_exists else "Packing"}
-</a>
-</td>
-
-<td style="text-align:center;">
-<a href="/edit-invoice/{inv.get('invoice_no','')}" style="color:#111827;font-weight:bold;text-decoration:none;">
-Edit
-</a>
-</td>
-
-<td style="text-align:center;">
-<a href="/delete-invoice/{inv.get('invoice_no','')}" style="color:#DC2626;font-weight:bold;text-decoration:none;">
-Delete
-</a>
-</td>
-</tr>
-"""
-
-    html += """
-</table>
-</div>
-</div>
-"""
-
-    return HTMLResponse(html)
+        invoice_no = str(inv.get("invoice_no", "") or "")
+        rows.append([
+            badge(invoice_no), html_lib.escape(str(inv.get("seller", "") or "")),
+            html_lib.escape(str(inv.get("buyer", "") or "")), item_names, f"USD {total:g}",
+            button("PDF", f"/invoice-pdf/{invoice_no}", "secondary"),
+            button("Created" if packing_exists else "Packing", packing_href, "secondary"),
+            button("Edit", f"/edit-invoice/{invoice_no}", "secondary"),
+            button("Delete", f"/delete-invoice/{invoice_no}", "danger"),
+        ])
+    content = search_toolbar(button("+ New Invoice", "/invoice"), button("← Dashboard", "/", "secondary"), action="/invoice-list", value=search, placeholder="Search invoice, buyer, seller or item", reset_url="/invoice-list", count_label=f"Total Invoices : {len(valid_invoices)}")
+    content += table(["Invoice No", "Seller", "Buyer", "Product", "Total", "PDF", "Packing", "Edit", "Delete"], rows)
+    return HTMLResponse(page_shell("Invoice List", content, subtitle="Manage all invoice documents"))

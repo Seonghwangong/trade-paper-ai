@@ -1,41 +1,46 @@
 from io import BytesIO
 from datetime import datetime
 from typing import List
-from fastapi import APIRouter, Body, Response, Form
+from fastapi import APIRouter, Body, Response, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
+import html as html_lib
 import json
 from pathlib import Path
 
-COMPANY_FILE = Path("data/company.json")
-PACKING_FILE = Path("data/packing_lists.json")
-INVOICE_FILE = Path("data/invoices.json")
+from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
+from app.validation import require_existing_reference, require_items, require_text
+from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.shipment import link_direct_document
+from app.ui import badge, button, form_footer, form_page, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
+
+COMPANY_FILE = data_path("company.json")
+PACKING_FILE = data_path("packing_lists.json")
+INVOICE_FILE = data_path("invoices.json")
 
 router = APIRouter()
 
 
 def load_company():
-    if COMPANY_FILE.exists():
-        with open(COMPANY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+    return load_json_strict(COMPANY_FILE, {}, dict)
 
 
 def load_packing_lists():
-    if PACKING_FILE.exists():
-        with open(PACKING_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    return load_json_strict(PACKING_FILE, [], list)
 
 
 def save_packing_lists(packing_lists):
-    with open(PACKING_FILE, "w", encoding="utf-8") as f:
-        json.dump(packing_lists, f, ensure_ascii=False, indent=4)
+    atomic_write_json(PACKING_FILE, packing_lists, list)
+
+
+def load_invoice_records():
+    return load_json_strict(INVOICE_FILE, [], list)
 
 
 def next_packing_no(packing_lists):
+    return next_identifier(packing_lists, "packing_no", "PK")
     existing_numbers = [
         int(p.get("packing_no", "PK-000").split("-")[1])
         for p in packing_lists
@@ -48,15 +53,18 @@ def next_packing_no(packing_lists):
 
 @router.post("/packing-list")
 def create_packing_list(payload: dict = Body(...)):
-    packing_lists = load_packing_lists()
-    packing_no = next_packing_no(packing_lists)
-
-    payload["packing_no"] = packing_no
-
-    packing_lists.append(payload)
-    save_packing_lists(packing_lists)
-
-    return payload
+    record = dict(payload)
+    shipment_no = str(record.pop("shipment_no", "") or "").strip()
+    require_existing_reference("Invoice", record.get("invoice_no", ""), load_invoice_records(), "invoice_no", required=True)
+    record["seller"] = require_text("Seller", record.get("seller", ""))
+    record["buyer"] = require_text("Buyer", record.get("buyer", ""))
+    require_items(record.get("items", []))
+    def add_packing(records):
+        record["packing_no"] = next_identifier(records, "packing_no", "PK")
+        records.append(record)
+    locked_json_mutation(PACKING_FILE, [], add_packing, list)
+    link_direct_document(shipment_no, "packing_no", record["packing_no"])
+    return record
 
 
 @router.get("/packing-list")
@@ -75,127 +83,30 @@ def packing_list(search: str = ""):
             or search_lower in str(p.get("items", "")).lower()
         ]
 
-    html = f"""
-<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
-Packing List
-</h1>
-
-<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;margin-top:0;margin-bottom:35px;">
-Manage all packing documents
-</p>
-
-<div style="font-family:Arial;width:94%;margin:auto;">
-
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;gap:20px;">
-
-<div style="display:flex;gap:12px;">
-<a href="/packing-page">
-<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
-+ New Packing
-</button>
-</a>
-
-<a href="/">
-<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
-← Dashboard
-</button>
-</a>
-</div>
-
-<form action="/packing-list" method="get" style="display:flex;gap:10px;align-items:center;margin:0;">
-<input
-type="text"
-name="search"
-value="{search}"
-placeholder="Search packing, invoice, buyer, seller or item"
-style="padding:13px;width:360px;border:1px solid #D1D5DB;border-radius:10px;font-size:15px;">
-
-<button type="submit" style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:15px;">
-Search
-</button>
-
-<a href="/packing-list" style="color:#6B7280;font-weight:bold;">Reset</a>
-</form>
-
-</div>
-
-<p style="font-size:18px;font-weight:bold;margin:25px 0;">
-Total Packing Lists : {len(packing_lists)}
-</p>
-
-<div style="background:white;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
-
-<table style="width:100%;border-collapse:collapse;table-layout:fixed;">
-<tr style="background:#F9FAFB;">
-<th style="padding:14px;width:9%;">Packing<br>No</th>
-<th style="width:9%;">Invoice<br>No</th>
-<th style="width:10%;">Seller</th>
-<th style="width:10%;">Buyer</th>
-<th style="width:16%;">Item</th>
-<th style="width:8%;">Unit<br>Price</th>
-<th style="width:10%;">HS<br>Code</th>
-<th style="width:7%;">Carton</th>
-<th style="width:7%;">Net</th>
-<th style="width:7%;">Gross</th>
-<th style="width:5%;">PDF</th>
-<th style="width:5%;">Edit</th>
-<th style="width:5%;">Delete</th>
-</tr>
-"""
-
+    rows = []
     for packing in packing_lists:
         if not packing.get("packing_no"):
             continue
 
         items = packing.get("items", [])
 
-        item_names = "<br>".join(item.get("name", "") for item in items)
-        unit_prices = "<br>".join(str(item.get("unit_price", "")) for item in items)
-        hs_codes = "<br>".join(item.get("hs_code", "") for item in items)
-        cartons = "<br>".join(str(item.get("carton", "")) for item in items)
-        net_weights = "<br>".join(str(item.get("net_weight", "")) for item in items)
-        gross_weights = "<br>".join(str(item.get("gross_weight", "")) for item in items)
-
-        html += f"""
-<tr style="border-top:1px solid #E5E7EB;">
-<td style="padding:14px;text-align:center;">{packing.get("packing_no","")}</td>
-<td style="text-align:center;">{packing.get("invoice_no","")}</td>
-<td style="padding:10px;word-break:break-word;">{packing.get("seller","")}</td>
-<td style="padding:10px;word-break:break-word;">{packing.get("buyer","")}</td>
-<td style="padding:10px;word-break:break-word;">{item_names}</td>
-<td style="text-align:center;">{unit_prices}</td>
-<td style="padding:10px;text-align:center;word-break:break-word;">{hs_codes}</td>
-<td style="text-align:center;">{cartons}</td>
-<td style="text-align:center;">{net_weights}</td>
-<td style="text-align:center;">{gross_weights}</td>
-
-<td style="text-align:center;">
-<a href="/packing-list-pdf/{packing.get('packing_no','')}" style="color:#2563EB;font-weight:bold;text-decoration:none;">
-PDF
-</a>
-</td>
-
-<td style="text-align:center;">
-<a href="/edit-packing/{packing.get('packing_no','')}" style="color:#111827;font-weight:bold;text-decoration:none;">
-Edit
-</a>
-</td>
-
-<td style="text-align:center;">
-<a href="/packing-delete/{packing.get('packing_no','')}" style="color:#DC2626;font-weight:bold;text-decoration:none;">
-Delete
-</a>
-</td>
-</tr>
-"""
-
-    html += """
-</table>
-</div>
-</div>
-"""
-
-    return HTMLResponse(html)
+        escaped = lambda value: html_lib.escape(str(value or ""))
+        packing_no = str(packing.get("packing_no", "") or "")
+        rows.append([
+            badge(packing_no), escaped(packing.get("invoice_no", "")), escaped(packing.get("seller", "")),
+            escaped(packing.get("buyer", "")), "<br>".join(escaped(item.get("name", "")) for item in items),
+            "<br>".join(escaped(item.get("quantity", "")) for item in items),
+            "<br>".join(escaped(item.get("hs_code", "")) for item in items),
+            "<br>".join(escaped(item.get("carton", "")) for item in items),
+            "<br>".join(escaped(item.get("net_weight", "")) for item in items),
+            "<br>".join(escaped(item.get("gross_weight", "")) for item in items),
+            button("PDF", f"/packing-list-pdf/{packing_no}", "secondary"),
+            button("Edit", f"/edit-packing/{packing_no}", "secondary"),
+            button("Delete", f"/packing-delete/{packing_no}", "danger"),
+        ])
+    content = search_toolbar(button("+ New Packing", "/packing-page"), button("← Dashboard", "/", "secondary"), action="/packing-list", value=search, placeholder="Search packing, invoice, buyer, seller or item", reset_url="/packing-list", count_label=f"Total Packing Lists : {len(packing_lists)}")
+    content += table(["Packing No", "Invoice No", "Seller", "Buyer", "Item", "Quantity", "HS Code", "Carton", "Net", "Gross", "PDF", "Edit", "Delete"], rows)
+    return HTMLResponse(page_shell("Packing List", content, subtitle="Manage all packing documents"))
 
 @router.post("/packing")
 def save_packing(
@@ -208,9 +119,9 @@ def save_packing(
     net_weight: List[str] = Form([]),
     gross_weight: List[str] = Form([]),
 ):
-    packing_lists = load_packing_lists()
-    packing_no = next_packing_no(packing_lists)
-
+    require_existing_reference("Invoice", invoice_no, load_invoice_records(), "invoice_no", required=True)
+    seller = require_text("Seller", seller)
+    buyer = require_text("Buyer", buyer)
     items = []
 
     for i in range(len(item_name)):
@@ -225,16 +136,17 @@ def save_packing(
             "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
         })
 
-    packing = {
-        "packing_no": packing_no,
+    require_items(items)
+    def add_packing(packing_lists):
+        packing = {
+        "packing_no": next_identifier(packing_lists, "packing_no", "PK"),
         "invoice_no": invoice_no,
         "seller": seller,
         "buyer": buyer,
         "items": items,
-    }
-
-    packing_lists.append(packing)
-    save_packing_lists(packing_lists)
+        }
+        packing_lists.append(packing)
+    locked_json_mutation(PACKING_FILE, [], add_packing, list)
 
     return RedirectResponse(url="/packing-list", status_code=303)
 
@@ -250,81 +162,39 @@ def edit_packing(packing_no: str):
             if not items:
                 items = [{}]
 
-            html = f"""
-<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
-Edit Packing List
-</h1>
-
-<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;margin-bottom:35px;">
-Update packing list information
-</p>
-
-<div style="font-family:Arial;width:80%;margin:auto;">
-
-<div style="background:white;border:1px solid #E5E7EB;border-radius:16px;padding:30px;margin-bottom:30px;">
-<h2 style="margin-top:0;">Packing Information</h2>
-
-<form action="/update-packing/{packing_no}" method="post">
-
-<p>Invoice No</p>
-<input type="text" name="invoice_no" value="{packing.get('invoice_no','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
-
-<p>Seller</p>
-<input type="text" name="seller" value="{packing.get('seller','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
-
-<p>Buyer</p>
-<input type="text" name="buyer" value="{packing.get('buyer','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
-
-<h2>Items</h2>
-"""
+            info = metadata([
+                ("Packing No", f'<input type="text" value="{packing.get("packing_no", "")}" readonly>'),
+                ("Invoice No", f'<input type="text" name="invoice_no" value="{packing.get("invoice_no", "")}">'),
+                ("Seller", f'<input type="text" name="seller" value="{packing.get("seller", "")}">'),
+                ("Buyer", f'<input type="text" name="buyer" value="{packing.get("buyer", "")}">'),
+            ])
+            html = f'<form action="/update-packing/{packing_no}" method="post">' + section_card("Packing Information", info)
 
             for item in items:
                 html += f"""
-<div style="border:1px solid #E5E7EB;border-radius:14px;padding:20px;margin-bottom:20px;background:#F9FAFB;">
+<div class="item-row">
 
 <p>Item Name</p>
-<input type="text" name="item_name" value="{item.get('name','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
+<input type="text" name="item_name" value="{item.get('name','')}">
 
 <p>HS Code</p>
-<input type="text" name="hs_code" value="{item.get('hs_code','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
+<input type="text" name="hs_code" value="{item.get('hs_code','')}">
 
 <p>Carton</p>
-<input type="text" name="carton" value="{item.get('carton','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
+<input type="text" name="carton" value="{item.get('carton','')}">
 
 <p>Net Weight</p>
-<input type="text" name="net_weight" value="{item.get('net_weight','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
+<input type="text" name="net_weight" value="{item.get('net_weight','')}">
 
 <p>Gross Weight</p>
-<input type="text" name="gross_weight" value="{item.get('gross_weight','')}" style="width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;">
+<input type="text" name="gross_weight" value="{item.get('gross_weight','')}">
 
 </div>
 """
 
-            html += """
-<br>
-<button type="submit" style="width:100%;padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;">
-Update Packing
-</button>
-
-</form>
-</div>
-
-<a href="/packing-list">
-<button style="width:240px;padding:15px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;">
-← Packing List
-</button>
-</a>
-
-<a href="/">
-<button style="width:240px;padding:15px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;margin-left:10px;">
-← Dashboard
-</button>
-</a>
-
-</div>
-"""
-
-            return HTMLResponse(html)
+            html += form_footer("/packing-list", "Update Packing") + "</form>"
+            navigation = navigation_footer("/packing-list", "← Packing List", state="Editing")
+            return HTMLResponse(form_page("Edit Packing List", html, subtitle="Update packing list information", navigation=navigation))
 
     return {"error": "Packing List not found"}
 
@@ -340,8 +210,9 @@ def update_packing(
     net_weight: List[str] = Form([]),
     gross_weight: List[str] = Form([]),
 ):
-    packing_lists = load_packing_lists()
-
+    require_existing_reference("Invoice", invoice_no, load_invoice_records(), "invoice_no", required=True)
+    seller = require_text("Seller", seller)
+    buyer = require_text("Buyer", buyer)
     items = []
 
     for i in range(len(item_name)):
@@ -356,15 +227,18 @@ def update_packing(
             "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
         })
 
-    for packing in packing_lists:
-        if packing.get("packing_no") == packing_no:
+    require_items(items)
+    def replace_packing(packing_lists):
+        for packing in packing_lists:
+            if packing.get("packing_no") != packing_no:
+                continue
             packing["invoice_no"] = invoice_no
             packing["seller"] = seller
             packing["buyer"] = buyer
             packing["items"] = items
-            break
-
-    save_packing_lists(packing_lists)
+            return
+        raise HTTPException(status_code=404, detail="Packing List not found")
+    locked_json_mutation(PACKING_FILE, [], replace_packing, list)
 
     return HTMLResponse("""
 <script>
@@ -376,43 +250,27 @@ window.location.href = "/packing-list";
 
 @router.get("/packing-delete/{packing_no}")
 def delete_packing(packing_no: str):
-    packing_lists = load_packing_lists()
+    return identifier_delete_confirmation("Packing List", "Packing List", packing_no, PACKING_FILE, "packing_no", f"/packing-delete/{packing_no}", "/packing-list")
 
-    packing_lists = [
-        p for p in packing_lists
-        if p.get("packing_no") != packing_no
-    ]
-
-    save_packing_lists(packing_lists)
-
-    return RedirectResponse(url="/packing-list", status_code=303)
+@router.post("/packing-delete/{packing_no}")
+def confirm_delete_packing(packing_no: str):
+    return confirmed_identifier_delete("Packing List", "Packing List", packing_no, PACKING_FILE, "packing_no", f"/packing-delete/{packing_no}", "/packing-list", "/packing-list")
 
 @router.get("/packing-form")
 def packing_form():
-    return HTMLResponse("""
-<h1 style="font-family:Arial;text-align:center;font-size:48px;">Packing Form</h1>
-<p style="font-family:Arial;text-align:center;color:#6B7280;">Use /packing-page for the new Packing UI.</p>
-
-<div style="font-family:Arial;width:80%;margin:auto;text-align:center;">
-<a href="/packing-page">
-<button style="padding:15px 25px;background:#111827;color:white;border:none;border-radius:10px;font-size:18px;">
-Go to New Packing Page
-</button>
-</a>
-</div>
-""")
+    return HTMLResponse(form_page("Packing Form", button("Go to New Packing Page", "/packing-page"), subtitle="Use /packing-page for the new Packing UI."))
 
 
 @router.post("/packing-list/pdf")
 def create_packing_list_pdf(payload: dict = Body(...)):
     company = load_company()
 
-    packing_no = payload.get("packing_no", "PK-001")
+    packing_no = payload.get("packing_no") or "-"
     invoice_no = payload.get("invoice_no", "")
     today = datetime.now().strftime("%Y-%m-%d")
 
     buyer = payload.get("buyer", "")
-    seller = company.get("name") or payload.get("seller", "")
+    seller = payload.get("seller", "") or company.get("name", "")
     seller_address = company.get("address") or payload.get("seller_address", "")
     seller_email = company.get("email") or payload.get("seller_email", "")
 
@@ -431,8 +289,18 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     row_h = 26
     row_min_bottom = 145
     summary_w = 225
-    summary_h = 115
+    summary_h = 95
     summary_gap = 20
+
+    def fit_text(text, max_width, font_name="Helvetica", font_size=8):
+        text = str(text or "")
+        if pdf.stringWidth(text, font_name, font_size) <= max_width:
+            return text
+
+        suffix = "..."
+        while text and pdf.stringWidth(text + suffix, font_name, font_size) > max_width:
+            text = text[:-1]
+        return text + suffix if text else suffix
 
     def draw_document_header():
         pdf.setFillColor(colors.HexColor("#111827"))
@@ -478,11 +346,10 @@ def create_packing_list_pdf(payload: dict = Body(...)):
         pdf.setFont("Helvetica-Bold", 8)
         pdf.drawString(52, header_y + 10, "No")
         pdf.drawString(80, header_y + 10, "Item")
-        pdf.drawRightString(220, header_y + 10, "Unit Price")
-        pdf.drawRightString(290, header_y + 10, "Amount")
-        pdf.drawString(315, header_y + 10, "HS Code")
-        pdf.drawRightString(390, header_y + 10, "Carton")
-        pdf.drawRightString(465, header_y + 10, "Net Weight")
+        pdf.drawRightString(235, header_y + 10, "Quantity")
+        pdf.drawString(270, header_y + 10, "HS Code")
+        pdf.drawRightString(370, header_y + 10, "Carton")
+        pdf.drawRightString(455, header_y + 10, "Net Weight")
         pdf.drawRightString(540, header_y + 10, "Gross Weight")
 
         pdf.setFont("Helvetica", 8)
@@ -509,15 +376,14 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     total_carton = 0
     total_net_weight = 0.0
     total_gross_weight = 0.0
-    total_amount = 0.0
 
     item_count = len(items)
 
     for index, item in enumerate(items, start=1):
+        quantity = item["quantity"] if "quantity" in item else ""
         carton = item.get("carton", "")
         net_weight = item.get("net_weight", "")
         gross_weight = item.get("gross_weight", "")
-        unit_price = item.get("unit_price", 0)
 
         try:
             total_carton += int(float(carton or 0))
@@ -534,12 +400,6 @@ def create_packing_list_pdf(payload: dict = Body(...)):
         except:
             pass
 
-        try:
-            amount = float(unit_price or 0) * float(carton or 0)
-            total_amount += amount
-        except:
-            amount = 0
-
         is_last_row = index == item_count
         if is_last_row:
             required_bottom = row_min_bottom + summary_h + summary_gap + row_h
@@ -553,12 +413,11 @@ def create_packing_list_pdf(payload: dict = Body(...)):
         pdf.rect(table_x, y, table_w, row_h, fill=0)
 
         pdf.drawString(52, y + 9, str(index))
-        pdf.drawString(80, y + 9, str(item.get("name", ""))[:16])
-        pdf.drawRightString(220, y + 9, str(unit_price))
-        pdf.drawRightString(290, y + 9, f"{amount:g}")
-        pdf.drawString(315, y + 9, str(item.get("hs_code", "")))
-        pdf.drawRightString(390, y + 9, str(carton))
-        pdf.drawRightString(465, y + 9, str(net_weight))
+        pdf.drawString(80, y + 9, fit_text(item.get("name", ""), 135))
+        pdf.drawRightString(235, y + 9, str(quantity))
+        pdf.drawString(270, y + 9, str(item.get("hs_code", "")))
+        pdf.drawRightString(370, y + 9, str(carton))
+        pdf.drawRightString(455, y + 9, str(net_weight))
         pdf.drawRightString(540, y + 9, str(gross_weight))
 
         y -= row_h
@@ -585,7 +444,6 @@ def create_packing_list_pdf(payload: dict = Body(...)):
     pdf.drawString(text_x, text_y, f"Total Cartons: {total_carton}")
     pdf.drawString(text_x, text_y - line_gap, f"Total Net Weight: {total_net_weight:g}")
     pdf.drawString(text_x, text_y - line_gap * 2, f"Total Gross Weight: {total_gross_weight:g}")
-    pdf.drawString(text_x, text_y - line_gap * 3, f"Total Amount: {total_amount:g}")
 
     draw_signature_footer()
 

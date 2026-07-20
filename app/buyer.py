@@ -1,23 +1,20 @@
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from pathlib import Path
-import json
+from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation
+from app.validation import require_text
+from app.referential_integrity import confirmed_indexed_delete, indexed_delete_confirmation
 
 router = APIRouter()
 
-BUYER_FILE = Path("data/buyers.json")
+BUYER_FILE = data_path("buyers.json")
 
 
 def load_buyers():
-    if BUYER_FILE.exists():
-        with open(BUYER_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    return load_json_strict(BUYER_FILE, [], list)
 
 
 def save_buyers(buyers):
-    with open(BUYER_FILE, "w", encoding="utf-8") as f:
-        json.dump(buyers, f, ensure_ascii=False, indent=4)
+    atomic_write_json(BUYER_FILE, buyers, list)
 
 
 @router.get("/buyer-data")
@@ -30,39 +27,72 @@ def buyer_list():
     buyers = load_buyers()
 
     html = """
-    <h1>Buyer Master</h1>
+<h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
+Buyer Master
+</h1>
 
-    <p><a href="/buyer-form">Add Buyer</a></p>
-    <p><a href="/">Back Home</a></p>
+<p style="font-family:Arial;text-align:center;font-size:16px;color:#6B7280;margin-top:0;margin-bottom:35px;">
+Manage registered buyer information
+</p>
 
-    <table border="1" cellpadding="10">
-        <tr>
-            <th>No</th>
-            <th>Name</th>
-            <th>Address</th>
-            <th>Email</th>
-            <th>Country</th>
-            <th>Edit</th>
-            <th>Delete</th>
-        </tr>
-    """
+<div style="font-family:Arial;width:94%;margin:auto;">
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;gap:20px;">
+<div style="display:flex;gap:12px;">
+<a href="/buyer-form">
+<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
++ Add Buyer
+</button>
+</a>
+
+<a href="/">
+<button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
+← Dashboard
+</button>
+</a>
+</div>
+</div>
+
+<p style="font-size:18px;font-weight:bold;margin:25px 0;">
+Total Buyers : """ + str(len(buyers)) + """
+</p>
+
+<div style="background:white;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
+
+<table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+<tr style="background:#F9FAFB;">
+<th style="padding:14px;width:8%;">No</th>
+<th style="width:18%;">Name</th>
+<th style="width:30%;">Address</th>
+<th style="width:22%;">Email</th>
+<th style="width:12%;">Country</th>
+<th style="width:5%;">Edit</th>
+<th style="width:5%;">Delete</th>
+</tr>
+"""
 
     for index, buyer in enumerate(buyers):
         html += f"""
-        <tr>
-            <td>{index + 1}</td>
-            <td>{buyer.get("name", "")}</td>
-            <td>{buyer.get("address", "")}</td>
-            <td>{buyer.get("email", "")}</td>
-            <td>{buyer.get("country", "")}</td>
-            <td><a href="/edit-buyer/{index}">Edit</a></td>
-            <td><a href="/delete-buyer/{index}">Delete</a></td>
-        </tr>
-        """
+<tr style="border-top:1px solid #E5E7EB;">
+<td style="padding:14px;text-align:center;">{index + 1}</td>
+<td style="padding:14px;word-break:break-word;">{buyer.get("name", "")}</td>
+<td style="padding:14px;word-break:break-word;">{buyer.get("address", "")}</td>
+<td style="padding:14px;word-break:break-word;">{buyer.get("email", "")}</td>
+<td style="padding:14px;text-align:center;word-break:break-word;">{buyer.get("country", "")}</td>
+<td style="text-align:center;">
+<a href="/edit-buyer/{index}" style="color:#111827;font-weight:bold;text-decoration:none;">Edit</a>
+</td>
+<td style="text-align:center;">
+<a href="/delete-buyer/{index}" style="color:#DC2626;font-weight:bold;text-decoration:none;">Delete</a>
+</td>
+</tr>
+"""
 
     html += """
-    </table>
-    """
+</table>
+</div>
+</div>
+"""
 
     return HTMLResponse(html)
 
@@ -70,28 +100,52 @@ def buyer_list():
 @router.get("/buyer-form")
 def buyer_form():
     html = """
-    <h1>Add Buyer</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Add Buyer</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;}
+.container{max-width:900px;margin:auto;background:white;padding:35px;border-radius:16px;}
+h1{text-align:center;font-size:48px;margin-bottom:10px;}
+.sub{text-align:center;color:#6B7280;margin-bottom:35px;}
+.nav{display:flex;gap:12px;margin-bottom:25px;}
+.card{border:1px solid #E5E7EB;border-radius:16px;padding:25px;margin-bottom:25px;background:#fff;}
+input{width:100%;padding:14px;margin-bottom:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;}
+button{padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;cursor:pointer;}
+.small{padding:13px 22px;font-size:16px;border-radius:10px;}
+.full{width:100%;}
+</style>
+</head>
+<body>
+<div class="container">
 
-    <form action="/save-buyer" method="post">
-        <p>Buyer Name</p>
-        <input type="text" name="name">
+<div class="nav">
+<a href="/"><button type="button" class="small">← Dashboard</button></a>
+<a href="/buyers"><button type="button" class="small">← Buyer List</button></a>
+</div>
 
-        <p>Address</p>
-        <input type="text" name="address">
+<h1>Add Buyer</h1>
+<p class="sub">Register buyer master information</p>
 
-        <p>Email</p>
-        <input type="text" name="email">
+<div class="card">
+<h2>Buyer Information</h2>
 
-        <p>Country</p>
-        <input type="text" name="country">
+<form action="/save-buyer" method="post">
+<input type="text" name="name" placeholder="Buyer Name">
+<input type="text" name="address" placeholder="Address">
+<input type="text" name="email" placeholder="Email">
+<input type="text" name="country" placeholder="Country">
 
-        <br><br>
-        <button type="submit">Save Buyer</button>
-    </form>
+<button type="submit" class="full">Save Buyer</button>
+</form>
+</div>
 
-    <br>
-    <a href="/buyers">Back to Buyer List</a>
-    """
+</div>
+</body>
+</html>
+"""
 
     return HTMLResponse(html)
 
@@ -103,8 +157,7 @@ def save_buyer(
     email: str = Form(""),
     country: str = Form(""),
 ):
-    buyers = load_buyers()
-
+    name = require_text("Buyer name", name)
     buyer = {
         "name": name,
         "address": address,
@@ -112,8 +165,7 @@ def save_buyer(
         "country": country
     }
 
-    buyers.append(buyer)
-    save_buyers(buyers)
+    locked_json_mutation(BUYER_FILE, [], lambda buyers: buyers.append(buyer), list)
 
     return RedirectResponse(url="/buyers", status_code=303)
 
@@ -128,28 +180,52 @@ def edit_buyer(index: int):
     buyer = buyers[index]
 
     html = f"""
-    <h1>Edit Buyer</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Edit Buyer</title>
+<style>
+body{{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;}}
+.container{{max-width:900px;margin:auto;background:white;padding:35px;border-radius:16px;}}
+h1{{text-align:center;font-size:48px;margin-bottom:10px;}}
+.sub{{text-align:center;color:#6B7280;margin-bottom:35px;}}
+.nav{{display:flex;gap:12px;margin-bottom:25px;}}
+.card{{border:1px solid #E5E7EB;border-radius:16px;padding:25px;margin-bottom:25px;background:#fff;}}
+input{{width:100%;padding:14px;margin-bottom:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;}}
+button{{padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;cursor:pointer;}}
+.small{{padding:13px 22px;font-size:16px;border-radius:10px;}}
+.full{{width:100%;}}
+</style>
+</head>
+<body>
+<div class="container">
 
-    <form action="/update-buyer/{index}" method="post">
-        <p>Buyer Name</p>
-        <input type="text" name="name" value="{buyer.get('name', '')}">
+<div class="nav">
+<a href="/"><button type="button" class="small">← Dashboard</button></a>
+<a href="/buyers"><button type="button" class="small">← Buyer List</button></a>
+</div>
 
-        <p>Address</p>
-        <input type="text" name="address" value="{buyer.get('address', '')}">
+<h1>Edit Buyer</h1>
+<p class="sub">Update buyer master information</p>
 
-        <p>Email</p>
-        <input type="text" name="email" value="{buyer.get('email', '')}">
+<div class="card">
+<h2>Buyer Information</h2>
 
-        <p>Country</p>
-        <input type="text" name="country" value="{buyer.get('country', '')}">
+<form action="/update-buyer/{index}" method="post">
+<input type="text" name="name" value="{buyer.get('name', '')}" placeholder="Buyer Name">
+<input type="text" name="address" value="{buyer.get('address', '')}" placeholder="Address">
+<input type="text" name="email" value="{buyer.get('email', '')}" placeholder="Email">
+<input type="text" name="country" value="{buyer.get('country', '')}" placeholder="Country">
 
-        <br><br>
-        <button type="submit">Update Buyer</button>
-    </form>
+<button type="submit" class="full">Update Buyer</button>
+</form>
+</div>
 
-    <br>
-    <a href="/buyers">Back to Buyer List</a>
-    """
+</div>
+</body>
+</html>
+"""
 
     return HTMLResponse(html)
 
@@ -162,28 +238,25 @@ def update_buyer(
     email: str = Form(""),
     country: str = Form(""),
 ):
-    buyers = load_buyers()
-
-    if 0 <= index < len(buyers):
+    name = require_text("Buyer name", name)
+    def replace_buyer(buyers):
+        if not 0 <= index < len(buyers):
+            raise HTTPException(status_code=404, detail="Buyer not found")
         buyers[index] = {
             "name": name,
             "address": address,
             "email": email,
             "country": country
         }
-
-    save_buyers(buyers)
+    locked_json_mutation(BUYER_FILE, [], replace_buyer, list)
 
     return RedirectResponse(url="/buyers", status_code=303)
 
 
 @router.get("/delete-buyer/{index}")
 def delete_buyer(index: int):
-    buyers = load_buyers()
+    return indexed_delete_confirmation("Buyer", "Buyer", index, BUYER_FILE, "name", f"/delete-buyer/{index}", "/buyers")
 
-    if 0 <= index < len(buyers):
-        buyers.pop(index)
-
-    save_buyers(buyers)
-
-    return RedirectResponse(url="/buyers", status_code=303)
+@router.post("/delete-buyer/{index}")
+def confirm_delete_buyer(index: int, expected_name: str = Form("")):
+    return confirmed_indexed_delete("Buyer", "Buyer", index, expected_name, BUYER_FILE, "name", f"/delete-buyer/{index}", "/buyers", "/buyers")
