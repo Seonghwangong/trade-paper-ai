@@ -294,8 +294,8 @@ window.saveInvoice=async function(){
 <script>
 window.savePacking=async function(){
   clearWorkflowMessage();
-  if(!document.getElementById("invoice_no").value){showWorkflowError("Please select Invoice No.");return;}
-  const shipmentNo=(new URLSearchParams(window.location.search).get("shipment_no")||"").trim();const data=getPackingData();if(shipmentNo)data.shipment_no=shipmentNo;
+  const data=getPackingData();if(!data.invoice_no){showWorkflowError("Please select Invoice No.");return;}
+  const shipmentNo=(new URLSearchParams(window.location.search).get("shipment_no")||"").trim();if(shipmentNo)data.shipment_no=shipmentNo;
   let response;try{response=await fetch("/packing-list",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify(data)});}catch(error){showWorkflowError("The Packing List could not be saved because the server could not be reached.");return;}
   if(!response.ok){showWorkflowError(await workflowErrorMessage(response));return;}
   const type=(response.headers.get("content-type")||"").toLowerCase();let result;

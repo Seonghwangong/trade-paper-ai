@@ -4,5 +4,11 @@
         "address": "California, USA",
         "email": "sales@apple.com",
         "country": "USA"
+    },
+    {
+        "name": "Final Test Buyer",
+        "address": "Test Address",
+        "email": "test@test.com",
+        "country": "Test Country"
     }
 ]

@@ -154,6 +154,7 @@ button{
 <script>
 let products = [];
 let companies = [];
+let selectedInvoiceNo = "";
 
 function setValueIfExists(selector, value){
     const element = document.querySelector(selector);
@@ -283,12 +284,14 @@ async function loadInvoiceOptions(){
 
 async function loadInvoiceData(){
     const invoiceNo = document.getElementById("invoice_no").value;
+    selectedInvoiceNo = "";
     if(!invoiceNo) return;
 
     const response = await fetch("/invoices");
     const invoices = await response.json();
     const invoice = invoices.find(inv => inv.invoice_no === invoiceNo);
     if(!invoice) return;
+    selectedInvoiceNo = invoice.invoice_no;
 
     document.getElementById("seller").value = invoice.seller || "";
     document.getElementById("buyer").value = invoice.buyer || "";
@@ -338,7 +341,7 @@ function getPackingData(){
     });
 
     return {
-        invoice_no: document.getElementById("invoice_no").value,
+        invoice_no: selectedInvoiceNo || document.getElementById("invoice_no").value,
         seller: document.getElementById("seller").value,
         buyer: document.getElementById("buyer").value,
         items: items
@@ -346,12 +349,11 @@ function getPackingData(){
 }
 
 async function savePacking(){
-    if(!document.getElementById("invoice_no").value){
+    const data = getPackingData();
+    if(!data.invoice_no){
         alert("Please select Invoice No.");
         return;
     }
-
-    const data = getPackingData();
 
     const res = await fetch("/packing-list", {
         method: "POST",

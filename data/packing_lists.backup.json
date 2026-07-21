@@ -408,21 +408,5 @@
             }
         ],
         "packing_no": "PK-026"
-    },
-    {
-        "invoice_no": "INV-014",
-        "seller": "dnicorp Ltd",
-        "buyer": "Final Test Buyer",
-        "items": [
-            {
-                "name": "Final Test Product",
-                "quantity": 5,
-                "hs_code": "999999",
-                "carton": 0,
-                "net_weight": "",
-                "gross_weight": ""
-            }
-        ],
-        "packing_no": "PK-027"
     }
 ]

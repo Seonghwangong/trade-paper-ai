@@ -81,6 +81,7 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 <script>
 let products = [];
 let companies = [];
+let buyers = [];
 
 function getPiNoFromUrl(){
     const params = new URLSearchParams(window.location.search);
@@ -184,15 +185,12 @@ async function loadCompany(){
     companies = Array.isArray(data) ? data : [data];
 
     const sellerSelect = document.getElementById("sellerSelect");
-    const buyerCompanySelect = document.getElementById("buyerCompanySelect");
     sellerSelect.innerHTML = '<option value="">Select Seller Company</option>';
-    buyerCompanySelect.innerHTML = '<option value="">Select Buyer Company</option>';
 
     companies.forEach((company, index) => {
         if(company && (company.name || company.address || company.email || company.phone)){
             const name = company.name || "Company";
             sellerSelect.innerHTML += `<option value="${index}">${name}</option>`;
-            buyerCompanySelect.innerHTML += `<option value="${index}">${name}</option>`;
         }
     });
 
@@ -200,6 +198,24 @@ async function loadCompany(){
         sellerSelect.value = "0";
         selectSeller();
     }
+}
+
+async function loadBuyers(){
+    const response = await fetch("/buyer-data");
+    buyers = await response.json();
+    if(!Array.isArray(buyers)) buyers = [];
+
+    const buyerCompanySelect = document.getElementById("buyerCompanySelect");
+    buyerCompanySelect.innerHTML = '<option value="">Select Buyer Company</option>';
+
+    buyers.forEach((buyer, index) => {
+        if(buyer && (buyer.name || buyer.address || buyer.email)){
+            const option = document.createElement("option");
+            option.value = index;
+            option.textContent = buyer.name || "Buyer";
+            buyerCompanySelect.appendChild(option);
+        }
+    });
 }
 
 function selectSeller(){
@@ -218,11 +234,11 @@ function selectBuyerCompany(){
     const index = document.getElementById("buyerCompanySelect").value;
     if(index === "") return;
 
-    const company = companies[index] || {};
+    const buyer = buyers[index] || {};
 
-    document.getElementById("buyer").value = company.name || "";
-    document.getElementById("buyer_address").value = company.address || "";
-    document.getElementById("buyer_email").value = company.email || "";
+    document.getElementById("buyer").value = buyer.name || "";
+    document.getElementById("buyer_address").value = buyer.address || "";
+    document.getElementById("buyer_email").value = buyer.email || "";
 }
 
 async function loadProformaPrefill(){
@@ -262,6 +278,7 @@ async function loadProformaPrefill(){
 
 window.onload = async function(){
     await loadCompany();
+    await loadBuyers();
     await loadProducts();
     await loadProformaPrefill();
 };

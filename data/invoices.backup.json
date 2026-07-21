@@ -146,21 +146,5 @@
             }
         ],
         "invoice_no": "INV-013"
-    },
-    {
-        "seller": "dnicorp Ltd",
-        "currency": "USD",
-        "buyer": "Final Test Buyer",
-        "buyer_address": "Test Address",
-        "buyer_email": "test@test.com",
-        "items": [
-            {
-                "name": "Final Test Product",
-                "hs_code": "999999",
-                "quantity": 5,
-                "unit_price": 10
-            }
-        ],
-        "invoice_no": "INV-014"
     }
 ]
