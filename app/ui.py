@@ -390,6 +390,16 @@ def _ux_script(path: str) -> str:
     if(table.parentElement&&getComputedStyle(table.parentElement).overflowX==='auto')return;
     const wrapper=document.createElement('div');wrapper.className='tp-responsive-table';table.parentNode.insertBefore(wrapper,table);wrapper.appendChild(table);
   });
+  function openPdfPrintWindow(viewUrl){
+    const popup=window.open('','_blank');
+    if(!popup)return false;
+    try{
+      const doc=popup.document;doc.open();doc.write('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Print PDF</title><style>*{box-sizing:border-box}html,body{height:100%;margin:0;background:#E5E7EB;font-family:Arial,sans-serif}.print-status{display:flex;height:44px;align-items:center;justify-content:space-between;gap:12px;padding:8px 14px;background:#111827;color:#fff;font-size:13px}.print-status a{color:#fff;font-weight:700}.print-frame{display:block;width:100%;height:calc(100% - 44px);border:0;background:#fff}</style></head><body><div class="print-status"><span>Preparing the PDF for printing…</span><a id="print-direct-link" target="_blank" rel="noopener">Open PDF directly</a></div><iframe id="print-pdf-frame" class="print-frame" title="PDF print preview"></iframe></body></html>');doc.close();
+      const frame=doc.getElementById('print-pdf-frame');const direct=doc.getElementById('print-direct-link');direct.href=viewUrl;
+      let attempted=false;const requestPrint=function(){if(attempted)return;attempted=true;popup.setTimeout(function(){try{frame.contentWindow.focus();frame.contentWindow.print();}catch(error){try{popup.focus();popup.print();}catch(ignore){}}},800);};
+      frame.addEventListener('load',requestPrint,{once:true});popup.setTimeout(requestPrint,3000);frame.src=viewUrl;popup.opener=null;return true;
+    }catch(error){try{popup.location.href=viewUrl;}catch(ignore){}return true;}
+  }
   document.querySelectorAll('a[href]').forEach(function(link){
     if(link.closest('.tp-export-actions'))return;
     let url;try{url=new URL(link.href,window.location.href);}catch(error){return;}
@@ -398,7 +408,7 @@ def _ux_script(path: str) -> str:
     const actions=document.createElement('span');actions.className='tp-export-actions';actions.setAttribute('aria-label','PDF export actions');
     link.target='_blank';link.rel='noopener';link.href=viewUrl;link.classList.add('tp-export-action','open');link.textContent='Open PDF ↗';
     const download=document.createElement('a');download.className='tp-export-action download';download.href=originalUrl;download.setAttribute('download','');download.textContent='⬇ Download '+(workLabel?workLabel+' ':'')+'PDF';
-    const print=document.createElement('button');print.type='button';print.className='tp-export-action print';print.textContent='🖨 Print';print.addEventListener('click',function(){const popup=window.open(viewUrl,'_blank','noopener');if(popup)setTimeout(function(){try{popup.print();}catch(error){}},900);});
+    const print=document.createElement('a');print.className='tp-export-action print';print.href=viewUrl;print.target='_blank';print.rel='noopener';print.textContent='🖨 Print';print.addEventListener('click',function(event){if(openPdfPrintWindow(viewUrl))event.preventDefault();});
     const copy=document.createElement('button');copy.type='button';copy.className='tp-export-action copy';copy.textContent='📋 Copy Link';copy.addEventListener('click',async function(){try{await navigator.clipboard.writeText(originalUrl);await savedFeedback('✓ Copied successfully.');}catch(error){window.prompt('Copy PDF link',originalUrl);}});
     actions.appendChild(download);actions.appendChild(print);actions.appendChild(copy);link.insertAdjacentElement('afterend',actions);
   });
