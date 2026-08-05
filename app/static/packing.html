@@ -109,6 +109,9 @@ button{
 </select>
 
 <input id="seller" placeholder="Seller Name">
+<input id="seller_address" placeholder="Seller Address">
+<input id="seller_email" placeholder="Seller Email">
+<input id="seller_phone" placeholder="Seller Phone">
 </div>
 
 <div class="card">
@@ -119,6 +122,8 @@ button{
 </select>
 
 <input id="buyer" placeholder="Buyer Name">
+<input id="buyer_address" placeholder="Buyer Address">
+<input id="buyer_email" placeholder="Buyer Email">
 </div>
 
 <div class="card">
@@ -294,7 +299,12 @@ async function loadInvoiceData(){
     selectedInvoiceNo = invoice.invoice_no;
 
     document.getElementById("seller").value = invoice.seller || "";
+    document.getElementById("seller_address").value = invoice.seller_address || "";
+    document.getElementById("seller_email").value = invoice.seller_email || "";
+    document.getElementById("seller_phone").value = invoice.seller_phone || "";
     document.getElementById("buyer").value = invoice.buyer || "";
+    document.getElementById("buyer_address").value = invoice.buyer_address || "";
+    document.getElementById("buyer_email").value = invoice.buyer_email || "";
 
     const area = document.getElementById("items_area");
     area.innerHTML = "";
@@ -343,7 +353,12 @@ function getPackingData(){
     return {
         invoice_no: selectedInvoiceNo || document.getElementById("invoice_no").value,
         seller: document.getElementById("seller").value,
+        seller_address: document.getElementById("seller_address").value,
+        seller_email: document.getElementById("seller_email").value,
+        seller_phone: document.getElementById("seller_phone").value,
         buyer: document.getElementById("buyer").value,
+        buyer_address: document.getElementById("buyer_address").value,
+        buyer_email: document.getElementById("buyer_email").value,
         items: items
     };
 }

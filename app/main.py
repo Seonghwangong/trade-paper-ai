@@ -277,7 +277,7 @@ function showInvoiceNextActions(invoiceNo){
 window.saveInvoice=async function(){
   clearWorkflowMessage();
   const params=new URLSearchParams(window.location.search);const piNo=(params.get("pi_no")||"").trim();const shipmentNo=(params.get("shipment_no")||"").trim();
-  const data={seller:document.getElementById("seller").value,currency:document.getElementById("currency").value,buyer:document.getElementById("buyer").value,buyer_address:document.getElementById("buyer_address").value,buyer_email:document.getElementById("buyer_email").value,items:getItems()};
+  const data={seller:document.getElementById("seller").value,seller_address:document.getElementById("seller_address").value,seller_email:document.getElementById("seller_email").value,seller_phone:document.getElementById("seller_phone").value,currency:document.getElementById("currency").value,buyer:document.getElementById("buyer").value,buyer_address:document.getElementById("buyer_address").value,buyer_email:document.getElementById("buyer_email").value,items:getItems()};
   if(piNo)data.pi_no=piNo;
   if(shipmentNo)data.shipment_no=shipmentNo;
   let response;try{response=await fetch("/invoice",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify(data)});}catch(error){showWorkflowError("The Invoice could not be saved because the server could not be reached.");return;}

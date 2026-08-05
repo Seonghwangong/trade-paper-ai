@@ -1,7 +1,7 @@
 from io import BytesIO
 from datetime import datetime
-from typing import List
-from fastapi import APIRouter, Body, Response, Form, HTTPException
+from typing import Annotated, List, Optional
+from fastapi import APIRouter, Body, Response, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -12,9 +12,16 @@ from pathlib import Path
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_existing_reference, require_items, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
 from app.shipment import link_direct_document
 from app.ui import badge, button, form_footer, form_page, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
+from app.account_packing import ensure_legacy_packing_ownership, public_packing
+from app.account_company import load_account_company
+from app.auth import USERS_FILE
+from app.routers.company import ACCOUNT_COMPANIES_FILE
+from app import invoice as invoice_module
+from app import buyer as buyer_module
+from app.export import set_pdf_export_record
 
 COMPANY_FILE = data_path("company.json")
 PACKING_FILE = data_path("packing_lists.json")
@@ -27,8 +34,61 @@ def load_company():
     return load_json_strict(COMPANY_FILE, {}, dict)
 
 
-def load_packing_lists():
-    return load_json_strict(PACKING_FILE, [], list)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_packing_records():
+    return ensure_legacy_packing_ownership(PACKING_FILE, USERS_FILE)
+
+
+def owned_packing_records(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        record for record in load_packing_records()
+        if isinstance(record, dict)
+        and str(record.get("account_id", "") or "").strip() == owner
+    ]
+
+
+def load_packing_lists(account_id):
+    return [public_packing(record) for record in owned_packing_records(account_id)]
+
+
+def _owned_packing(packing_no, account_id):
+    target = str(packing_no or "").strip()
+    record = next(
+        (record for record in owned_packing_records(account_id)
+         if str(record.get("packing_no", "") or "").strip() == target),
+        None,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Packing List not found")
+    return record
+
+
+def _owned_invoice(invoice_no, account_id):
+    target = str(invoice_no or "").strip()
+    record = next(
+        (record for record in invoice_module.owned_invoice_records(account_id)
+         if str(record.get("invoice_no", "") or "").strip() == target),
+        None,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return record
+
+
+def _buyer_master(account_id, buyer_name):
+    target = str(buyer_name or "").strip().casefold()
+    return next(
+        (
+            record for record in buyer_module.load_buyers(account_id)
+            if str(record.get("name", "") or "").strip().casefold() == target
+        ),
+        {},
+    )
 
 
 def save_packing_lists(packing_lists):
@@ -52,24 +112,40 @@ def next_packing_no(packing_lists):
 
 
 @router.post("/packing-list")
-def create_packing_list(payload: dict = Body(...)):
+def create_packing_list(request: Request, payload: dict = Body(...)):
     record = dict(payload)
+    record.pop("account_id", None)
+    account_id = _account_id(request)
+    record["account_id"] = account_id
     shipment_no = str(record.pop("shipment_no", "") or "").strip()
-    require_existing_reference("Invoice", record.get("invoice_no", ""), load_invoice_records(), "invoice_no", required=True)
+    invoice_no = require_text("Invoice No", record.get("invoice_no", ""))
+    source_invoice = public_packing(_owned_invoice(invoice_no, account_id))
+    record["invoice_no"] = invoice_no
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    buyer = _buyer_master(account_id, record["buyer"])
+    snapshot_fallbacks = {
+        "seller_address": source_invoice.get("seller_address") or company.get("address", ""),
+        "seller_email": source_invoice.get("seller_email") or company.get("email", ""),
+        "seller_phone": source_invoice.get("seller_phone") or company.get("phone", ""),
+        "buyer_address": source_invoice.get("buyer_address") or buyer.get("address", ""),
+        "buyer_email": source_invoice.get("buyer_email") or buyer.get("email", ""),
+    }
+    for field, fallback in snapshot_fallbacks.items():
+        record[field] = record.get(field) or fallback
     require_items(record.get("items", []))
     def add_packing(records):
         record["packing_no"] = next_identifier(records, "packing_no", "PK")
         records.append(record)
     locked_json_mutation(PACKING_FILE, [], add_packing, list)
     link_direct_document(shipment_no, "packing_no", record["packing_no"])
-    return record
+    return public_packing(record)
 
 
 @router.get("/packing-list")
-def packing_list(search: str = ""):
-    packing_lists = load_packing_lists()
+def packing_list(request: Request, search: str = ""):
+    packing_lists = load_packing_lists(_account_id(request))
     packing_lists = list(reversed(packing_lists))
 
     if search:
@@ -110,6 +186,7 @@ def packing_list(search: str = ""):
 
 @router.post("/packing")
 def save_packing(
+    request: Request,
     invoice_no: str = Form(""),
     seller: str = Form(""),
     buyer: str = Form(""),
@@ -118,8 +195,15 @@ def save_packing(
     carton: List[str] = Form([]),
     net_weight: List[str] = Form([]),
     gross_weight: List[str] = Form([]),
+    seller_address: Annotated[Optional[str], Form()] = None,
+    seller_email: Annotated[Optional[str], Form()] = None,
+    seller_phone: Annotated[Optional[str], Form()] = None,
+    buyer_address: Annotated[Optional[str], Form()] = None,
+    buyer_email: Annotated[Optional[str], Form()] = None,
 ):
-    require_existing_reference("Invoice", invoice_no, load_invoice_records(), "invoice_no", required=True)
+    invoice_no = require_text("Invoice No", invoice_no)
+    account_id = _account_id(request)
+    _owned_invoice(invoice_no, account_id)
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
     items = []
@@ -139,10 +223,16 @@ def save_packing(
     require_items(items)
     def add_packing(packing_lists):
         packing = {
+        "account_id": account_id,
         "packing_no": next_identifier(packing_lists, "packing_no", "PK"),
         "invoice_no": invoice_no,
         "seller": seller,
+        "seller_address": seller_address or "",
+        "seller_email": seller_email or "",
+        "seller_phone": seller_phone or "",
         "buyer": buyer,
+        "buyer_address": buyer_address or "",
+        "buyer_email": buyer_email or "",
         "items": items,
         }
         packing_lists.append(packing)
@@ -152,11 +242,12 @@ def save_packing(
 
 
 @router.get("/edit-packing/{packing_no}")
-def edit_packing(packing_no: str):
-    packing_lists = load_packing_lists()
-
-    for packing in packing_lists:
-        if packing.get("packing_no") == packing_no:
+def edit_packing(packing_no: str, request: Request):
+    account_id = _account_id(request)
+    packing = public_packing(_owned_packing(packing_no, account_id))
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    buyer = _buyer_master(account_id, packing.get("buyer", ""))
+    if packing:
             items = packing.get("items", [])
 
             if not items:
@@ -166,7 +257,12 @@ def edit_packing(packing_no: str):
                 ("Packing No", f'<input type="text" value="{packing.get("packing_no", "")}" readonly>'),
                 ("Invoice No", f'<input type="text" name="invoice_no" value="{packing.get("invoice_no", "")}">'),
                 ("Seller", f'<input type="text" name="seller" value="{packing.get("seller", "")}">'),
+                ("Seller Address", f'<input type="text" name="seller_address" value="{packing.get("seller_address") or company.get("address", "")}">'),
+                ("Seller Email", f'<input type="text" name="seller_email" value="{packing.get("seller_email") or company.get("email", "")}">'),
+                ("Seller Phone", f'<input type="text" name="seller_phone" value="{packing.get("seller_phone") or company.get("phone", "")}">'),
                 ("Buyer", f'<input type="text" name="buyer" value="{packing.get("buyer", "")}">'),
+                ("Buyer Address", f'<input type="text" name="buyer_address" value="{packing.get("buyer_address") or buyer.get("address", "")}">'),
+                ("Buyer Email", f'<input type="text" name="buyer_email" value="{packing.get("buyer_email") or buyer.get("email", "")}">'),
             ])
             html = f'<form action="/update-packing/{packing_no}" method="post">' + section_card("Packing Information", info)
 
@@ -176,6 +272,9 @@ def edit_packing(packing_no: str):
 
 <p>Item Name</p>
 <input type="text" name="item_name" value="{item.get('name','')}">
+
+<p>Quantity</p>
+<input type="number" step="any" name="quantity" value="{item.get('quantity','')}">
 
 <p>HS Code</p>
 <input type="text" name="hs_code" value="{item.get('hs_code','')}">
@@ -196,21 +295,29 @@ def edit_packing(packing_no: str):
             navigation = navigation_footer("/packing-list", "← Packing List", state="Editing")
             return HTMLResponse(form_page("Edit Packing List", html, subtitle="Update packing list information", navigation=navigation))
 
-    return {"error": "Packing List not found"}
-
 @router.post("/update-packing/{packing_no}")
 def update_packing(
     packing_no: str,
+    request: Request,
     invoice_no: str = Form(""),
     seller: str = Form(""),
     buyer: str = Form(""),
     item_name: List[str] = Form([]),
+    quantity: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     carton: List[str] = Form([]),
     net_weight: List[str] = Form([]),
     gross_weight: List[str] = Form([]),
+    seller_address: Annotated[Optional[str], Form()] = None,
+    seller_email: Annotated[Optional[str], Form()] = None,
+    seller_phone: Annotated[Optional[str], Form()] = None,
+    buyer_address: Annotated[Optional[str], Form()] = None,
+    buyer_email: Annotated[Optional[str], Form()] = None,
 ):
-    require_existing_reference("Invoice", invoice_no, load_invoice_records(), "invoice_no", required=True)
+    invoice_no = require_text("Invoice No", invoice_no)
+    account_id = _account_id(request)
+    _owned_packing(packing_no, account_id)
+    _owned_invoice(invoice_no, account_id)
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
     items = []
@@ -219,8 +326,13 @@ def update_packing(
         if not item_name[i].strip():
             continue
 
+        quantity_value = float(quantity[i] or 0) if i < len(quantity) else 0
+        if quantity_value.is_integer():
+            quantity_value = int(quantity_value)
+
         items.append({
             "name": item_name[i],
+            "quantity": quantity_value,
             "hs_code": hs_code[i] if i < len(hs_code) else "",
             "carton": carton[i] if i < len(carton) else "",
             "net_weight": net_weight[i] if i < len(net_weight) else "",
@@ -230,11 +342,22 @@ def update_packing(
     require_items(items)
     def replace_packing(packing_lists):
         for packing in packing_lists:
-            if packing.get("packing_no") != packing_no:
+            if (packing.get("packing_no") != packing_no
+                    or str(packing.get("account_id", "") or "").strip() != account_id):
                 continue
             packing["invoice_no"] = invoice_no
             packing["seller"] = seller
+            if seller_address is not None:
+                packing["seller_address"] = seller_address
+            if seller_email is not None:
+                packing["seller_email"] = seller_email
+            if seller_phone is not None:
+                packing["seller_phone"] = seller_phone
             packing["buyer"] = buyer
+            if buyer_address is not None:
+                packing["buyer_address"] = buyer_address
+            if buyer_email is not None:
+                packing["buyer_email"] = buyer_email
             packing["items"] = items
             return
         raise HTTPException(status_code=404, detail="Packing List not found")
@@ -249,12 +372,27 @@ window.location.href = "/packing-list";
 
 
 @router.get("/packing-delete/{packing_no}")
-def delete_packing(packing_no: str):
-    return identifier_delete_confirmation("Packing List", "Packing List", packing_no, PACKING_FILE, "packing_no", f"/packing-delete/{packing_no}", "/packing-list")
+def delete_packing(packing_no: str, request: Request):
+    _owned_packing(packing_no, _account_id(request))
+    return render_delete_page("Packing List", packing_no, f"/packing-delete/{packing_no}", "/packing-list", find_dependencies("Packing List", packing_no, _account_id(request)))
 
 @router.post("/packing-delete/{packing_no}")
-def confirm_delete_packing(packing_no: str):
-    return confirmed_identifier_delete("Packing List", "Packing List", packing_no, PACKING_FILE, "packing_no", f"/packing-delete/{packing_no}", "/packing-list", "/packing-list")
+def confirm_delete_packing(packing_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_packing(packing_no, account_id)
+    dependencies = find_dependencies("Packing List", packing_no, account_id)
+    if dependencies:
+        return render_delete_page("Packing List", packing_no, f"/packing-delete/{packing_no}", "/packing-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((index for index, record in enumerate(records)
+                      if isinstance(record, dict)
+                      and str(record.get("packing_no", "") or "").strip() == packing_no
+                      and str(record.get("account_id", "") or "").strip() == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Packing List not found")
+        records.pop(index)
+    locked_json_mutation(PACKING_FILE, [], remove, list)
+    return RedirectResponse("/packing-list", status_code=303)
 
 @router.get("/packing-form")
 def packing_form():
@@ -262,17 +400,34 @@ def packing_form():
 
 
 @router.post("/packing-list/pdf")
-def create_packing_list_pdf(payload: dict = Body(...)):
-    company = load_company()
+def preview_packing_list_pdf(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    _owned_invoice(require_text("Invoice No", payload.get("invoice_no", "")), account_id)
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    public_payload = public_packing(payload)
+    buyer = _buyer_master(account_id, public_payload.get("buyer", ""))
+    return create_packing_list_pdf(public_payload, company, buyer)
+
+
+preview_packing_list_pdf.__name__ = "create_packing_list_pdf"
+
+
+def create_packing_list_pdf(payload, company=None, buyer_master=None):
+    payload = public_packing(payload)
+    company = company if isinstance(company, dict) else load_company()
+    buyer_master = buyer_master if isinstance(buyer_master, dict) else {}
 
     packing_no = payload.get("packing_no") or "-"
     invoice_no = payload.get("invoice_no", "")
     today = datetime.now().strftime("%Y-%m-%d")
 
     buyer = payload.get("buyer", "")
-    seller = payload.get("seller", "") or company.get("name", "")
-    seller_address = company.get("address") or payload.get("seller_address", "")
-    seller_email = company.get("email") or payload.get("seller_email", "")
+    buyer_address = payload.get("buyer_address") or buyer_master.get("address", "")
+    buyer_email = payload.get("buyer_email") or buyer_master.get("email", "")
+    seller = payload.get("seller") or company.get("name", "")
+    seller_address = payload.get("seller_address") or company.get("address", "")
+    seller_email = payload.get("seller_email") or company.get("email", "")
+    seller_phone = payload.get("seller_phone") or company.get("phone", "")
 
     items = payload.get("items", [])
 
@@ -333,8 +488,11 @@ def create_packing_list_pdf(payload: dict = Body(...)):
         pdf.setFont("Helvetica", 9)
         pdf.drawString(60, height - 220, seller)
         pdf.drawString(60, height - 235, seller_address)
-        pdf.drawString(60, height - 250, seller_email)
+        seller_contact = " · ".join(value for value in (seller_email, seller_phone) if value)
+        pdf.drawString(60, height - 250, seller_contact)
         pdf.drawString(325, height - 220, buyer)
+        pdf.drawString(325, height - 235, buyer_address)
+        pdf.drawString(325, height - 250, buyer_email)
 
     def draw_table_header():
         header_y = height - 315
@@ -461,11 +619,10 @@ def create_packing_list_pdf(payload: dict = Body(...)):
 
 
 @router.get("/packing-list-pdf/{packing_no}")
-def packing_list_pdf(packing_no: str):
-    packing_lists = load_packing_lists()
-
-    for packing in packing_lists:
-        if packing.get("packing_no") == packing_no:
-            return create_packing_list_pdf(packing)
-
-    return {"error": "Packing list not found"}
+def packing_list_pdf(packing_no: str, request: Request):
+    account_id = _account_id(request)
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    record = public_packing(_owned_packing(packing_no, account_id))
+    buyer = _buyer_master(account_id, record.get("buyer", ""))
+    set_pdf_export_record(request, record)
+    return create_packing_list_pdf(record, company, buyer)

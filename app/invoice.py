@@ -1,6 +1,6 @@
 from io import BytesIO
 from datetime import datetime
-from fastapi import APIRouter, Body, Response, Form, HTTPException
+from fastapi import APIRouter, Body, Response, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -9,67 +9,114 @@ import json
 import html as html_lib
 import os
 from pathlib import Path
+from typing import Annotated, Optional
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_existing_reference, require_items, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
 from app.shipment import link_direct_document
 from app.ui import badge, button, form_css, form_footer, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
+from app.account_invoice import ensure_legacy_invoice_ownership, public_invoice
+from app.auth import USERS_FILE
+from app.account_company import load_account_company
+from app.routers.company import ACCOUNT_COMPANIES_FILE
+from app import proforma as proforma_module
+from app.export import set_pdf_export_record
 
 COMPANY_FILE = data_path("company.json")
 INVOICE_FILE = data_path("invoices.json")
-PACKING_FILE = data_path("packing_lists.json")
 PROFORMA_FILE = data_path("proformas.json")
 
 router = APIRouter()
-def load_packing_lists():
-    return load_json_strict(PACKING_FILE, [], list)
+
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
 
 
-def load_invoices():
-    return load_json_strict(INVOICE_FILE, [], list)
+def load_invoice_records():
+    return ensure_legacy_invoice_ownership(INVOICE_FILE, USERS_FILE)
 
 
-def save_invoices(records):
-    atomic_write_json(INVOICE_FILE, records, list)
+def owned_invoice_records(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        record
+        for record in load_invoice_records()
+        if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner
+    ]
 
 
-def load_proformas():
-    return load_json_strict(PROFORMA_FILE, [], list)
+def load_invoices(account_id):
+    return [public_invoice(record) for record in owned_invoice_records(account_id)]
+
+
+def _owned_invoice(invoice_no, account_id):
+    target = str(invoice_no or "").strip()
+    owner = str(account_id or "").strip()
+    record = next(
+        (
+            invoice
+            for invoice in load_invoice_records()
+            if isinstance(invoice, dict)
+            and str(invoice.get("invoice_no", "") or "").strip() == target
+            and str(invoice.get("account_id", "") or "").strip() == owner
+        ),
+        None,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return record
+
+
+def load_proformas(account_id):
+    return proforma_module.load_proformas(account_id)
 
 
 @router.post("/invoice")
-def create_invoice(payload: dict = Body(...)):
+def create_invoice(request: Request, payload: dict = Body(...)):
     record = dict(payload)
+    record.pop("account_id", None)
+    record["account_id"] = _account_id(request)
     shipment_no = str(record.pop("shipment_no", "") or "").strip()
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
     require_items(record.get("items", []))
-    require_existing_reference("Proforma Invoice", record.get("pi_no", ""), load_proformas(), "pi_no")
+    require_existing_reference("Proforma Invoice", record.get("pi_no", ""), load_proformas(_account_id(request)), "pi_no")
     def add_invoice(invoices):
         record["invoice_no"] = next_identifier(invoices, "invoice_no", "INV")
         invoices.append(record)
     locked_json_mutation(INVOICE_FILE, [], add_invoice, list)
     link_direct_document(shipment_no, "invoice_no", record["invoice_no"])
-    return record
+    return public_invoice(record)
 
 @router.get("/invoice-data")
-def invoice_data():
-    return load_invoices()
+def invoice_data(request: Request):
+    return load_invoices(_account_id(request))
 
 @router.get("/invoice-pdf/{invoice_no}")
-def invoice_pdf(invoice_no: str):
-
-    invoices = load_invoices()
-
-    for inv in invoices:
-        if inv.get("invoice_no") == invoice_no:
-            return create_invoice_pdf(inv)
-    return {"error": "Invoice not found"}
+def invoice_pdf(invoice_no: str, request: Request):
+    account_id = _account_id(request)
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    record = public_invoice(_owned_invoice(invoice_no, account_id))
+    set_pdf_export_record(request, record)
+    return create_invoice_pdf(
+        record,
+        company,
+    )
 
 @router.post("/invoice/pdf")
-def create_invoice_pdf(payload: dict = Body(...)):
-    company = load_json_strict(COMPANY_FILE, {}, dict)
+def preview_invoice_pdf(request: Request, payload: dict = Body(...)):
+    company = load_account_company(_account_id(request), ACCOUNT_COMPANIES_FILE)
+    return create_invoice_pdf(payload, company)
+
+
+preview_invoice_pdf.__name__ = "create_invoice_pdf"
+
+
+def create_invoice_pdf(payload, company=None):
+    payload = public_invoice(payload)
+    company = company if isinstance(company, dict) else load_json_strict(COMPANY_FILE, {}, dict)
 
     invoice_no = payload.get("invoice_no", "INV-001")
     today = datetime.now().strftime("%Y-%m-%d")
@@ -78,9 +125,10 @@ def create_invoice_pdf(payload: dict = Body(...)):
     buyer_address = payload.get("buyer_address", "Dubai, UAE")
     buyer_email = payload.get("buyer_email", "sales@abctrading.com")
 
-    seller = company.get("name") or payload.get("seller", "Unknown Seller")
-    seller_address = company.get("address") or payload.get("seller_address", "Seoul, Korea")
-    seller_email = company.get("email") or payload.get("seller_email", "contact@tradepaper.ai")
+    seller = payload.get("seller") or company.get("name") or "Unknown Seller"
+    seller_address = payload.get("seller_address") or company.get("address") or "Seoul, Korea"
+    seller_email = payload.get("seller_email") or company.get("email") or "contact@tradepaper.ai"
+    seller_phone = payload.get("seller_phone") or company.get("phone") or ""
 
     items = payload.get("items", [
         {
@@ -141,7 +189,8 @@ def create_invoice_pdf(payload: dict = Body(...)):
         pdf.setFont("Helvetica", 9)
         pdf.drawString(60, height - 220, seller)
         pdf.drawString(60, height - 235, seller_address)
-        pdf.drawString(60, height - 250, seller_email)
+        seller_contact = " · ".join(value for value in (seller_email, seller_phone) if value)
+        pdf.drawString(60, height - 250, seller_contact)
 
         pdf.drawString(325, height - 220, buyer)
         pdf.drawString(325, height - 235, buyer_address)
@@ -156,8 +205,9 @@ def create_invoice_pdf(payload: dict = Body(...)):
         pdf.setFillColor(colors.black)
         pdf.setFont("Helvetica-Bold", 10)
         pdf.drawString(60, header_y + 10, "Item")
-        pdf.drawRightString(320, header_y + 10, "Qty")
-        pdf.drawRightString(430, header_y + 10, "Unit Price")
+        pdf.drawString(245, header_y + 10, "HS Code")
+        pdf.drawRightString(350, header_y + 10, "Qty")
+        pdf.drawRightString(445, header_y + 10, "Unit Price")
         pdf.drawRightString(540, header_y + 10, "Total")
 
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
@@ -200,8 +250,9 @@ def create_invoice_pdf(payload: dict = Body(...)):
 
         pdf.rect(table_x, y, table_w, row_h, fill=0)
         pdf.drawString(60, y + 11, item["name"])
-        pdf.drawRightString(320, y + 11, str(quantity))
-        pdf.drawRightString(430, y + 11, f"USD {unit_price:,.2f}")
+        pdf.drawString(245, y + 11, str(item.get("hs_code", "")))
+        pdf.drawRightString(350, y + 11, str(quantity))
+        pdf.drawRightString(445, y + 11, f"USD {unit_price:,.2f}")
         pdf.drawRightString(540, y + 11, f"USD {line_total:,.2f}")
         y -= row_h
 
@@ -236,12 +287,11 @@ def create_invoice_pdf(payload: dict = Body(...)):
         }
     )
 @router.get("/edit-invoice/{invoice_no}")
-def edit_invoice(invoice_no: str):  
-    if not INVOICE_FILE.exists():
-        return {"error": "No invoices"}
-    invoices = load_invoices()
-    for inv in invoices:
-        if inv.get("invoice_no") == invoice_no:
+def edit_invoice(invoice_no: str, request: Request):
+    account_id = _account_id(request)
+    inv = public_invoice(_owned_invoice(invoice_no, account_id))
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    if inv:
             items = inv.get("items", [])
             item = items[0] if items else {}
             item_name = item.get("name", "")
@@ -271,6 +321,9 @@ def edit_invoice(invoice_no: str):
 {section_card("Invoice Information", metadata([
     ("Currency", f'<input type="text" name="currency" value="{inv.get("currency", "USD")}" placeholder="Currency">'),
     ("Seller", f'<input type="text" name="seller" value="{inv.get("seller", "")}" placeholder="Seller Name">'),
+    ("Seller Address", f'<input type="text" name="seller_address" value="{inv.get("seller_address") or company.get("address", "")}" placeholder="Seller Address">'),
+    ("Seller Email", f'<input type="text" name="seller_email" value="{inv.get("seller_email") or company.get("email", "")}" placeholder="Seller Email">'),
+    ("Seller Phone", f'<input type="text" name="seller_phone" value="{inv.get("seller_phone") or company.get("phone", "")}" placeholder="Seller Phone">'),
     ("Buyer", f'<input type="text" name="buyer" value="{inv.get("buyer", "")}" placeholder="Buyer Name">'),
     ("Buyer Address", f'<input type="text" name="buyer_address" value="{inv.get("buyer_address", "")}" placeholder="Buyer Address">'),
     ("Buyer Email", f'<input type="text" name="buyer_email" value="{inv.get("buyer_email", "")}" placeholder="Buyer Email">'),
@@ -348,11 +401,10 @@ window.onload = function(){{
             """
 
             return HTMLResponse(html)
-
-    return {"error": "Invoice not found"} 
 @router.post("/update-invoice/{invoice_no}")
 def update_invoice(
     invoice_no: str,
+    request: Request,
     seller: str = Form(""),
     currency: str = Form(""),
     buyer: str = Form(""),
@@ -362,13 +414,20 @@ def update_invoice(
     hs_code: str = Form(""),
     quantity: str = Form(""),
     unit_price: str = Form(""),
+    seller_address: Annotated[Optional[str], Form()] = None,
+    seller_email: Annotated[Optional[str], Form()] = None,
+    seller_phone: Annotated[Optional[str], Form()] = None,
 ):
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
     require_items([item_name])
+    account_id = _account_id(request)
     def replace_invoice(invoices):
         for inv in invoices:
-            if inv.get("invoice_no") != invoice_no:
+            if (
+                inv.get("invoice_no") != invoice_no
+                or str(inv.get("account_id", "") or "").strip() != account_id
+            ):
                 continue
             try:
                 quantity_value = int(quantity)
@@ -381,6 +440,12 @@ def update_invoice(
                 unit_price_value = unit_price
 
             inv["seller"] = seller
+            if seller_address is not None:
+                inv["seller_address"] = seller_address
+            if seller_email is not None:
+                inv["seller_email"] = seller_email
+            if seller_phone is not None:
+                inv["seller_phone"] = seller_phone
             inv["currency"] = currency
             inv["buyer"] = buyer
             inv["buyer_address"] = buyer_address
@@ -398,19 +463,62 @@ def update_invoice(
     return RedirectResponse(url="/invoice-list", status_code=303)     
 @router.get("/delete-invoice/{invoice_no}")
 
-def delete_invoice(invoice_no: str):
-    return identifier_delete_confirmation("Commercial Invoice", "Commercial Invoice", invoice_no, INVOICE_FILE, "invoice_no", f"/delete-invoice/{invoice_no}", "/invoice-list")
+def delete_invoice(invoice_no: str, request: Request):
+    _owned_invoice(invoice_no, _account_id(request))
+    return render_delete_page(
+        "Commercial Invoice",
+        invoice_no,
+        f"/delete-invoice/{invoice_no}",
+        "/invoice-list",
+        find_dependencies("Commercial Invoice", invoice_no, _account_id(request)),
+    )
 
 @router.post("/delete-invoice/{invoice_no}")
-def confirm_delete_invoice(invoice_no: str):
-    return confirmed_identifier_delete("Commercial Invoice", "Commercial Invoice", invoice_no, INVOICE_FILE, "invoice_no", f"/delete-invoice/{invoice_no}", "/invoice-list", "/invoice-list")
+def confirm_delete_invoice(invoice_no: str, request: Request):
+    account_id = _account_id(request)
+    dependencies = find_dependencies("Commercial Invoice", invoice_no, account_id)
+    if dependencies:
+        return render_delete_page(
+            "Commercial Invoice",
+            invoice_no,
+            f"/delete-invoice/{invoice_no}",
+            "/invoice-list",
+            dependencies,
+            status_code=409,
+        )
+
+    def remove(invoices):
+        index = next(
+            (
+                index
+                for index, invoice in enumerate(invoices)
+                if isinstance(invoice, dict)
+                and str(invoice.get("invoice_no", "") or "").strip() == invoice_no
+                and str(invoice.get("account_id", "") or "").strip() == account_id
+            ),
+            None,
+        )
+        if index is None:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        invoices.pop(index)
+
+    locked_json_mutation(INVOICE_FILE, [], remove, list)
+    return RedirectResponse("/invoice-list", status_code=303)
 @router.get("/invoice-list")
-def invoice_list(search: str = ""):
+def invoice_list(request: Request, search: str = ""):
 
     if not os.path.exists(INVOICE_FILE):
         return HTMLResponse("<h1>No Invoices</h1>")
 
-    invoices = load_invoices()
+    account_id = _account_id(request)
+    invoices = load_invoices(account_id)
+    from app import packing as packing_module
+    packing_by_invoice = {}
+    for packing in packing_module.load_packing_lists(account_id):
+        invoice_no = str(packing.get("invoice_no", "") or "").strip()
+        packing_no = str(packing.get("packing_no", "") or "").strip()
+        if invoice_no and packing_no:
+            packing_by_invoice.setdefault(invoice_no, packing_no)
 
     valid_invoices = [
         inv for inv in invoices
@@ -436,7 +544,7 @@ def invoice_list(search: str = ""):
 
     rows = []
     for inv in valid_invoices:
-        packing_no = next((p.get("packing_no") for p in load_packing_lists() if p.get("invoice_no") == inv.get("invoice_no")), "")
+        packing_no = packing_by_invoice.get(str(inv.get("invoice_no", "") or "").strip(), "")
         packing_exists = bool(packing_no)
         packing_href = f"/edit-packing/{packing_no}" if packing_exists else f"/packing-page?invoice_no={inv.get('invoice_no', '')}"
         items = inv.get("items", [])
