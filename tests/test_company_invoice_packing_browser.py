@@ -102,7 +102,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
 
         browser = browser_type.launch(headless=True)
         page = browser.new_page(viewport={"width": 1280, "height": 900})
-        company_name = buyer_name = product_name = invoice_no = packing_no = ""
+        company_name = buyer_name = product_name = invoice_no = packing_no = bl_no = ""
         try:
             # Steps 1-2: a brand-new account and Company Master over real HTTP.
             company_name, email = _register_login_and_setup(page, base_url, browser_name, "A")
@@ -298,6 +298,40 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
                 "gross_weight": "44",
             }]
 
+            # Packing -> B/L copies and persists the complete party snapshot.
+            page.goto(f"{base_url}/bl-form?packing_no={packing_no}")
+            expected_bl_party = {
+                "shipper": company_name,
+                "shipper_address": company_address,
+                "shipper_email": email,
+                "shipper_phone": company_phone,
+                "consignee": buyer_name,
+                "consignee_address": buyer_address,
+                "consignee_email": buyer_email,
+            }
+            for field, expected in expected_bl_party.items():
+                assert page.locator(f'input[name="{field}"]').input_value() == expected
+            page.locator('input[name="vessel"]').fill("CODEX Vessel")
+            page.locator('input[name="voyage_no"]').fill("V-001")
+            page.locator('input[name="port_of_loading"]').fill("Busan")
+            page.locator('input[name="port_of_discharge"]').fill("Los Angeles")
+            page.get_by_role("button", name="Save Bill of Lading").click()
+            page.wait_for_url(f"{base_url}/bl-list")
+            bl_edit_path = page.locator(f'tr:has-text("{packing_no}") a', has_text="Edit").get_attribute("href")
+            assert bl_edit_path
+            bl_no = bl_edit_path.rsplit("/", 1)[-1]
+            page.goto(f"{base_url}{bl_edit_path}")
+            for field, expected in expected_bl_party.items():
+                assert page.locator(f'input[name="{field}"]').input_value() == expected
+            page.get_by_role("button", name="Update Bill of Lading").click()
+            page.wait_for_url(f"{base_url}/bl-list")
+            saved_pdf = page.request.get(f"{base_url}/bl-pdf/{bl_no}")
+            assert saved_pdf.ok and saved_pdf.body().startswith(b"%PDF")
+            stored_bills = json.loads((data_dir / "bills_of_lading.json").read_text(encoding="utf-8"))
+            stored_bill = next(record for record in stored_bills if record.get("bl_no") == bl_no)
+            for field, expected in expected_bl_party.items():
+                assert stored_bill[field] == expected
+
             # Account B cannot list, search, edit, or fetch Account A records.
             page.get_by_role("button", name="Logout").click()
             page.wait_for_url(f"{base_url}/login")
@@ -311,9 +345,13 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert page.get_by_text(invoice_no).count() == 0
             page.goto(f"{base_url}/packing-list?search={packing_no}")
             assert page.get_by_text(packing_no).count() == 0
+            page.goto(f"{base_url}/bl-list?search={bl_no}")
+            assert page.get_by_text(bl_no).count() == 0
             denied_invoice = page.goto(f"{base_url}/edit-invoice/{invoice_no}")
             assert denied_invoice is not None and denied_invoice.status == 404
             denied_packing = page.goto(f"{base_url}/edit-packing/{packing_no}")
             assert denied_packing is not None and denied_packing.status == 404
+            denied_bl = page.goto(f"{base_url}/edit-bl/{bl_no}")
+            assert denied_bl is not None and denied_bl.status == 404
         finally:
             browser.close()

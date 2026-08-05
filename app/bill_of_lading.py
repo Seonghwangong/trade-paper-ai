@@ -1,11 +1,11 @@
-from typing import List
+from typing import Annotated, List, Optional
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
 import json
 
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -15,7 +15,15 @@ router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_bill_of_lading import ensure_legacy_bill_of_lading_ownership, public_bill_of_lading
+from app.account_company import load_account_company
+from app.export import set_pdf_export_record
+from app.auth import USERS_FILE
+from app import packing as packing_module
+from app import invoice as invoice_module
+from app import buyer as buyer_module
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 from app.shipment import shipment_context_redirect_url
 from app.ui import badge, button, form_css, form_footer, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
 
@@ -24,22 +32,57 @@ PACKING_FILE = data_path("packing_lists.json")
 INVOICE_FILE = data_path("invoices.json")
 
 
-def load_bills_of_lading():
-    return load_json_strict(BL_FILE, [], list)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_bill_of_lading_records():
+    return ensure_legacy_bill_of_lading_ownership(BL_FILE, USERS_FILE)
+
+
+def owned_bill_of_lading_records(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        record for record in load_bill_of_lading_records()
+        if isinstance(record, dict)
+        and str(record.get("account_id", "") or "").strip() == owner
+    ]
+
+
+def load_bills_of_lading(account_id):
+    return [public_bill_of_lading(record) for record in owned_bill_of_lading_records(account_id)]
+
+
+def _owned_bl(bl_no, account_id):
+    target = str(bl_no or "").strip()
+    record = next(
+        (record for record in owned_bill_of_lading_records(account_id)
+         if str(record.get("bl_no", "") or "").strip() == target),
+        None,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Bill of Lading not found")
+    return record
 
 
 def save_bills_of_lading(records):
     atomic_write_json(BL_FILE, records, list)
 
 
-def load_packing_lists():
-    return load_json_strict(PACKING_FILE, [], list)
+def load_packing_lists(account_id):
+    return packing_module.load_packing_lists(account_id)
 
 
-def validate_bl_links(packing_no, invoice_no):
-    packing = require_existing_reference("Packing List", packing_no, load_packing_lists(), "packing_no", required=True)
+def validate_bl_links(packing_no, invoice_no, account_id, shipment_no=""):
+    packing = require_existing_reference("Packing List", packing_no, load_packing_lists(account_id), "packing_no", required=True)
     require_consistent_reference("Invoice", invoice_no, packing.get("invoice_no", ""), "selected Packing List")
-    require_existing_reference("Invoice", invoice_no or packing.get("invoice_no", ""), load_json_strict(INVOICE_FILE, [], list), "invoice_no", required=True)
+    require_existing_reference("Invoice", invoice_no or packing.get("invoice_no", ""), invoice_module.load_invoices(account_id), "invoice_no", required=True)
+    if shipment_no:
+        from app import shipment as shipment_module
+        shipment = require_existing_reference("Shipment", shipment_no, shipment_module.load_shipments(account_id), "shipment_no", required=True)
+        require_consistent_reference("Packing List", packing_no, shipment.get("packing_no", ""), "selected Shipment")
+        require_consistent_reference("Invoice", invoice_no, shipment.get("invoice_no", ""), "selected Shipment")
 
 
 def next_bl_no(records):
@@ -115,7 +158,12 @@ def blank_payload():
         "packing_no": "",
         "invoice_no": "",
         "shipper": "",
+        "shipper_address": "",
+        "shipper_email": "",
+        "shipper_phone": "",
         "consignee": "",
+        "consignee_address": "",
+        "consignee_email": "",
         "notify_party": "",
         "vessel": "",
         "voyage_no": "",
@@ -130,25 +178,79 @@ def blank_payload():
     }
 
 
-def payload_from_packing(packing_no):
+def resolve_party_snapshot(payload, account_id, packing=None, invoice=None):
+    resolved = dict(payload or {})
+    packing_no = str(resolved.get("packing_no", "") or "").strip()
+    invoice_no = str(resolved.get("invoice_no", "") or "").strip()
+
+    if packing is None and packing_no:
+        packing = next(
+            (record for record in load_packing_lists(account_id)
+             if str(record.get("packing_no", "") or "").strip() == packing_no),
+            {},
+        )
+    packing = packing or {}
+    invoice_no = invoice_no or str(packing.get("invoice_no", "") or "").strip()
+    if invoice is None and invoice_no:
+        invoice = next(
+            (record for record in invoice_module.load_invoices(account_id)
+             if str(record.get("invoice_no", "") or "").strip() == invoice_no),
+            {},
+        )
+    invoice = invoice or {}
+
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    consignee = (
+        resolved.get("consignee") or packing.get("buyer")
+        or invoice.get("buyer") or ""
+    )
+    buyer = next(
+        (record for record in buyer_module.load_buyers(account_id)
+         if str(record.get("name", "") or "").strip().casefold()
+         == str(consignee or "").strip().casefold()),
+        {},
+    )
+
+    fallbacks = {
+        "shipper": (packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "shipper_address": (packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "shipper_email": (packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "shipper_phone": (packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee": (packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+    }
+    for field, candidates in fallbacks.items():
+        if not resolved.get(field):
+            resolved[field] = next((value for value in candidates if value), "")
+    resolved["invoice_no"] = invoice_no
+    return resolved
+
+
+def payload_from_packing(packing_no, account_id):
     payload = blank_payload()
     if not packing_no:
         return payload
 
-    for packing in load_packing_lists():
+    for packing in load_packing_lists(account_id):
         if packing.get("packing_no") == packing_no:
             items = packing.get("items", [])
             payload.update({
                 "packing_no": packing.get("packing_no", ""),
                 "invoice_no": packing.get("invoice_no", ""),
                 "shipper": packing.get("seller", ""),
+                "shipper_address": packing.get("seller_address", ""),
+                "shipper_email": packing.get("seller_email", ""),
+                "shipper_phone": packing.get("seller_phone", ""),
                 "consignee": packing.get("buyer", ""),
+                "consignee_address": packing.get("buyer_address", ""),
+                "consignee_email": packing.get("buyer_email", ""),
                 "items": items,
                 "total_carton": format_number(numeric_total(items, "carton")),
                 "total_net_weight": format_number(numeric_total(items, "net_weight")),
                 "total_gross_weight": format_number(numeric_total(items, "gross_weight")),
             })
-            break
+            return resolve_party_snapshot(payload, account_id, packing=packing)
     return payload
 
 
@@ -284,7 +386,16 @@ calculateTotals();
             ("Invoice No", f'<input type="text" name="invoice_no" value="{html_attr(record.get("invoice_no", ""))}" placeholder="Invoice No">'),
             ("B/L Date", f'<input type="date" name="bl_date" value="{html_attr(record.get("bl_date", ""))}">'),
         ])),
-        "__PARTY_SECTION__": section_card("Party Information", f'<input type="text" name="shipper" value="{html_attr(record.get("shipper", ""))}" placeholder="Shipper"><input type="text" name="consignee" value="{html_attr(record.get("consignee", ""))}" placeholder="Consignee"><input type="text" name="notify_party" value="{html_attr(record.get("notify_party", ""))}" placeholder="Notify Party">'),
+        "__PARTY_SECTION__": section_card("Party Information", metadata([
+            ("Shipper", f'<input type="text" name="shipper" value="{html_attr(record.get("shipper", ""))}" placeholder="Shipper">'),
+            ("Shipper Address", f'<input type="text" name="shipper_address" value="{html_attr(record.get("shipper_address", ""))}" placeholder="Shipper Address">'),
+            ("Shipper Email", f'<input type="email" name="shipper_email" value="{html_attr(record.get("shipper_email", ""))}" placeholder="Shipper Email">'),
+            ("Shipper Phone", f'<input type="text" name="shipper_phone" value="{html_attr(record.get("shipper_phone", ""))}" placeholder="Shipper Phone">'),
+            ("Consignee", f'<input type="text" name="consignee" value="{html_attr(record.get("consignee", ""))}" placeholder="Consignee">'),
+            ("Consignee Address", f'<input type="text" name="consignee_address" value="{html_attr(record.get("consignee_address", ""))}" placeholder="Consignee Address">'),
+            ("Consignee Email", f'<input type="email" name="consignee_email" value="{html_attr(record.get("consignee_email", ""))}" placeholder="Consignee Email">'),
+            ("Notify Party", f'<input type="text" name="notify_party" value="{html_attr(record.get("notify_party", ""))}" placeholder="Notify Party">'),
+        ])),
         "__TRANSPORT_SECTION__": section_card("Transport Information", f'<input type="text" name="vessel" value="{html_attr(record.get("vessel", ""))}" placeholder="Vessel"><input type="text" name="voyage_no" value="{html_attr(record.get("voyage_no", ""))}" placeholder="Voyage No"><input type="text" name="port_of_loading" value="{html_attr(record.get("port_of_loading", ""))}" placeholder="Port of Loading"><input type="text" name="port_of_discharge" value="{html_attr(record.get("port_of_discharge", ""))}" placeholder="Port of Discharge"><input type="text" name="place_of_delivery" value="{html_attr(record.get("place_of_delivery", ""))}" placeholder="Place of Delivery">'),
         "__CARGO_SECTION__": section_card("Cargo Information", f'<div id="items_area">{rows}</div><button class="add" type="button" onclick="addItem()">+ Add Cargo Item</button><input id="total_carton" type="hidden" name="total_carton" value="{html_attr(record.get("total_carton", ""))}"><input id="total_net_weight" type="hidden" name="total_net_weight" value="{html_attr(record.get("total_net_weight", ""))}"><input id="total_gross_weight" type="hidden" name="total_gross_weight" value="{html_attr(record.get("total_gross_weight", ""))}"><div class="totals" id="totals_text"></div>'),
         "__FORM_FOOTER__": form_footer("/bl-list", button_text),
@@ -296,8 +407,8 @@ calculateTotals();
 
 
 @router.get("/bl-list")
-def bl_list(search: str = ""):
-    records = list(reversed(load_bills_of_lading()))
+def bl_list(request: Request, search: str = ""):
+    records = list(reversed(load_bills_of_lading(_account_id(request))))
     if search:
         q = search.lower()
         records = [
@@ -326,13 +437,17 @@ def bl_list(search: str = ""):
 
 
 @router.get("/bl-form")
-def bl_form(packing_no: str = "", shipment_no: str = ""):
-    record = payload_from_packing(packing_no)
+def bl_form(request: Request, packing_no: str = "", shipment_no: str = ""):
+    account_id = _account_id(request)
+    record = payload_from_packing(packing_no, account_id)
+    if packing_no or shipment_no:
+        validate_bl_links(record.get("packing_no", packing_no), record.get("invoice_no", ""), account_id, shipment_no)
     return render_form(record, "/bl", "Bill of Lading", "Save Bill of Lading", shipment_no=shipment_no)
 
 
 @router.post("/bl")
 def save_bl(
+    request: Request,
     shipment_no: str = Form(""),
     packing_no: str = Form(""),
     invoice_no: str = Form(""),
@@ -354,8 +469,14 @@ def save_bl(
     total_carton: str = Form(""),
     total_net_weight: str = Form(""),
     total_gross_weight: str = Form(""),
+    shipper_address: Annotated[Optional[str], Form()] = None,
+    shipper_email: Annotated[Optional[str], Form()] = None,
+    shipper_phone: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
 ):
-    validate_bl_links(packing_no, invoice_no)
+    account_id = _account_id(request)
+    validate_bl_links(packing_no, invoice_no, account_id, shipment_no)
     shipper = require_text("Shipper", shipper)
     consignee = require_text("Consignee", consignee)
     saved = {}
@@ -368,6 +489,15 @@ def save_bl(
         net_weight, gross_weight, total_carton, total_net_weight,
         total_gross_weight,
         )
+        record.update({
+            "shipper_address": shipper_address or "",
+            "shipper_email": shipper_email or "",
+            "shipper_phone": shipper_phone or "",
+            "consignee_address": consignee_address or "",
+            "consignee_email": consignee_email or "",
+        })
+        record = resolve_party_snapshot(record, account_id)
+        record["account_id"] = account_id
         records.append(record)
         saved["bl_no"] = bl_number
     locked_json_mutation(BL_FILE, [], add_bl, list)
@@ -375,16 +505,16 @@ def save_bl(
 
 
 @router.get("/edit-bl/{bl_no}")
-def edit_bl(bl_no: str):
-    for record in load_bills_of_lading():
-        if record.get("bl_no") == bl_no:
-            return render_form(record, f"/update-bl/{bl_no}", "Edit Bill of Lading", "Update Bill of Lading", True)
-    return HTMLResponse("Bill of Lading Not Found", status_code=404)
+def edit_bl(bl_no: str, request: Request):
+    record = public_bill_of_lading(_owned_bl(bl_no, _account_id(request)))
+    record = resolve_party_snapshot(record, _account_id(request))
+    return render_form(record, f"/update-bl/{bl_no}", "Edit Bill of Lading", "Update Bill of Lading", True)
 
 
 @router.post("/update-bl/{bl_no}")
 def update_bl(
     bl_no: str,
+    request: Request,
     packing_no: str = Form(""),
     invoice_no: str = Form(""),
     shipper: str = Form(""),
@@ -405,8 +535,15 @@ def update_bl(
     total_carton: str = Form(""),
     total_net_weight: str = Form(""),
     total_gross_weight: str = Form(""),
+    shipper_address: Annotated[Optional[str], Form()] = None,
+    shipper_email: Annotated[Optional[str], Form()] = None,
+    shipper_phone: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
 ):
-    validate_bl_links(packing_no, invoice_no)
+    account_id = _account_id(request)
+    current = _owned_bl(bl_no, account_id)
+    validate_bl_links(packing_no, invoice_no, account_id)
     shipper = require_text("Shipper", shipper)
     consignee = require_text("Consignee", consignee)
     updated = build_record(
@@ -416,9 +553,18 @@ def update_bl(
         net_weight, gross_weight, total_carton, total_net_weight,
         total_gross_weight,
     )
+    updated.update({
+        "shipper_address": current.get("shipper_address", "") if shipper_address is None else shipper_address,
+        "shipper_email": current.get("shipper_email", "") if shipper_email is None else shipper_email,
+        "shipper_phone": current.get("shipper_phone", "") if shipper_phone is None else shipper_phone,
+        "consignee_address": current.get("consignee_address", "") if consignee_address is None else consignee_address,
+        "consignee_email": current.get("consignee_email", "") if consignee_email is None else consignee_email,
+    })
+    updated = resolve_party_snapshot(updated, account_id)
+    updated["account_id"] = account_id
     def replace_bl(records):
         for index, record in enumerate(records):
-            if record.get("bl_no") == bl_no:
+            if record.get("bl_no") == bl_no and record.get("account_id") == account_id:
                 records[index] = updated
                 return
         raise HTTPException(status_code=404, detail="Bill of Lading not found")
@@ -427,30 +573,50 @@ def update_bl(
 
 
 @router.get("/delete-bl/{bl_no}")
-def delete_bl(bl_no: str):
-    return identifier_delete_confirmation("Bill of Lading", "Bill of Lading", bl_no, BL_FILE, "bl_no", f"/delete-bl/{bl_no}", "/bl-list")
+def delete_bl(bl_no: str, request: Request):
+    _owned_bl(bl_no, _account_id(request))
+    return render_delete_page("Bill of Lading", bl_no, f"/delete-bl/{bl_no}", "/bl-list", find_dependencies("Bill of Lading", bl_no, _account_id(request)))
 
 @router.post("/delete-bl/{bl_no}")
-def confirm_delete_bl(bl_no: str):
-    return confirmed_identifier_delete("Bill of Lading", "Bill of Lading", bl_no, BL_FILE, "bl_no", f"/delete-bl/{bl_no}", "/bl-list", "/bl-list")
+def confirm_delete_bl(bl_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_bl(bl_no, account_id)
+    dependencies = find_dependencies("Bill of Lading", bl_no, account_id)
+    if dependencies:
+        return render_delete_page("Bill of Lading", bl_no, f"/delete-bl/{bl_no}", "/bl-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((index for index, record in enumerate(records)
+                      if isinstance(record, dict) and record.get("bl_no") == bl_no
+                      and record.get("account_id") == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Bill of Lading not found")
+        records.pop(index)
+    locked_json_mutation(BL_FILE, [], remove, list)
+    return RedirectResponse("/bl-list", status_code=303)
 
 
 @router.get("/bl-data/{bl_no}")
-def bl_data(bl_no: str):
-    for record in load_bills_of_lading():
-        if record.get("bl_no") == bl_no:
-            return record
-    raise HTTPException(status_code=404, detail="Bill of Lading not found")
+def bl_data(bl_no: str, request: Request):
+    return public_bill_of_lading(_owned_bl(bl_no, _account_id(request)))
 
 
 @router.post("/bl/pdf")
-def create_bl_pdf(payload: dict = Body(...)):
+def create_bl_pdf(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    validate_bl_links(payload.get("packing_no", ""), payload.get("invoice_no", ""), account_id, payload.get("shipment_no", ""))
+    payload = public_bill_of_lading(payload)
+    payload = resolve_party_snapshot(payload, account_id)
     bl_no = payload.get("bl_no") or "-"
     packing_no = payload.get("packing_no", "")
     invoice_no = payload.get("invoice_no", "")
     bl_date = payload.get("bl_date") or datetime.now().strftime("%Y-%m-%d")
     shipper = payload.get("shipper", "")
+    shipper_address = payload.get("shipper_address", "")
+    shipper_email = payload.get("shipper_email", "")
+    shipper_phone = payload.get("shipper_phone", "")
     consignee = payload.get("consignee", "")
+    consignee_address = payload.get("consignee_address", "")
+    consignee_email = payload.get("consignee_email", "")
     notify_party = payload.get("notify_party", "")
     vessel = payload.get("vessel", "")
     voyage_no = payload.get("voyage_no", "")
@@ -516,9 +682,15 @@ def create_bl_pdf(payload: dict = Body(...)):
         pdf.drawString(233, height - 205, "CONSIGNEE")
         pdf.drawString(408, height - 205, "NOTIFY PARTY")
         pdf.setFont("Helvetica", 8)
-        pdf.drawString(58, height - 228, fit_text(shipper, 120))
-        pdf.drawString(233, height - 228, fit_text(consignee, 120))
+        pdf.drawString(58, height - 224, fit_text(shipper, 130))
+        pdf.drawString(233, height - 224, fit_text(consignee, 130))
         pdf.drawString(408, height - 228, fit_text(notify_party, 120))
+        pdf.setFont("Helvetica", 7)
+        pdf.drawString(58, height - 237, fit_text(shipper_address, 130, font_size=7))
+        pdf.drawString(58, height - 248, fit_text(shipper_email, 130, font_size=7))
+        pdf.drawString(58, height - 259, fit_text(shipper_phone, 130, font_size=7))
+        pdf.drawString(233, height - 241, fit_text(consignee_address, 130, font_size=7))
+        pdf.drawString(233, height - 253, fit_text(consignee_email, 130, font_size=7))
 
         pdf.setFillColor(colors.black)
         pdf.setFont("Helvetica-Bold", 8)
@@ -608,8 +780,7 @@ def create_bl_pdf(payload: dict = Body(...)):
 
 
 @router.get("/bl-pdf/{bl_no}")
-def bl_pdf(bl_no: str):
-    for record in load_bills_of_lading():
-        if record.get("bl_no") == bl_no:
-            return create_bl_pdf(record)
-    return {"error": "Bill of Lading not found"}
+def bl_pdf(bl_no: str, request: Request):
+    record = public_bill_of_lading(_owned_bl(bl_no, _account_id(request)))
+    set_pdf_export_record(request, record)
+    return create_bl_pdf(request, record)
