@@ -361,6 +361,40 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
                 assert stored_shipment[field] == expected
             assert stored_shipment["items"] == stored_bill["items"]
 
+            # Shipment -> C/O copies and persists the complete party and cargo snapshot.
+            page.goto(f"{base_url}/co-form?bl_no={bl_no}&shipment_no={shipment_no}")
+            co_party = {
+                "exporter_name": company_name,
+                "exporter_address": company_address,
+                "exporter_email": email,
+                "exporter_phone": company_phone,
+                "consignee_name": buyer_name,
+                "consignee_address": buyer_address,
+                "consignee_email": buyer_email,
+            }
+            for field, expected in co_party.items():
+                assert page.locator(f'input[name="{field}"]').input_value() == expected
+            for field, expected in {"item_name": product_name, "hs_code": "847130", "quantity": "4",
+                                    "carton": "2", "net_weight": "40", "gross_weight": "44"}.items():
+                assert page.locator(f'input[name="{field}"]').input_value() == expected
+            page.locator('input[name="destination_country"]').fill("US")
+            page.get_by_role("button", name="Save Certificate of Origin").click()
+            page.wait_for_url(f"{base_url}/shipment/{shipment_no}")
+            page.goto(f"{base_url}/co-list")
+            co_edit_path = page.locator(f'tr:has-text("{bl_no}") a', has_text="Edit").get_attribute("href")
+            assert co_edit_path
+            co_no = co_edit_path.rsplit("/", 1)[-1]
+            page.goto(f"{base_url}{co_edit_path}")
+            for field, expected in co_party.items():
+                assert page.locator(f'input[name="{field}"]').input_value() == expected
+            page.get_by_role("button", name="Update Certificate of Origin").click()
+            page.wait_for_url(f"{base_url}/co-list")
+            co_api = page.evaluate(f"fetch('/co-data/{co_no}').then(response => response.json())")
+            assert "account_id" not in co_api and co_api["shipment_no"] == shipment_no
+            assert co_api["items"][0]["gross_weight"] == "44"
+            co_pdf = page.request.get(f"{base_url}/co-pdf/{co_no}")
+            assert co_pdf.ok and co_pdf.body().startswith(b"%PDF") and b"account_id" not in co_pdf.body()
+
             # Account B cannot list, search, edit, or fetch Account A records.
             page.get_by_role("button", name="Logout").click()
             page.wait_for_url(f"{base_url}/login")
@@ -378,6 +412,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert page.get_by_text(bl_no).count() == 0
             page.goto(f"{base_url}/shipment-list?search={shipment_no}")
             assert page.get_by_text(shipment_no).count() == 0
+            page.goto(f"{base_url}/co-list?search={co_no}")
+            assert page.get_by_text(co_no).count() == 0
             denied_invoice = page.goto(f"{base_url}/edit-invoice/{invoice_no}")
             assert denied_invoice is not None and denied_invoice.status == 404
             denied_packing = page.goto(f"{base_url}/edit-packing/{packing_no}")
@@ -388,5 +424,11 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert denied_shipment is not None and denied_shipment.status == 404
             denied_shipment_pdf = page.goto(f"{base_url}/shipment-pdf/{shipment_no}")
             assert denied_shipment_pdf is not None and denied_shipment_pdf.status == 404
+            denied_co = page.goto(f"{base_url}/edit-co/{co_no}")
+            assert denied_co is not None and denied_co.status == 404
+            denied_co_api = page.goto(f"{base_url}/co-data/{co_no}")
+            assert denied_co_api is not None and denied_co_api.status == 404
+            denied_co_pdf = page.goto(f"{base_url}/co-pdf/{co_no}")
+            assert denied_co_pdf is not None and denied_co_pdf.status == 404
         finally:
             browser.close()

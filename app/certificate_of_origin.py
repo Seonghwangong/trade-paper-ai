@@ -1,11 +1,12 @@
-from typing import List
+from typing import Annotated, List, Optional
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
 import json
 
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -15,8 +16,19 @@ router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_certificate_of_origin import ensure_legacy_certificate_of_origin_ownership, public_certificate_of_origin
+from app.export import set_pdf_export_record
+from app.auth import USERS_FILE
 from app.shipment import shipment_context_redirect_url
+from app import product as product_module
+from app import bill_of_lading as bill_of_lading_module
+from app import packing as packing_module
+from app import invoice as invoice_module
+from app import shipment as shipment_module
+from app import buyer as buyer_module
+from app.account_company import load_account_company
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 
 CO_FILE = data_path("certificates_of_origin.json")
 BL_FILE = data_path("bills_of_lading.json")
@@ -25,28 +37,63 @@ PACKING_FILE = data_path("packing_lists.json")
 INVOICE_FILE = data_path("invoices.json")
 
 
-def load_certificates():
-    return load_json_strict(CO_FILE, [], list)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_certificate_records():
+    return ensure_legacy_certificate_of_origin_ownership(CO_FILE, USERS_FILE)
+
+
+def owned_certificate_records(account_id):
+    owner = str(account_id or "").strip()
+    return [record for record in load_certificate_records()
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+
+
+def load_certificates(account_id):
+    return [public_certificate_of_origin(record) for record in owned_certificate_records(account_id)]
+
+
+def _owned_certificate(co_no, account_id):
+    target = str(co_no or "").strip()
+    record = next((record for record in owned_certificate_records(account_id)
+                   if str(record.get("co_no", "") or "").strip() == target), None)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Certificate of Origin not found")
+    return record
 
 
 def save_certificates(records):
     atomic_write_json(CO_FILE, records, list)
 
 
-def load_bills_of_lading():
-    return load_json_strict(BL_FILE, [], list)
+def load_bills_of_lading(account_id):
+    return bill_of_lading_module.load_bills_of_lading(account_id)
 
 
-def load_products():
-    return load_json_strict(PRODUCT_FILE, [], list)
+def load_products(account_id):
+    return product_module.load_products(account_id)
 
 
-def validate_co_links(bl_no, packing_no, invoice_no):
-    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(), "bl_no", required=True)
-    require_existing_reference("Packing List", packing_no, load_json_strict(PACKING_FILE, [], list), "packing_no")
-    require_existing_reference("Invoice", invoice_no, load_json_strict(INVOICE_FILE, [], list), "invoice_no")
+PARTY_SNAPSHOT_FIELDS = (
+    "exporter_name", "exporter_address", "exporter_email", "exporter_phone",
+    "consignee_name", "consignee_address", "consignee_email",
+)
+
+
+def validate_co_links(bl_no, packing_no, invoice_no, account_id, shipment_no=""):
+    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(account_id), "bl_no", required=True)
+    require_existing_reference("Packing List", packing_no, packing_module.load_packing_lists(account_id), "packing_no")
+    require_existing_reference("Invoice", invoice_no, invoice_module.load_invoices(account_id), "invoice_no")
     require_consistent_reference("Packing List", packing_no, bill.get("packing_no", ""), "selected Bill of Lading")
     require_consistent_reference("Invoice", invoice_no, bill.get("invoice_no", ""), "selected Bill of Lading")
+    if shipment_no:
+        shipment = require_existing_reference("Shipment", shipment_no, shipment_module.load_shipments(account_id), "shipment_no", required=True)
+        require_consistent_reference("Bill of Lading", bl_no, shipment.get("bl_no", ""), "selected Shipment")
+        require_consistent_reference("Packing List", packing_no, shipment.get("packing_no", ""), "selected Shipment")
+        require_consistent_reference("Invoice", invoice_no, shipment.get("invoice_no", ""), "selected Shipment")
 
 
 def next_co_no(records):
@@ -67,9 +114,9 @@ def html_text(value):
     return html_lib.escape(str(value or ""))
 
 
-def bl_select_html(selected):
+def bl_select_html(selected, account_id):
     options = ['<select name="bl_no">', '<option value="">Select B/L</option>']
-    for bl in load_bills_of_lading():
+    for bl in load_bills_of_lading(account_id):
         bl_no = bl.get("bl_no", "")
         if not bl_no:
             continue
@@ -94,7 +141,10 @@ def find_product_origin(item, products):
     return item.get("origin", "")
 
 
-def build_items(name, hs_code, quantity, origin):
+def build_items(name, hs_code, quantity, origin, carton=None, net_weight=None, gross_weight=None):
+    carton = carton if isinstance(carton, (list, tuple)) else []
+    net_weight = net_weight if isinstance(net_weight, (list, tuple)) else []
+    gross_weight = gross_weight if isinstance(gross_weight, (list, tuple)) else []
     items = []
     for i in range(len(name)):
         if not name[i].strip():
@@ -104,6 +154,9 @@ def build_items(name, hs_code, quantity, origin):
             "hs_code": hs_code[i] if i < len(hs_code) else "",
             "quantity": quantity[i] if i < len(quantity) else "",
             "origin": origin[i] if i < len(origin) else "",
+            "carton": carton[i] if i < len(carton) else "",
+            "net_weight": net_weight[i] if i < len(net_weight) else "",
+            "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
         })
     return items
 
@@ -120,6 +173,9 @@ def build_item_rows(items):
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
 <input type="text" name="origin" value="{html_attr(item.get('origin', ''))}" placeholder="Origin">
+<input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton">
+<input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight">
+<input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight">
 <button class="remove" type="button" onclick="removeItem(this)">Remove Item</button>
 </div>
 """
@@ -130,6 +186,7 @@ def blank_payload():
     return {
         "co_date": datetime.now().strftime("%Y-%m-%d"),
         "bl_no": "",
+        "shipment_no": "",
         "invoice_no": "",
         "packing_no": "",
         "exporter": "",
@@ -144,13 +201,70 @@ def blank_payload():
     }
 
 
-def payload_from_bl(bl_no):
+def _first_record(records, field, value):
+    target = str(value or "").strip()
+    return next((row for row in records if str(row.get(field, "") or "").strip() == target), {}) if target else {}
+
+
+def resolve_co_snapshot(record, account_id, shipment=None, bill=None, packing=None, invoice=None, products=None):
+    """Resolve a read-only C/O snapshot from account-owned sources, highest priority first."""
+    resolved = deepcopy(record or {})
+    shipment_no = str(resolved.get("shipment_no", "") or "").strip()
+    if shipment is None and shipment_no:
+        shipment = _first_record(shipment_module.load_shipments(account_id), "shipment_no", shipment_no)
+    shipment = shipment or {}
+    bl_no = str(resolved.get("bl_no") or shipment.get("bl_no") or "").strip()
+    if bill is None:
+        bill = _first_record(load_bills_of_lading(account_id), "bl_no", bl_no)
+    bill = bill or {}
+    packing_no = str(resolved.get("packing_no") or shipment.get("packing_no") or bill.get("packing_no") or "").strip()
+    if packing is None:
+        packing = _first_record(packing_module.load_packing_lists(account_id), "packing_no", packing_no)
+    packing = packing or {}
+    invoice_no = str(resolved.get("invoice_no") or shipment.get("invoice_no") or bill.get("invoice_no") or packing.get("invoice_no") or "").strip()
+    if invoice is None:
+        invoice = _first_record(invoice_module.load_invoices(account_id), "invoice_no", invoice_no)
+    invoice = invoice or {}
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    consignee_name = (resolved.get("consignee_name") or resolved.get("consignee") or shipment.get("consignee")
+                       or bill.get("consignee") or packing.get("buyer") or invoice.get("buyer") or "")
+    buyer = next((row for row in buyer_module.load_buyers(account_id)
+                  if str(row.get("name", "") or "").strip().casefold() == str(consignee_name).strip().casefold()), {})
+    sources = {
+        "exporter_name": (shipment.get("shipper"), bill.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "exporter_address": (shipment.get("shipper_address"), bill.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "exporter_email": (shipment.get("shipper_email"), bill.get("shipper_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "exporter_phone": (shipment.get("shipper_phone"), bill.get("shipper_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee_name": (shipment.get("consignee"), bill.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (shipment.get("consignee_address"), bill.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (shipment.get("consignee_email"), bill.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+    }
+    for field, candidates in sources.items():
+        if not resolved.get(field):
+            resolved[field] = next((value for value in candidates if value), "")
+    resolved["exporter"] = resolved.get("exporter_name") or resolved.get("exporter", "")
+    resolved["consignee"] = resolved.get("consignee_name") or resolved.get("consignee", "")
+    if not resolved.get("items"):
+        resolved["items"] = deepcopy(shipment.get("items") or bill.get("items") or packing.get("items") or invoice.get("items") or [])
+    products = product_module.load_products(account_id) if products is None else products
+    for item in resolved.get("items", []):
+        if isinstance(item, dict) and not item.get("origin"):
+            item["origin"] = find_product_origin(item, products)
+    origins = [item.get("origin") for item in resolved.get("items", []) if isinstance(item, dict) and item.get("origin")]
+    if not resolved.get("country_of_origin") and origins and len(set(origins)) == 1:
+        resolved["country_of_origin"] = origins[0]
+    if not resolved.get("destination_country"):
+        resolved["destination_country"] = bill.get("place_of_delivery", "")
+    resolved.update({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no})
+    return resolved
+
+
+def payload_from_bl(bl_no, products, account_id):
     payload = blank_payload()
     if not bl_no:
         return payload
 
-    products = load_products()
-    for bl in load_bills_of_lading():
+    for bl in load_bills_of_lading(account_id):
         if bl.get("bl_no") != bl_no:
             continue
 
@@ -184,14 +298,14 @@ def payload_from_bl(bl_no):
         })
         break
 
-    return payload
+    return resolve_co_snapshot(payload, account_id, products=products)
 
 
 def build_record(
     co_no, co_date, bl_no, invoice_no, packing_no, exporter, consignee,
     country_of_origin, destination_country, transport_details,
     port_of_loading, port_of_discharge, remarks, item_name, hs_code,
-    quantity, origin,
+    quantity, origin, shipment_no="", carton=None, net_weight=None, gross_weight=None,
 ):
     return {
         "co_no": co_no,
@@ -207,15 +321,16 @@ def build_record(
         "port_of_loading": port_of_loading,
         "port_of_discharge": port_of_discharge,
         "remarks": remarks,
-        "items": build_items(item_name, hs_code, quantity, origin),
+        "shipment_no": shipment_no,
+        "items": build_items(item_name, hs_code, quantity, origin, carton, net_weight, gross_weight),
     }
 
 
-def render_form(record, action, title, button_text, show_co_no=False, shipment_no=""):
+def render_form(record, action, title, button_text, show_co_no=False, shipment_no="", products=None, account_id=""):
     co_no_input = ""
     if show_co_no:
         co_no_input = f'<input type="text" value="{html_attr(record.get("co_no", ""))}" placeholder="C/O No" readonly>'
-    product_master_json = json.dumps(load_products(), ensure_ascii=False)
+    product_master_json = json.dumps(products or [], ensure_ascii=False)
 
     html = """
 <!DOCTYPE html>
@@ -230,7 +345,7 @@ h1{text-align:center;font-size:48px;margin-bottom:10px;}
 .sub{text-align:center;color:#6B7280;margin-bottom:35px;}
 .nav-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:25px;}
 .card{border:1px solid #E5E7EB;border-radius:16px;padding:25px;margin-bottom:25px;background:#fff;}
-.item-row{display:grid;grid-template-columns:1.5fr 1fr .8fr 1fr;gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:20px;margin-bottom:18px;background:#F9FAFB;}
+.item-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:20px;margin-bottom:18px;background:#F9FAFB;}
 input,select,textarea{width:100%;padding:14px;margin-bottom:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;font-family:Arial,sans-serif;background:white;}
 button{padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;cursor:pointer;}
 .small{width:220px;margin-bottom:25px;}
@@ -260,8 +375,13 @@ __BL_SELECT__
 </div>
 <div class="card">
 <h2>Party Information</h2>
-<input type="text" name="exporter" value="__EXPORTER__" placeholder="Exporter">
-<input type="text" name="consignee" value="__CONSIGNEE__" placeholder="Consignee">
+<input type="text" name="exporter_name" value="__EXPORTER__" placeholder="Exporter Name">
+<input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address">
+<input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email">
+<input type="text" name="exporter_phone" value="__EXPORTER_PHONE__" placeholder="Exporter Phone">
+<input type="text" name="consignee_name" value="__CONSIGNEE__" placeholder="Consignee Name">
+<input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" placeholder="Consignee Address">
+<input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email">
 </div>
 <div class="card">
 <h2>Origin And Shipment</h2>
@@ -305,7 +425,10 @@ function rowData(row){
         name: row.querySelector('[name="item_name"]')?.value || "",
         hs_code: row.querySelector('[name="hs_code"]')?.value || "",
         quantity: row.querySelector('[name="quantity"]')?.value || "",
-        origin: row.querySelector('[name="origin"]')?.value || ""
+        origin: row.querySelector('[name="origin"]')?.value || "",
+        carton: row.querySelector('[name="carton"]')?.value || "",
+        net_weight: row.querySelector('[name="net_weight"]')?.value || "",
+        gross_weight: row.querySelector('[name="gross_weight"]')?.value || ""
     };
 }
 function currentItems(){
@@ -323,6 +446,9 @@ function itemRowHtml(item = {}){
 <input type="text" name="hs_code" value="${escapeAttr(item.hs_code || "")}" placeholder="HS Code">
 <input type="text" name="quantity" value="${escapeAttr(item.quantity || "")}" placeholder="Quantity">
 <input type="text" name="origin" value="${escapeAttr(item.origin || "")}" placeholder="Origin">
+<input type="text" name="carton" value="${escapeAttr(item.carton || "")}" placeholder="Carton">
+<input type="text" name="net_weight" value="${escapeAttr(item.net_weight || "")}" placeholder="Net Weight">
+<input type="text" name="gross_weight" value="${escapeAttr(item.gross_weight || "")}" placeholder="Gross Weight">
 <button class="remove" type="button" onclick="removeItem(this)">Remove Item</button>
 </div>`;
 }
@@ -360,8 +486,13 @@ async function loadBlPrefill(blNo){
         const current = currentItems();
         document.querySelector('[name="invoice_no"]').value = bl.invoice_no || "";
         document.querySelector('[name="packing_no"]').value = bl.packing_no || "";
-        document.querySelector('[name="exporter"]').value = bl.shipper || "";
-        document.querySelector('[name="consignee"]').value = bl.consignee || "";
+        document.querySelector('[name="exporter_name"]').value = bl.shipper || "";
+        document.querySelector('[name="exporter_address"]').value = bl.shipper_address || "";
+        document.querySelector('[name="exporter_email"]').value = bl.shipper_email || "";
+        document.querySelector('[name="exporter_phone"]').value = bl.shipper_phone || "";
+        document.querySelector('[name="consignee_name"]').value = bl.consignee || "";
+        document.querySelector('[name="consignee_address"]').value = bl.consignee_address || "";
+        document.querySelector('[name="consignee_email"]').value = bl.consignee_email || "";
         document.querySelector('[name="transport_details"]').value = [bl.vessel || "", bl.voyage_no || ""].filter(Boolean).join(" ");
         document.querySelector('[name="port_of_loading"]').value = bl.port_of_loading || "";
         document.querySelector('[name="port_of_discharge"]').value = bl.port_of_discharge || "";
@@ -373,7 +504,10 @@ async function loadBlPrefill(blNo){
                 name: item.name || "",
                 hs_code: item.hs_code || "",
                 quantity: item.quantity || "",
-                origin: existing.origin || productOrigin || ""
+                origin: existing.origin || productOrigin || "",
+                carton: item.carton || "",
+                net_weight: item.net_weight || "",
+                gross_weight: item.gross_weight || ""
             };
         });
         renderItems(items);
@@ -393,11 +527,16 @@ document.querySelector('[name="bl_no"]')?.addEventListener("change", event => {
         "__ACTION__": html_attr(action),
         "__CO_NO_INPUT__": co_no_input,
         "__CO_DATE__": html_attr(record.get("co_date", "")),
-        "__BL_SELECT__": bl_select_html(record.get("bl_no", "")),
+        "__BL_SELECT__": bl_select_html(record.get("bl_no", ""), account_id),
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
         "__PACKING_NO__": html_attr(record.get("packing_no", "")),
         "__EXPORTER__": html_attr(record.get("exporter", "")),
+        "__EXPORTER_ADDRESS__": html_attr(record.get("exporter_address", "")),
+        "__EXPORTER_EMAIL__": html_attr(record.get("exporter_email", "")),
+        "__EXPORTER_PHONE__": html_attr(record.get("exporter_phone", "")),
         "__CONSIGNEE__": html_attr(record.get("consignee", "")),
+        "__CONSIGNEE_ADDRESS__": html_attr(record.get("consignee_address", "")),
+        "__CONSIGNEE_EMAIL__": html_attr(record.get("consignee_email", "")),
         "__COUNTRY_OF_ORIGIN__": html_attr(record.get("country_of_origin", "")),
         "__DESTINATION_COUNTRY__": html_attr(record.get("destination_country", "")),
         "__TRANSPORT_DETAILS__": html_attr(record.get("transport_details", "")),
@@ -415,8 +554,8 @@ document.querySelector('[name="bl_no"]')?.addEventListener("change", event => {
 
 
 @router.get("/co-list")
-def co_list(search: str = ""):
-    records = list(reversed(load_certificates()))
+def co_list(request: Request, search: str = ""):
+    records = list(reversed(load_certificates(_account_id(request))))
     if search:
         q = search.lower()
         records = [
@@ -487,27 +626,31 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 
 
 @router.get("/co-form")
-def co_form(bl_no: str = "", shipment_no: str = ""):
-    return render_form(payload_from_bl(bl_no), "/co", "Certificate of Origin", "Save Certificate of Origin", shipment_no=shipment_no)
+def co_form(request: Request, bl_no: str = "", shipment_no: str = ""):
+    account_id = request.scope["trade_paper_user"]["account_id"]
+    products = product_module.load_products(account_id)
+    if shipment_no:
+        record = blank_payload()
+        record["shipment_no"] = shipment_no
+        record["bl_no"] = bl_no
+        record = resolve_co_snapshot(record, account_id, products=products)
+        validate_co_links(record.get("bl_no", ""), record.get("packing_no", ""), record.get("invoice_no", ""), account_id, shipment_no)
+    else:
+        record = payload_from_bl(bl_no, products, account_id)
+    return render_form(record, "/co", "Certificate of Origin", "Save Certificate of Origin", shipment_no=shipment_no, products=products, account_id=account_id)
 
 
 @router.get("/co-source/bl/{bl_no}")
-def co_source_bl(bl_no: str):
-    for record in load_bills_of_lading():
+def co_source_bl(bl_no: str, request: Request):
+    for record in load_bills_of_lading(request.scope["trade_paper_user"]["account_id"]):
         if record.get("bl_no") == bl_no:
             return record
     raise HTTPException(status_code=404, detail="Bill of Lading not found")
 
 
 @router.get("/co/{co_no}")
-def co_detail(co_no: str):
-    record = None
-    for saved in load_certificates():
-        if saved.get("co_no") == co_no:
-            record = saved
-            break
-    if not record:
-        raise HTTPException(status_code=404, detail="Certificate of Origin not found")
+def co_detail(co_no: str, request: Request):
+    record = resolve_co_snapshot(public_certificate_of_origin(_owned_certificate(co_no, _account_id(request))), _account_id(request))
 
     rows = ""
     for index, item in enumerate(record.get("items", []), start=1):
@@ -517,11 +660,12 @@ def co_detail(co_no: str):
 <td>{html_text(item.get("name", ""))}</td>
 <td>{html_text(item.get("hs_code", ""))}</td>
 <td>{html_text(item.get("quantity", ""))}</td>
-<td>{html_text(item.get("origin", ""))}</td>
+<td>{html_text(item.get("origin", ""))}</td><td>{html_text(item.get("carton", ""))}</td>
+<td>{html_text(item.get("net_weight", ""))}</td><td>{html_text(item.get("gross_weight", ""))}</td>
 </tr>
 """
     if not rows:
-        rows = '<tr><td colspan="5" style="text-align:center;color:#6B7280;padding:30px;">No goods items registered.</td></tr>'
+        rows = '<tr><td colspan="8" style="text-align:center;color:#6B7280;padding:30px;">No goods items registered.</td></tr>'
 
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>{html_text(co_no)}</title>
 <style>
@@ -561,6 +705,10 @@ td{{padding:13px;border-bottom:1px solid #E5E7EB;}}
 <div><div class="label">Packing No</div><div class="value">{html_text(record.get("packing_no", ""))}</div></div>
 <div><div class="label">Exporter</div><div class="value">{html_text(record.get("exporter", ""))}</div></div>
 <div><div class="label">Consignee</div><div class="value">{html_text(record.get("consignee", ""))}</div></div>
+<div><div class="label">Exporter Address</div><div class="value">{html_text(record.get("exporter_address", ""))}</div></div>
+<div><div class="label">Exporter Email / Phone</div><div class="value">{html_text(record.get("exporter_email", ""))} {html_text(record.get("exporter_phone", ""))}</div></div>
+<div><div class="label">Consignee Address</div><div class="value">{html_text(record.get("consignee_address", ""))}</div></div>
+<div><div class="label">Consignee Email</div><div class="value">{html_text(record.get("consignee_email", ""))}</div></div>
 <div><div class="label">Country of Origin</div><div class="value">{html_text(record.get("country_of_origin", ""))}</div></div>
 <div><div class="label">Destination Country</div><div class="value">{html_text(record.get("destination_country", ""))}</div></div>
 </div>
@@ -571,13 +719,14 @@ td{{padding:13px;border-bottom:1px solid #E5E7EB;}}
 <div class="mini"><b>Port of Loading</b>{html_text(record.get("port_of_loading", ""))}</div>
 <div class="mini"><b>Port of Discharge</b>{html_text(record.get("port_of_discharge", ""))}</div>
 </div></div>
-<div class="section"><h2>Goods Information</h2><div class="table-wrap"><table><thead><tr><th>No</th><th>Item</th><th>HS Code</th><th>Quantity</th><th>Origin</th></tr></thead><tbody>{rows}</tbody></table></div></div>
+<div class="section"><h2>Goods Information</h2><div class="table-wrap"><table><thead><tr><th>No</th><th>Item</th><th>HS Code</th><th>Quantity</th><th>Origin</th><th>Carton</th><th>Net</th><th>Gross</th></tr></thead><tbody>{rows}</tbody></table></div></div>
 </div></body></html>"""
     return HTMLResponse(html)
 
 
 @router.post("/co")
 def save_co(
+    request: Request,
     shipment_no: str = Form(""),
     co_date: str = Form(""),
     bl_no: str = Form(""),
@@ -585,6 +734,8 @@ def save_co(
     packing_no: str = Form(""),
     exporter: str = Form(""),
     consignee: str = Form(""),
+    exporter_name: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None,
     country_of_origin: str = Form(""),
     destination_country: str = Form(""),
     transport_details: str = Form(""),
@@ -595,10 +746,19 @@ def save_co(
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
     origin: List[str] = Form([]),
+    carton: Annotated[Optional[List[str]], Form()] = None,
+    net_weight: Annotated[Optional[List[str]], Form()] = None,
+    gross_weight: Annotated[Optional[List[str]], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
 ):
-    validate_co_links(bl_no, packing_no, invoice_no)
-    exporter = require_text("Exporter", exporter)
-    consignee = require_text("Consignee", consignee)
+    account_id = _account_id(request)
+    validate_co_links(bl_no, packing_no, invoice_no, account_id, shipment_no)
+    exporter = require_text("Exporter", exporter_name or exporter)
+    consignee = require_text("Consignee", consignee_name or consignee)
     saved = {}
     def add_co(records):
         co_number = next_identifier(records, "co_no", "CO")
@@ -606,8 +766,16 @@ def save_co(
         co_number, co_date, bl_no, invoice_no, packing_no, exporter,
         consignee, country_of_origin, destination_country, transport_details,
         port_of_loading, port_of_discharge, remarks, item_name, hs_code,
-        quantity, origin,
+        quantity, origin, shipment_no, carton, net_weight, gross_weight,
         )
+        record.update({
+            "exporter_name": exporter, "exporter_address": exporter_address or "",
+            "exporter_email": exporter_email or "", "exporter_phone": exporter_phone or "",
+            "consignee_name": consignee, "consignee_address": consignee_address or "",
+            "consignee_email": consignee_email or "",
+        })
+        record = resolve_co_snapshot(record, account_id)
+        record["account_id"] = account_id
         records.append(record)
         saved["co_no"] = co_number
     locked_json_mutation(CO_FILE, [], add_co, list)
@@ -615,22 +783,25 @@ def save_co(
 
 
 @router.get("/edit-co/{co_no}")
-def edit_co(co_no: str):
-    for record in load_certificates():
-        if record.get("co_no") == co_no:
-            return render_form(record, f"/update-co/{co_no}", "Edit Certificate of Origin", "Update Certificate of Origin", True)
-    return HTMLResponse("Certificate of Origin Not Found", status_code=404)
+def edit_co(co_no: str, request: Request):
+    account_id = _account_id(request)
+    products = product_module.load_products(account_id)
+    record = resolve_co_snapshot(public_certificate_of_origin(_owned_certificate(co_no, account_id)), account_id)
+    return render_form(record, f"/update-co/{co_no}", "Edit Certificate of Origin", "Update Certificate of Origin", True, products=products, account_id=account_id)
 
 
 @router.post("/update-co/{co_no}")
 def update_co(
     co_no: str,
+    request: Request,
     co_date: str = Form(""),
     bl_no: str = Form(""),
     invoice_no: str = Form(""),
     packing_no: str = Form(""),
     exporter: str = Form(""),
     consignee: str = Form(""),
+    exporter_name: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None,
     country_of_origin: str = Form(""),
     destination_country: str = Form(""),
     transport_details: str = Form(""),
@@ -641,19 +812,46 @@ def update_co(
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
     origin: List[str] = Form([]),
+    carton: Annotated[Optional[List[str]], Form()] = None,
+    net_weight: Annotated[Optional[List[str]], Form()] = None,
+    gross_weight: Annotated[Optional[List[str]], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
 ):
-    validate_co_links(bl_no, packing_no, invoice_no)
-    exporter = require_text("Exporter", exporter)
-    consignee = require_text("Consignee", consignee)
+    account_id = _account_id(request)
+    current = _owned_certificate(co_no, account_id)
+    validate_co_links(bl_no, packing_no, invoice_no, account_id)
+    exporter = require_text("Exporter", exporter_name or exporter)
+    consignee = require_text("Consignee", consignee_name or consignee)
     updated = build_record(
         co_no, co_date, bl_no, invoice_no, packing_no, exporter, consignee,
         country_of_origin, destination_country, transport_details,
         port_of_loading, port_of_discharge, remarks, item_name, hs_code,
-        quantity, origin,
+        quantity, origin, current.get("shipment_no", ""), carton, net_weight, gross_weight,
     )
+    if carton is None or net_weight is None or gross_weight is None:
+        for index, item in enumerate(updated["items"]):
+            prior = current.get("items", [])[index] if index < len(current.get("items", [])) else {}
+            if carton is None: item["carton"] = prior.get("carton", "")
+            if net_weight is None: item["net_weight"] = prior.get("net_weight", "")
+            if gross_weight is None: item["gross_weight"] = prior.get("gross_weight", "")
+    updated.update({
+        "exporter_name": exporter,
+        "exporter_address": current.get("exporter_address", "") if exporter_address is None else exporter_address,
+        "exporter_email": current.get("exporter_email", "") if exporter_email is None else exporter_email,
+        "exporter_phone": current.get("exporter_phone", "") if exporter_phone is None else exporter_phone,
+        "consignee_name": consignee,
+        "consignee_address": current.get("consignee_address", "") if consignee_address is None else consignee_address,
+        "consignee_email": current.get("consignee_email", "") if consignee_email is None else consignee_email,
+    })
+    updated = resolve_co_snapshot(updated, account_id)
+    updated["account_id"] = account_id
     def replace_co(records):
         for index, record in enumerate(records):
-            if record.get("co_no") == co_no:
+            if record.get("co_no") == co_no and record.get("account_id") == account_id:
                 records[index] = updated
                 return
         raise HTTPException(status_code=404, detail="Certificate of Origin not found")
@@ -662,30 +860,50 @@ def update_co(
 
 
 @router.get("/delete-co/{co_no}")
-def delete_co(co_no: str):
-    return identifier_delete_confirmation("Certificate of Origin", "Certificate of Origin", co_no, CO_FILE, "co_no", f"/delete-co/{co_no}", "/co-list")
+def delete_co(co_no: str, request: Request):
+    _owned_certificate(co_no, _account_id(request))
+    return render_delete_page("Certificate of Origin", co_no, f"/delete-co/{co_no}", "/co-list", find_dependencies("Certificate of Origin", co_no, _account_id(request)))
 
 @router.post("/delete-co/{co_no}")
-def confirm_delete_co(co_no: str):
-    return confirmed_identifier_delete("Certificate of Origin", "Certificate of Origin", co_no, CO_FILE, "co_no", f"/delete-co/{co_no}", "/co-list", "/co-list")
+def confirm_delete_co(co_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_certificate(co_no, account_id)
+    dependencies = find_dependencies("Certificate of Origin", co_no, account_id)
+    if dependencies:
+        return render_delete_page("Certificate of Origin", co_no, f"/delete-co/{co_no}", "/co-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((index for index, record in enumerate(records)
+                      if isinstance(record, dict) and record.get("co_no") == co_no
+                      and record.get("account_id") == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Certificate of Origin not found")
+        records.pop(index)
+    locked_json_mutation(CO_FILE, [], remove, list)
+    return RedirectResponse("/co-list", status_code=303)
 
 
 @router.get("/co-data/{co_no}")
-def co_data(co_no: str):
-    for record in load_certificates():
-        if record.get("co_no") == co_no:
-            return record
-    raise HTTPException(status_code=404, detail="Certificate of Origin not found")
+def co_data(co_no: str, request: Request):
+    account_id = _account_id(request)
+    return resolve_co_snapshot(public_certificate_of_origin(_owned_certificate(co_no, account_id)), account_id)
 
 
 @router.post("/co/pdf")
-def create_co_pdf(payload: dict = Body(...)):
+def create_co_pdf(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    validate_co_links(payload.get("bl_no", ""), payload.get("packing_no", ""), payload.get("invoice_no", ""), account_id, payload.get("shipment_no", ""))
+    payload = public_certificate_of_origin(payload)
+    payload = resolve_co_snapshot(payload, account_id)
     co_no = payload.get("co_no") or "-"
     co_date = payload.get("co_date") or datetime.now().strftime("%Y-%m-%d")
     bl_no = payload.get("bl_no", "")
     invoice_no = payload.get("invoice_no", "")
-    exporter = payload.get("exporter", "")
-    consignee = payload.get("consignee", "")
+    exporter = payload.get("exporter_name") or payload.get("exporter", "")
+    consignee = payload.get("consignee_name") or payload.get("consignee", "")
+    exporter_address = payload.get("exporter_address", "")
+    exporter_contact = " / ".join(value for value in (payload.get("exporter_email", ""), payload.get("exporter_phone", "")) if value)
+    consignee_address = payload.get("consignee_address", "")
+    consignee_email = payload.get("consignee_email", "")
     country_of_origin = payload.get("country_of_origin", "")
     destination_country = payload.get("destination_country", "")
     transport_details = payload.get("transport_details", "")
@@ -744,6 +962,10 @@ def create_co_pdf(payload: dict = Body(...)):
         pdf.setFont("Helvetica", 8)
         pdf.drawString(60, height - 230, fit_text(exporter, 195))
         pdf.drawString(325, height - 230, fit_text(consignee, 195))
+        pdf.drawString(60, height - 242, fit_text(exporter_address, 195, font_size=7))
+        pdf.drawString(60, height - 252, fit_text(exporter_contact, 195, font_size=7))
+        pdf.drawString(325, height - 242, fit_text(consignee_address, 195, font_size=7))
+        pdf.drawString(325, height - 252, fit_text(consignee_email, 195, font_size=7))
 
         pdf.setFillColor(colors.black)
         pdf.setFont("Helvetica-Bold", 8)
@@ -794,7 +1016,11 @@ def create_co_pdf(payload: dict = Body(...)):
         pdf.drawString(82, y + 9, fit_text(item.get("name", ""), 140))
         pdf.drawString(245, y + 9, str(item.get("hs_code", "")))
         pdf.drawRightString(390, y + 9, str(item.get("quantity", "")))
-        pdf.drawString(425, y + 9, fit_text(item.get("origin", ""), 100))
+        cargo_detail = " / ".join(part for part in (
+            str(item.get("origin", "")), f"C:{item.get('carton', '')}",
+            f"N:{item.get('net_weight', '')}", f"G:{item.get('gross_weight', '')}",
+        ) if part and not part.endswith(":"))
+        pdf.drawString(425, y + 9, fit_text(cargo_detail, 100))
         y -= row_h
 
     statement_top = y - statement_gap
@@ -827,8 +1053,8 @@ def create_co_pdf(payload: dict = Body(...)):
 
 
 @router.get("/co-pdf/{co_no}")
-def co_pdf(co_no: str):
-    for record in load_certificates():
-        if record.get("co_no") == co_no:
-            return create_co_pdf(record)
-    return {"error": "Certificate of Origin not found"}
+def co_pdf(co_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_co_snapshot(public_certificate_of_origin(_owned_certificate(co_no, account_id)), account_id)
+    set_pdf_export_record(request, record)
+    return create_co_pdf(request, record)
