@@ -1,11 +1,13 @@
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
+from copy import deepcopy
+from typing import Annotated, Optional
 import html as html_lib
 import json
 from urllib.parse import quote, urlencode
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -15,7 +17,12 @@ router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import DataValidationError, require_allowed_value, require_consistent_reference, require_existing_reference, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_shipment import ensure_legacy_shipment_ownership, public_shipment
+from app.export import set_pdf_export_record
+from app.auth import USERS_FILE
+from app.account_company import load_account_company
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 
 SHIPMENT_FILE = data_path("shipments.json")
 
@@ -138,6 +145,12 @@ DOCUMENTS = [
 
 STATUS_OPTIONS = ["Inquiry", "Quoted", "Confirmed", "In Production", "Ready to Ship", "Shipped", "Completed"]
 
+PARTY_SNAPSHOT_FIELDS = (
+    "shipper", "shipper_address", "shipper_email", "shipper_phone",
+    "consignee", "consignee_address", "consignee_email",
+)
+CARGO_SNAPSHOT_FIELDS = ("items", "total_carton", "total_net_weight", "total_gross_weight")
+
 
 def html_attr(value):
     return html_lib.escape(str(value or ""), quote=True)
@@ -151,8 +164,26 @@ def load_json(path, default):
     return load_json_strict(path, default, type(default) if isinstance(default, (list, dict)) else None)
 
 
-def load_shipments():
-    return load_json(SHIPMENT_FILE, [])
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_shipment_records():
+    return ensure_legacy_shipment_ownership(SHIPMENT_FILE, USERS_FILE)
+
+
+def owned_shipment_records(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        record for record in load_shipment_records()
+        if isinstance(record, dict)
+        and str(record.get("account_id", "") or "").strip() == owner
+    ]
+
+
+def load_shipments(account_id):
+    return [public_shipment(record) for record in owned_shipment_records(account_id)]
 
 
 def save_shipments(records):
@@ -181,7 +212,100 @@ def blank_shipment():
     }
     for doc in DOCUMENTS:
         record[doc["field"]] = ""
+    for field in PARTY_SNAPSHOT_FIELDS:
+        record[field] = ""
+    record.update({"items": [], "total_carton": "", "total_net_weight": "", "total_gross_weight": ""})
     return record
+
+
+def _first_record(records, field, value):
+    target = str(value or "").strip()
+    if not target:
+        return {}
+    return next(
+        (record for record in records
+         if str(record.get(field, "") or "").strip() == target),
+        {},
+    )
+
+
+def _numeric_total(items, field):
+    total = 0.0
+    for item in items or []:
+        try:
+            total += float(item.get(field, 0) or 0)
+        except (TypeError, ValueError):
+            pass
+    return f"{total:g}" if total else ""
+
+
+def resolve_shipment_snapshot(record, account_id, bill=None, packing=None, invoice=None):
+    """Resolve a read-only Shipment snapshot using account-owned sources only."""
+    from app import bill_of_lading as bill_module
+    from app import packing as packing_module
+    from app import invoice as invoice_module
+    from app import buyer as buyer_module
+
+    resolved = deepcopy(record or {})
+    bl_no = str(resolved.get("bl_no", "") or "").strip()
+    if bill is None:
+        bill = _first_record(bill_module.load_bills_of_lading(account_id), "bl_no", bl_no)
+    bill = bill or {}
+
+    packing_no = str(resolved.get("packing_no", "") or bill.get("packing_no", "") or "").strip()
+    if packing is None:
+        packing = _first_record(packing_module.load_packing_lists(account_id), "packing_no", packing_no)
+    packing = packing or {}
+
+    invoice_no = str(
+        resolved.get("invoice_no", "") or bill.get("invoice_no", "")
+        or packing.get("invoice_no", "") or ""
+    ).strip()
+    if invoice is None:
+        invoice = _first_record(invoice_module.load_invoices(account_id), "invoice_no", invoice_no)
+    invoice = invoice or {}
+
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    consignee_name = (
+        resolved.get("consignee") or bill.get("consignee") or packing.get("buyer")
+        or invoice.get("buyer") or resolved.get("buyer") or ""
+    )
+    buyer = next(
+        (candidate for candidate in buyer_module.load_buyers(account_id)
+         if str(candidate.get("name", "") or "").strip().casefold()
+         == str(consignee_name or "").strip().casefold()),
+        {},
+    )
+
+    fallbacks = {
+        "shipper": (bill.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "shipper_address": (bill.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "shipper_email": (bill.get("shipper_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "shipper_phone": (bill.get("shipper_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee": (bill.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (bill.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (bill.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+    }
+    for field, candidates in fallbacks.items():
+        if not resolved.get(field):
+            resolved[field] = next((value for value in candidates if value), "")
+
+    if not resolved.get("items"):
+        resolved["items"] = deepcopy(
+            bill.get("items") or packing.get("items") or invoice.get("items") or []
+        )
+    for field in ("total_carton", "total_net_weight", "total_gross_weight"):
+        if not resolved.get(field):
+            resolved[field] = bill.get(field) or packing.get(field) or _numeric_total(
+                resolved.get("items", []), field.removeprefix("total_")
+            )
+
+    resolved["bl_no"] = bl_no
+    resolved["packing_no"] = packing_no
+    resolved["invoice_no"] = invoice_no
+    if not resolved.get("buyer") and buyer.get("name"):
+        resolved["buyer"] = buyer.get("name", "")
+    return resolved
 
 
 def _cached_records(path, datasets):
@@ -190,13 +314,40 @@ def _cached_records(path, datasets):
     return datasets.get(Path(path).name)
 
 
-def load_workflow_datasets():
+def load_workflow_datasets(account_id=None):
     """Load each workflow dataset once for one render operation."""
     datasets = {}
     for descriptor in [*DOCUMENTS, *OPERATIONAL_RECORDS]:
         filename = Path(descriptor["file"]).name
         if filename not in datasets:
             datasets[filename] = load_json(descriptor["file"], [])
+    if account_id is not None:
+        from app import invoice as invoice_module
+        from app import packing as packing_module
+        from app import shipping_instruction as shipping_instruction_module
+        from app import booking_confirmation as booking_module
+        from app import container_management as container_module
+        from app import bill_of_lading as bill_of_lading_module
+        from app import customs_declaration as customs_module
+        from app import certificate_of_origin as certificate_of_origin_module
+        from app import inspection_certificate as inspection_module
+        from app import insurance_certificate as insurance_module
+        from app import weight_certificate as weight_module
+        from app import quotation as quotation_module
+        from app import proforma as proforma_module
+        datasets["invoices.json"] = invoice_module.owned_invoice_records(account_id)
+        datasets["packing_lists.json"] = packing_module.owned_packing_records(account_id)
+        datasets["shipping_instructions.json"] = shipping_instruction_module.owned_shipping_instruction_records(account_id)
+        datasets["booking_confirmations.json"] = booking_module.owned_booking_records(account_id)
+        datasets["containers.json"] = container_module.owned_container_records(account_id)
+        datasets["bills_of_lading.json"] = bill_of_lading_module.owned_bill_of_lading_records(account_id)
+        datasets["customs_declarations.json"] = customs_module.owned_customs_records(account_id)
+        datasets["certificates_of_origin.json"] = certificate_of_origin_module.owned_certificate_records(account_id)
+        datasets["inspection_certificates.json"] = inspection_module.owned_inspection_records(account_id)
+        datasets["insurance_certificates.json"] = insurance_module.owned_insurance_records(account_id)
+        datasets["weight_certificates.json"] = weight_module.owned_weight_records(account_id)
+        datasets["quotations.json"] = quotation_module.owned_quotation_records(account_id)
+        datasets["proformas.json"] = proforma_module.owned_proforma_records(account_id)
     return datasets
 
 
@@ -205,8 +356,8 @@ def document_records(doc, datasets=None):
     return cached if cached is not None else load_json(doc["file"], [])
 
 
-def document_options(doc):
-    records = document_records(doc)
+def document_options(doc, datasets=None):
+    records = document_records(doc, datasets)
     values = []
     for record in records:
         value = str(record.get(doc["key"], "") or "")
@@ -229,8 +380,8 @@ def linked_count(record, datasets=None):
     )
 
 
-def find_shipment(shipment_no):
-    for record in load_shipments():
+def find_shipment(shipment_no, account_id):
+    for record in owned_shipment_records(account_id):
         if record.get("shipment_no") == shipment_no:
             return record
     return None
@@ -243,10 +394,22 @@ def link_direct_document(shipment_no, field, identifier):
     identifier = str(identifier or "").strip()
     if field not in allowed or not shipment_no or not identifier:
         return False
+    document = document_by_field(field)
+    linked_record = next(
+        (
+            record for record in document_records(document)
+            if str(record.get(document["key"], "") or "").strip() == identifier
+        ),
+        None,
+    ) if document else None
+    owner = str((linked_record or {}).get("account_id", "") or "").strip()
+    if not owner:
+        return False
     linked = {"value": False}
     def update(records):
         for record in records:
-            if str(record.get("shipment_no", "") or "").strip() == shipment_no:
+            if (str(record.get("shipment_no", "") or "").strip() == shipment_no
+                    and str(record.get("account_id", "") or "").strip() == owner):
                 record[field] = identifier
                 linked["value"] = True
                 return
@@ -287,6 +450,19 @@ def resolve_operational_records(shipment_no, datasets=None):
 
 def operational_count(shipment_no):
     return sum(len(group["matches"]) for group in resolve_operational_records(shipment_no))
+
+
+def shipment_dependencies(shipment_no, account_id):
+    from app import booking_confirmation as booking_module
+    owned_bookings = {
+        str(record.get("booking_record_no", "") or "").strip()
+        for record in booking_module.owned_booking_records(account_id)
+    }
+    return [
+        dependency for dependency in find_dependencies("Shipment", shipment_no, account_id)
+        if dependency["module"] != "Booking Confirmation"
+        or dependency["identifier"] in owned_bookings
+    ]
 
 
 def required_workflow_progress(shipment, resolved_direct=None, resolved_operations=None):
@@ -381,14 +557,18 @@ def document_by_field(field):
     return next((doc for doc in DOCUMENTS if doc["field"] == field), None)
 
 
-def validate_shipment_values(record):
+def validate_shipment_values(record, account_id, datasets=None):
+    from app import buyer as buyer_module
     record["shipment_name"] = require_text("Shipment name", record.get("shipment_name", ""))
     record["status"] = require_allowed_value("Shipment status", record.get("status", ""), STATUS_OPTIONS)
+    require_existing_reference(
+        "Buyer", record.get("buyer", ""), buyer_module.load_buyers(account_id), "name"
+    )
     linked = {}
     for doc in DOCUMENTS:
         value = record.get(doc["field"], "")
         linked[doc["field"]] = require_existing_reference(
-            doc["label"], value, document_records(doc), doc["key"]
+            doc["label"], value, document_records(doc, datasets), doc["key"]
         )
     packing = linked.get("packing_no")
     if packing:
@@ -760,7 +940,7 @@ def select_html(name, selected, options, placeholder):
     return "".join(html)
 
 
-def render_form(record, action, title, button_text, show_shipment_no=False):
+def render_form(record, action, title, button_text, show_shipment_no=False, datasets=None):
     shipment_no_input = ""
     if show_shipment_no:
         shipment_no_input = f'<input type="text" name="shipment_no" value="{html_attr(record.get("shipment_no", ""))}" placeholder="Shipment No" readonly>'
@@ -776,9 +956,20 @@ def render_form(record, action, title, button_text, show_shipment_no=False):
         document_fields += f"""
 <div>
 <label>{html_text(doc["label"])}</label>
-{select_html(doc["field"], value, document_options(doc), f"Select {doc['label']}")}
+{select_html(doc["field"], value, document_options(doc, datasets), f"Select {doc['label']}")}
 </div>
 """
+
+    cargo_rows = "".join(
+        f"<tr><td>{html_text(item.get('name', ''))}</td>"
+        f"<td>{html_text(item.get('quantity', ''))}</td>"
+        f"<td>{html_text(item.get('hs_code', ''))}</td>"
+        f"<td>{html_text(item.get('carton', ''))}</td>"
+        f"<td>{html_text(item.get('net_weight', ''))}</td>"
+        f"<td>{html_text(item.get('gross_weight', ''))}</td></tr>"
+        for item in record.get("items", [])
+        if isinstance(item, dict)
+    ) or '<tr><td colspan="6">No cargo snapshot available.</td></tr>'
 
     html = """
 <!DOCTYPE html>
@@ -829,6 +1020,29 @@ __SHIPMENT_NO_INPUT__
 </div>
 
 <div class="card">
+<h2>Party Snapshot</h2>
+<div class="grid">
+<div><label>Shipper</label><input type="text" name="shipper" value="__SHIPPER__"></div>
+<div><label>Shipper Address</label><input type="text" name="shipper_address" value="__SHIPPER_ADDRESS__"></div>
+<div><label>Shipper Email</label><input type="email" name="shipper_email" value="__SHIPPER_EMAIL__"></div>
+<div><label>Shipper Phone</label><input type="text" name="shipper_phone" value="__SHIPPER_PHONE__"></div>
+<div><label>Consignee</label><input type="text" name="consignee" value="__CONSIGNEE__"></div>
+<div><label>Consignee Address</label><input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__"></div>
+<div><label>Consignee Email</label><input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__"></div>
+</div>
+</div>
+
+<div class="card">
+<h2>Cargo Snapshot</h2>
+<div style="overflow-x:auto">
+<table style="width:100%;border-collapse:collapse">
+<thead><tr><th>Item</th><th>Quantity</th><th>HS Code</th><th>Carton</th><th>Net Weight</th><th>Gross Weight</th></tr></thead>
+<tbody>__CARGO_ROWS__</tbody>
+</table>
+</div>
+</div>
+
+<div class="card">
 <h2>Document References</h2>
 <div class="grid">
 __DOCUMENT_FIELDS__
@@ -849,6 +1063,14 @@ __DOCUMENT_FIELDS__
         "__SHIPMENT_NAME__": html_attr(record.get("shipment_name", "")),
         "__CUSTOMER__": html_attr(record.get("customer", "")),
         "__BUYER__": html_attr(record.get("buyer", "")),
+        "__SHIPPER__": html_attr(record.get("shipper", "")),
+        "__SHIPPER_ADDRESS__": html_attr(record.get("shipper_address", "")),
+        "__SHIPPER_EMAIL__": html_attr(record.get("shipper_email", "")),
+        "__SHIPPER_PHONE__": html_attr(record.get("shipper_phone", "")),
+        "__CONSIGNEE__": html_attr(record.get("consignee", "")),
+        "__CONSIGNEE_ADDRESS__": html_attr(record.get("consignee_address", "")),
+        "__CONSIGNEE_EMAIL__": html_attr(record.get("consignee_email", "")),
+        "__CARGO_ROWS__": cargo_rows,
         "__STATUS_OPTIONS__": status_options,
         "__REMARKS__": html_text(record.get("remarks", "")),
         "__DOCUMENT_FIELDS__": document_fields,
@@ -860,8 +1082,8 @@ __DOCUMENT_FIELDS__
 
 
 @router.get("/shipment-list", response_class=HTMLResponse)
-def shipment_list(search: str = ""):
-    shipments = sorted(load_shipments(), key=lambda record: record.get("shipment_no", ""), reverse=True)
+def shipment_list(request: Request, search: str = ""):
+    shipments = sorted(load_shipments(_account_id(request)), key=lambda record: record.get("shipment_no", ""), reverse=True)
     if search:
         term = search.lower()
         shipments = [
@@ -951,14 +1173,19 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 
 
 @router.get("/shipment-form", response_class=HTMLResponse)
-def shipment_form():
+def shipment_form(request: Request, bl_no: str = ""):
+    account_id = _account_id(request)
     record = blank_shipment()
-    record["shipment_no"] = next_shipment_no(load_shipments())
-    return render_form(record, "/shipment", "New Shipment", "Save Shipment", show_shipment_no=True)
+    record["shipment_no"] = next_shipment_no(load_shipment_records())
+    if bl_no:
+        record["bl_no"] = bl_no
+        record = resolve_shipment_snapshot(record, account_id)
+    return render_form(record, "/shipment", "New Shipment", "Save Shipment", show_shipment_no=True, datasets=load_workflow_datasets(account_id))
 
 
 @router.post("/shipment")
 def save_shipment(
+    request: Request,
     shipment_date: str = Form(""),
     shipment_name: str = Form(""),
     customer: str = Form(""),
@@ -975,26 +1202,48 @@ def save_shipment(
     inspection_no: str = Form(""),
     insurance_no: str = Form(""),
     weight_no: str = Form(""),
+    shipper: Annotated[Optional[str], Form()] = None,
+    shipper_address: Annotated[Optional[str], Form()] = None,
+    shipper_email: Annotated[Optional[str], Form()] = None,
+    shipper_phone: Annotated[Optional[str], Form()] = None,
+    consignee: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
 ):
+    account_id = _account_id(request)
+    datasets = load_workflow_datasets(account_id)
     def add_shipment(shipments):
         record = build_record(
         next_identifier(shipments, "shipment_no", "SHP"), shipment_date, shipment_name, customer, buyer,
         status, remarks, quotation_no, pi_no, invoice_no, packing_no, si_no,
         bl_no, co_no, inspection_no, insurance_no, weight_no,
         )
-        validate_shipment_values(record)
+        record.update({
+            "shipper": shipper or "",
+            "shipper_address": shipper_address or "",
+            "shipper_email": shipper_email or "",
+            "shipper_phone": shipper_phone or "",
+            "consignee": consignee or "",
+            "consignee_address": consignee_address or "",
+            "consignee_email": consignee_email or "",
+        })
+        record = resolve_shipment_snapshot(record, account_id)
+        validate_shipment_values(record, account_id, datasets)
+        record["account_id"] = account_id
         shipments.append(record)
     locked_json_mutation(SHIPMENT_FILE, [], add_shipment, list)
     return RedirectResponse("/shipment-list", status_code=303)
 
 
 @router.get("/shipment/{shipment_no}", response_class=HTMLResponse)
-def shipment_detail(shipment_no: str):
-    shipment = find_shipment(shipment_no)
-    if not shipment:
+def shipment_detail(shipment_no: str, request: Request):
+    account_id = _account_id(request)
+    owned_shipment = find_shipment(shipment_no, account_id)
+    if not owned_shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
+    shipment = public_shipment(owned_shipment)
 
-    workflow_datasets = load_workflow_datasets()
+    workflow_datasets = load_workflow_datasets(account_id)
     cards = ""
     resolved_direct = resolve_direct_documents(shipment, workflow_datasets)
     for resolved in resolved_direct:
@@ -1253,10 +1502,14 @@ def draw_pdf_text(pdf, text, x, y, max_width=88):
 
 
 @router.get("/shipment-pdf/{shipment_no}")
-def shipment_pdf(shipment_no: str):
-    shipment = find_shipment(shipment_no)
-    if not shipment:
+def shipment_pdf(shipment_no: str, request: Request):
+    account_id = _account_id(request)
+    owned_shipment = find_shipment(shipment_no, account_id)
+    if not owned_shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
+    shipment = public_shipment(owned_shipment)
+    shipment = resolve_shipment_snapshot(shipment, account_id)
+    set_pdf_export_record(request, shipment)
 
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
@@ -1297,6 +1550,57 @@ def shipment_pdf(shipment_no: str):
         y -= 3
 
     y -= 10
+    y = ensure_space(y, 120)
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(42, y, "Party Snapshot")
+    y -= 24
+    for label, value in [
+        ("Shipper", shipment.get("shipper", "")),
+        ("Shipper Address", shipment.get("shipper_address", "")),
+        ("Shipper Email", shipment.get("shipper_email", "")),
+        ("Shipper Phone", shipment.get("shipper_phone", "")),
+        ("Consignee", shipment.get("consignee", "")),
+        ("Consignee Address", shipment.get("consignee_address", "")),
+        ("Consignee Email", shipment.get("consignee_email", "")),
+    ]:
+        y = ensure_space(y)
+        pdf.setFont("Helvetica-Bold", 9)
+        pdf.drawString(42, y, f"{label}:")
+        pdf.setFont("Helvetica", 9)
+        y = draw_pdf_text(pdf, value, 165, y)
+        y -= 2
+
+    y -= 10
+    y = ensure_space(y, 90)
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(42, y, "Cargo Snapshot")
+    y -= 22
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(42, y, "Item")
+    pdf.drawString(220, y, "Qty")
+    pdf.drawString(270, y, "HS Code")
+    pdf.drawString(350, y, "Carton")
+    pdf.drawString(410, y, "Net")
+    pdf.drawString(480, y, "Gross")
+    y -= 15
+    for item in shipment.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        y = ensure_space(y)
+        pdf.setFont("Helvetica", 8)
+        pdf.drawString(42, y, str(item.get("name", ""))[:28])
+        pdf.drawString(220, y, str(item.get("quantity", "")))
+        pdf.drawString(270, y, str(item.get("hs_code", "")))
+        pdf.drawString(350, y, str(item.get("carton", "")))
+        pdf.drawString(410, y, str(item.get("net_weight", "")))
+        pdf.drawString(480, y, str(item.get("gross_weight", "")))
+        y -= 15
+    y = ensure_space(y)
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(350, y, f"Totals: {shipment.get('total_carton', '')} cartons")
+    pdf.drawString(430, y, f"N {shipment.get('total_net_weight', '')} / G {shipment.get('total_gross_weight', '')}")
+
+    y -= 28
     y = ensure_space(y, 80)
     pdf.setFont("Helvetica-Bold", 14)
     pdf.drawString(42, y, "Direct Document Status")
@@ -1306,7 +1610,8 @@ def shipment_pdf(shipment_no: str):
     pdf.drawString(245, y, "Record No")
     pdf.drawString(430, y, "Status")
     y -= 15
-    for resolved in resolve_direct_documents(shipment):
+    workflow_datasets = load_workflow_datasets(account_id)
+    for resolved in resolve_direct_documents(shipment, workflow_datasets):
         y = ensure_space(y)
         pdf.setFont("Helvetica", 9)
         pdf.drawString(42, y, resolved["document"]["label"])
@@ -1324,7 +1629,7 @@ def shipment_pdf(shipment_no: str):
     pdf.drawString(245, y, "Record No")
     pdf.drawString(430, y, "Status")
     y -= 15
-    for group in resolve_operational_records(shipment_no):
+    for group in resolve_operational_records(shipment_no, workflow_datasets):
         matches = group["matches"] or [{"value": "-"}]
         for match in matches:
             y = ensure_space(y)
@@ -1347,15 +1652,18 @@ def shipment_pdf(shipment_no: str):
 
 
 @router.get("/edit-shipment/{shipment_no}", response_class=HTMLResponse)
-def edit_shipment(shipment_no: str):
-    for record in load_shipments():
+def edit_shipment(shipment_no: str, request: Request):
+    account_id = _account_id(request)
+    for record in load_shipments(account_id):
         if record.get("shipment_no") == shipment_no:
+            record = resolve_shipment_snapshot(record, account_id)
             return render_form(
                 record,
                 f"/update-shipment/{html_attr(shipment_no)}",
                 "Edit Shipment",
                 "Update Shipment",
                 show_shipment_no=True,
+                datasets=load_workflow_datasets(account_id),
             )
     raise HTTPException(status_code=404, detail="Shipment not found")
 
@@ -1363,6 +1671,7 @@ def edit_shipment(shipment_no: str):
 @router.post("/update-shipment/{shipment_no}")
 def update_shipment(
     shipment_no: str,
+    request: Request,
     shipment_date: str = Form(""),
     shipment_name: str = Form(""),
     customer: str = Form(""),
@@ -1379,17 +1688,45 @@ def update_shipment(
     inspection_no: str = Form(""),
     insurance_no: str = Form(""),
     weight_no: str = Form(""),
+    shipper: Annotated[Optional[str], Form()] = None,
+    shipper_address: Annotated[Optional[str], Form()] = None,
+    shipper_email: Annotated[Optional[str], Form()] = None,
+    shipper_phone: Annotated[Optional[str], Form()] = None,
+    consignee: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
 ):
+    account_id = _account_id(request)
+    current = find_shipment(shipment_no, account_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    datasets = load_workflow_datasets(account_id)
     def replace_shipment(shipments):
         for index, record in enumerate(shipments):
-            if record.get("shipment_no") != shipment_no:
+            if (record.get("shipment_no") != shipment_no
+                    or str(record.get("account_id", "") or "").strip() != account_id):
                 continue
             updated = build_record(
                 shipment_no, shipment_date, shipment_name, customer, buyer,
                 status, remarks, quotation_no, pi_no, invoice_no, packing_no,
                 si_no, bl_no, co_no, inspection_no, insurance_no, weight_no,
             )
-            validate_shipment_values(updated)
+            supplied_snapshot = {
+                "shipper": shipper,
+                "shipper_address": shipper_address,
+                "shipper_email": shipper_email,
+                "shipper_phone": shipper_phone,
+                "consignee": consignee,
+                "consignee_address": consignee_address,
+                "consignee_email": consignee_email,
+            }
+            for field, value in supplied_snapshot.items():
+                updated[field] = current.get(field, "") if value is None else value
+            for field in CARGO_SNAPSHOT_FIELDS:
+                updated[field] = deepcopy(current.get(field, [] if field == "items" else ""))
+            updated = resolve_shipment_snapshot(updated, account_id)
+            validate_shipment_values(updated, account_id, datasets)
+            updated["account_id"] = account_id
             shipments[index] = updated
             return
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -1398,17 +1735,41 @@ def update_shipment(
 
 
 @router.get("/delete-shipment/{shipment_no}")
-def delete_shipment(shipment_no: str):
-    return identifier_delete_confirmation("Shipment", "Shipment", shipment_no, SHIPMENT_FILE, "shipment_no", f"/delete-shipment/{shipment_no}", "/shipment-list")
+def delete_shipment(shipment_no: str, request: Request):
+    account_id = _account_id(request)
+    if find_shipment(shipment_no, account_id) is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    return render_delete_page(
+        "Shipment", shipment_no, f"/delete-shipment/{shipment_no}",
+        "/shipment-list", shipment_dependencies(shipment_no, account_id),
+    )
 
 @router.post("/delete-shipment/{shipment_no}")
-def confirm_delete_shipment(shipment_no: str):
-    return confirmed_identifier_delete("Shipment", "Shipment", shipment_no, SHIPMENT_FILE, "shipment_no", f"/delete-shipment/{shipment_no}", "/shipment-list", "/shipment-list")
+def confirm_delete_shipment(shipment_no: str, request: Request):
+    account_id = _account_id(request)
+    if find_shipment(shipment_no, account_id) is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    dependencies = shipment_dependencies(shipment_no, account_id)
+    if dependencies:
+        return render_delete_page(
+            "Shipment", shipment_no, f"/delete-shipment/{shipment_no}",
+            "/shipment-list", dependencies, status_code=409,
+        )
+    def remove(records):
+        index = next((index for index, record in enumerate(records)
+                      if isinstance(record, dict)
+                      and str(record.get("shipment_no", "") or "").strip() == shipment_no
+                      and str(record.get("account_id", "") or "").strip() == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Shipment not found")
+        records.pop(index)
+    locked_json_mutation(SHIPMENT_FILE, [], remove, list)
+    return RedirectResponse("/shipment-list", status_code=303)
 
 
 @router.get("/shipment-data/{shipment_no}")
-def shipment_data(shipment_no: str):
-    for record in load_shipments():
-        if record.get("shipment_no") == shipment_no:
-            return record
-    raise HTTPException(status_code=404, detail="Shipment not found")
+def shipment_data(shipment_no: str, request: Request):
+    record = find_shipment(shipment_no, _account_id(request))
+    if record is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    return public_shipment(record)

@@ -102,7 +102,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
 
         browser = browser_type.launch(headless=True)
         page = browser.new_page(viewport={"width": 1280, "height": 900})
-        company_name = buyer_name = product_name = invoice_no = packing_no = bl_no = ""
+        company_name = buyer_name = product_name = invoice_no = packing_no = bl_no = shipment_no = ""
         try:
             # Steps 1-2: a brand-new account and Company Master over real HTTP.
             company_name, email = _register_login_and_setup(page, base_url, browser_name, "A")
@@ -332,6 +332,35 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             for field, expected in expected_bl_party.items():
                 assert stored_bill[field] == expected
 
+            # B/L -> Shipment copies and preserves party and cargo snapshots.
+            page.goto(f"{base_url}/shipment-form?bl_no={bl_no}")
+            for field, expected in expected_bl_party.items():
+                assert page.locator(f'input[name="{field}"]').input_value() == expected
+            assert page.locator('select[name="bl_no"]').input_value() == bl_no
+            assert page.locator('select[name="packing_no"]').input_value() == packing_no
+            assert page.locator('select[name="invoice_no"]').input_value() == invoice_no
+            assert product_name in page.locator("text=Cargo Snapshot").locator("xpath=following::table[1]").inner_text()
+            shipment_name = f"CODEX-LINK-A-SHIPMENT-{browser_name}"
+            page.locator('input[name="shipment_name"]').fill(shipment_name)
+            page.get_by_role("button", name="Save Shipment").click()
+            page.wait_for_url(f"{base_url}/shipment-list")
+            shipment_edit_path = page.locator(f'tr:has-text("{shipment_name}") a', has_text="Edit").get_attribute("href")
+            assert shipment_edit_path
+            shipment_no = shipment_edit_path.rsplit("/", 1)[-1]
+            page.goto(f"{base_url}{shipment_edit_path}")
+            for field, expected in expected_bl_party.items():
+                assert page.locator(f'input[name="{field}"]').input_value() == expected
+            assert product_name in page.locator("text=Cargo Snapshot").locator("xpath=following::table[1]").inner_text()
+            page.get_by_role("button", name="Update Shipment").click()
+            page.wait_for_url(f"{base_url}/shipment-list")
+            shipment_pdf = page.request.get(f"{base_url}/shipment-pdf/{shipment_no}")
+            assert shipment_pdf.ok and shipment_pdf.body().startswith(b"%PDF")
+            stored_shipments = json.loads((data_dir / "shipments.json").read_text(encoding="utf-8"))
+            stored_shipment = next(record for record in stored_shipments if record.get("shipment_no") == shipment_no)
+            for field, expected in expected_bl_party.items():
+                assert stored_shipment[field] == expected
+            assert stored_shipment["items"] == stored_bill["items"]
+
             # Account B cannot list, search, edit, or fetch Account A records.
             page.get_by_role("button", name="Logout").click()
             page.wait_for_url(f"{base_url}/login")
@@ -347,11 +376,17 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert page.get_by_text(packing_no).count() == 0
             page.goto(f"{base_url}/bl-list?search={bl_no}")
             assert page.get_by_text(bl_no).count() == 0
+            page.goto(f"{base_url}/shipment-list?search={shipment_no}")
+            assert page.get_by_text(shipment_no).count() == 0
             denied_invoice = page.goto(f"{base_url}/edit-invoice/{invoice_no}")
             assert denied_invoice is not None and denied_invoice.status == 404
             denied_packing = page.goto(f"{base_url}/edit-packing/{packing_no}")
             assert denied_packing is not None and denied_packing.status == 404
             denied_bl = page.goto(f"{base_url}/edit-bl/{bl_no}")
             assert denied_bl is not None and denied_bl.status == 404
+            denied_shipment = page.goto(f"{base_url}/edit-shipment/{shipment_no}")
+            assert denied_shipment is not None and denied_shipment.status == 404
+            denied_shipment_pdf = page.goto(f"{base_url}/shipment-pdf/{shipment_no}")
+            assert denied_shipment_pdf is not None and denied_shipment_pdf.status == 404
         finally:
             browser.close()
