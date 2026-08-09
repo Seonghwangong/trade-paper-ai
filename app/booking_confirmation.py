@@ -1,11 +1,12 @@
-from typing import List
+from typing import Annotated, List, Optional
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
 import json
 
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -15,7 +16,19 @@ router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_booking import ensure_legacy_booking_ownership, public_booking
+from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, find_by_identifier, preserve_omitted_item_fields, resolve_source_chain
+from app.export import set_pdf_export_record
+from app.auth import USERS_FILE
+from app import invoice as invoice_module
+from app import packing as packing_module
+from app import bill_of_lading as bill_of_lading_module
+from app import shipping_instruction as shipping_instruction_module
+from app import shipment as shipment_module
+from app import buyer as buyer_module
+from app.account_company import load_account_company
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 
 BOOKING_FILE = data_path("booking_confirmations.json")
 SHIPMENT_FILE = data_path("shipments.json")
@@ -37,36 +50,64 @@ def load_json(path, default):
     return load_json_strict(path, default, type(default) if isinstance(default, (list, dict)) else None)
 
 
-def load_bookings():
-    return load_json(BOOKING_FILE, [])
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_booking_records():
+    return ensure_legacy_booking_ownership(BOOKING_FILE, USERS_FILE)
+
+
+def owned_booking_records(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        record for record in load_booking_records()
+        if isinstance(record, dict)
+        and str(record.get("account_id", "") or "").strip() == owner
+    ]
+
+
+def load_bookings(account_id):
+    return [public_booking(record) for record in owned_booking_records(account_id)]
+
+
+def _owned_booking(booking_record_no, account_id):
+    target = str(booking_record_no or "").strip()
+    record = find_by_identifier(
+        owned_booking_records(account_id), "booking_record_no", target, normalize=True,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return record
 
 
 def save_bookings(records):
     atomic_write_json(BOOKING_FILE, records, list)
 
 
-def load_shipments():
-    return load_json(SHIPMENT_FILE, [])
+def load_shipments(account_id):
+    return shipment_module.owned_shipment_records(account_id)
 
 
-def load_shipping_instructions():
-    return load_json(SI_FILE, [])
+def load_shipping_instructions(account_id):
+    return shipping_instruction_module.owned_shipping_instruction_records(account_id)
 
 
-def load_packing_lists():
-    return load_json(PACKING_FILE, [])
+def load_packing_lists(account_id):
+    return packing_module.owned_packing_records(account_id)
 
 
-def load_bills_of_lading():
-    return load_json(BL_FILE, [])
+def load_bills_of_lading(account_id):
+    return bill_of_lading_module.load_bills_of_lading(account_id)
 
 
-def validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no):
-    shipment = require_existing_reference("Shipment", shipment_no, load_shipments(), "shipment_no", required=True)
-    instruction = require_existing_reference("Shipping Instruction", si_no, load_shipping_instructions(), "si_no")
-    packing = require_existing_reference("Packing List", packing_no, load_packing_lists(), "packing_no")
-    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(), "bl_no")
-    require_existing_reference("Invoice", invoice_no, load_json(INVOICE_FILE, []), "invoice_no")
+def validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no, account_id):
+    shipment = require_existing_reference("Shipment", shipment_no, load_shipments(account_id), "shipment_no", required=True)
+    instruction = require_existing_reference("Shipping Instruction", si_no, load_shipping_instructions(account_id), "si_no")
+    packing = require_existing_reference("Packing List", packing_no, load_packing_lists(account_id), "packing_no")
+    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(account_id), "bl_no")
+    require_existing_reference("Invoice", invoice_no, invoice_module.owned_invoice_records(account_id), "invoice_no")
     for field, actual, shipment_field in [
         ("Shipping Instruction", si_no, "si_no"), ("Packing List", packing_no, "packing_no"),
         ("Bill of Lading", bl_no, "bl_no"), ("Invoice", invoice_no, "invoice_no"),
@@ -90,29 +131,20 @@ def next_booking_record_no(records):
     return f"BK-{max(numbers, default=0) + 1:03d}"
 
 
-def find_record(records, key, value):
-    if not value:
-        return None
-    for record in records:
-        if record.get(key) == value:
-            return record
-    return None
+def shipment_exists(shipment_no, account_id):
+    return bool(find_by_identifier(load_shipments(account_id), "shipment_no", shipment_no))
 
 
-def shipment_exists(shipment_no):
-    return bool(find_record(load_shipments(), "shipment_no", shipment_no))
+def si_exists(si_no, account_id):
+    return bool(find_by_identifier(load_shipping_instructions(account_id), "si_no", si_no))
 
 
-def si_exists(si_no):
-    return bool(find_record(load_shipping_instructions(), "si_no", si_no))
+def packing_exists(packing_no, account_id):
+    return bool(find_by_identifier(load_packing_lists(account_id), "packing_no", packing_no))
 
 
-def packing_exists(packing_no):
-    return bool(find_record(load_packing_lists(), "packing_no", packing_no))
-
-
-def bl_exists(bl_no):
-    return bool(find_record(load_bills_of_lading(), "bl_no", bl_no))
+def bl_exists(bl_no, account_id):
+    return bool(find_by_identifier(load_bills_of_lading(account_id), "bl_no", bl_no))
 
 
 def doc_options(records, key):
@@ -158,6 +190,10 @@ def blank_payload():
         "bl_no": "",
         "invoice_no": "",
         "booking_no": "",
+        "exporter": "", "consignee": "",
+        "exporter_name": "", "exporter_address": "", "exporter_email": "", "exporter_phone": "",
+        "consignee_name": "", "consignee_address": "", "consignee_email": "",
+        "country_of_origin": "", "destination_country": "",
         "carrier": "",
         "vessel": "",
         "voyage_no": "",
@@ -178,9 +214,55 @@ def blank_payload():
     }
 
 
+def resolve_booking_snapshot(record, account_id, shipment=None, bill=None, packing=None, invoice=None):
+    """Resolve Booking Confirmation snapshot from account-owned sources."""
+    context = resolve_source_chain(
+        record, account_id, document_id_field="booking_record_no",
+        load_shipments=load_shipments, load_bills=load_bills_of_lading,
+        load_packings=load_packing_lists, load_invoices=invoice_module.owned_invoice_records,
+        load_company=lambda owner: load_account_company(owner, ACCOUNT_COMPANIES_FILE),
+        load_buyers=buyer_module.load_buyers, shipment=shipment, bill=bill,
+        packing=packing, invoice=invoice,
+    )
+    resolved, preserve_empty = context.resolved, context.preserve_empty
+    shipment, bill, packing, invoice = context.shipment, context.bill, context.packing, context.invoice
+    company, buyer = context.company, context.buyer
+    shipment_no, bl_no, packing_no, invoice_no = context.shipment_no, context.bl_no, context.packing_no, context.invoice_no
+    party_sources = {
+        "exporter_name": (shipment.get("shipper"), bill.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "exporter_address": (shipment.get("shipper_address"), bill.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "exporter_email": (shipment.get("shipper_email"), bill.get("shipper_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "exporter_phone": (shipment.get("shipper_phone"), bill.get("shipper_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee_name": (shipment.get("consignee"), bill.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (shipment.get("consignee_address"), bill.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (shipment.get("consignee_email"), bill.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+    }
+    fill_missing_snapshot_fields(resolved, party_sources, preserve_empty=preserve_empty)
+    resolved["exporter"] = resolved.get("exporter_name", resolved.get("exporter", ""))
+    resolved["consignee"] = resolved.get("consignee_name", resolved.get("consignee", ""))
+    if "items" not in resolved or (not preserve_empty and not resolved["items"]):
+        resolved["items"] = deepcopy(shipment.get("items") or bill.get("items") or packing.get("items") or invoice.get("items") or [])
+    scalar_sources = {
+        "country_of_origin": (shipment.get("country_of_origin"), shipment.get("origin_country")),
+        "destination_country": (shipment.get("destination_country"), bill.get("place_of_delivery"), bill.get("port_of_discharge")),
+        "port_of_loading": (shipment.get("port_of_loading"), bill.get("port_of_loading")),
+        "port_of_discharge": (shipment.get("port_of_discharge"), bill.get("port_of_discharge")),
+        "place_of_delivery": (shipment.get("place_of_delivery"), bill.get("place_of_delivery")),
+    }
+    fill_missing_snapshot_fields(resolved, scalar_sources, preserve_empty=preserve_empty)
+    origins = [item.get("origin") for item in resolved.get("items", []) if isinstance(item, dict) and item.get("origin")]
+    if ("country_of_origin" not in resolved or (not preserve_empty and not resolved["country_of_origin"])) and origins and len(set(origins)) == 1:
+        resolved["country_of_origin"] = origins[0]
+    resolved.update({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no})
+    for total, field in (("total_carton", "carton"), ("total_net_weight", "net_weight"), ("total_gross_weight", "gross_weight")):
+        if total not in resolved or (not preserve_empty and not resolved[total]):
+            resolved[total] = format_number(numeric_total(resolved.get("items", []), field))
+    return resolved
+
+
 def copy_items_and_totals(payload, source):
     items = source.get("items", [])
-    if items:
+    if items and not payload.get("items"):
         payload["items"] = items
         payload["total_carton"] = source.get("total_carton") or format_number(numeric_total(items, "carton"))
         payload["total_net_weight"] = source.get("total_net_weight") or format_number(numeric_total(items, "net_weight"))
@@ -188,15 +270,15 @@ def copy_items_and_totals(payload, source):
     return payload
 
 
-def copy_si_payload(payload, si_no):
-    si = find_record(load_shipping_instructions(), "si_no", si_no)
+def copy_si_payload(payload, si_no, account_id):
+    si = find_by_identifier(load_shipping_instructions(account_id), "si_no", si_no)
     if not si:
         return payload
     payload.update({
         "si_no": si.get("si_no", ""),
         "packing_no": si.get("packing_no", ""),
         "invoice_no": si.get("invoice_no", ""),
-        "shipment_no": si.get("shipment_no", payload.get("shipment_no", "")),
+        "shipment_no": payload.get("shipment_no") or si.get("shipment_no", ""),
         "carrier": si.get("carrier", ""),
         "vessel": si.get("vessel", ""),
         "voyage_no": si.get("voyage_no", ""),
@@ -207,8 +289,8 @@ def copy_si_payload(payload, si_no):
     return copy_items_and_totals(payload, si)
 
 
-def copy_packing_payload(payload, packing_no):
-    packing = find_record(load_packing_lists(), "packing_no", packing_no)
+def copy_packing_payload(payload, packing_no, account_id):
+    packing = find_by_identifier(load_packing_lists(account_id), "packing_no", packing_no)
     if not packing:
         return payload
     payload.update({
@@ -218,8 +300,8 @@ def copy_packing_payload(payload, packing_no):
     return copy_items_and_totals(payload, packing)
 
 
-def copy_bl_payload(payload, bl_no):
-    bill = find_record(load_bills_of_lading(), "bl_no", bl_no)
+def copy_bl_payload(payload, bl_no, account_id):
+    bill = find_by_identifier(load_bills_of_lading(account_id), "bl_no", bl_no)
     if not bill:
         return payload
     payload.update({
@@ -237,20 +319,25 @@ def copy_bl_payload(payload, bl_no):
     return payload
 
 
-def payload_from_sources(shipment_no="", si_no="", packing_no="", bl_no=""):
+def payload_from_sources(shipment_no="", si_no="", packing_no="", bl_no="", account_id=""):
     payload = blank_payload()
-    if shipment_no and shipment_exists(shipment_no):
+    if shipment_no and shipment_exists(shipment_no, account_id):
         payload["shipment_no"] = shipment_no
+        payload = resolve_booking_snapshot(payload, account_id)
     if si_no:
-        payload = copy_si_payload(payload, si_no)
+        payload = copy_si_payload(payload, si_no, account_id)
     if packing_no:
-        payload = copy_packing_payload(payload, packing_no)
+        payload = copy_packing_payload(payload, packing_no, account_id)
     if bl_no:
-        payload = copy_bl_payload(payload, bl_no)
-    return payload
+        payload = copy_bl_payload(payload, bl_no, account_id)
+    return resolve_booking_snapshot(payload, account_id)
 
 
-def build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight):
+def build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight, origin=None):
+    origin = origin if isinstance(origin, (list, tuple)) else []
+    carton = carton if isinstance(carton, (list, tuple)) else []
+    net_weight = net_weight if isinstance(net_weight, (list, tuple)) else []
+    gross_weight = gross_weight if isinstance(gross_weight, (list, tuple)) else []
     items = []
     for i, name in enumerate(item_name):
         if not str(name or "").strip():
@@ -259,6 +346,7 @@ def build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight):
             "name": name,
             "hs_code": hs_code[i] if i < len(hs_code) else "",
             "quantity": quantity[i] if i < len(quantity) else "",
+            "origin": origin[i] if i < len(origin) else "",
             "carton": carton[i] if i < len(carton) else "",
             "net_weight": net_weight[i] if i < len(net_weight) else "",
             "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
@@ -272,9 +360,12 @@ def build_record(
     container_count, etd, eta, port_of_loading, port_of_discharge,
     place_of_delivery, cut_off_date, loading_place, remarks,
     item_name, hs_code, quantity, carton, net_weight, gross_weight,
-    total_carton, total_net_weight, total_gross_weight,
+    total_carton, total_net_weight, total_gross_weight, origin=None,
+    exporter_name="", exporter_address="", exporter_email="", exporter_phone="",
+    consignee_name="", consignee_address="", consignee_email="",
+    country_of_origin="", destination_country="",
 ):
-    items = build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight)
+    items = build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight, origin)
     if not total_carton:
         total_carton = format_number(numeric_total(items, "carton"))
     if not total_net_weight:
@@ -290,6 +381,12 @@ def build_record(
         "bl_no": bl_no,
         "invoice_no": invoice_no,
         "booking_no": booking_no,
+        "exporter": exporter_name, "consignee": consignee_name,
+        "exporter_name": exporter_name, "exporter_address": exporter_address,
+        "exporter_email": exporter_email, "exporter_phone": exporter_phone,
+        "consignee_name": consignee_name, "consignee_address": consignee_address,
+        "consignee_email": consignee_email, "country_of_origin": country_of_origin,
+        "destination_country": destination_country,
         "carrier": carrier,
         "vessel": vessel,
         "voyage_no": voyage_no,
@@ -317,9 +414,11 @@ def build_item_rows(items):
     for item in items:
         rows += f"""
 <div class="item-row">
+<input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
 <input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item">
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
+<input type="text" name="origin" value="{html_attr(item.get('origin', ''))}" placeholder="Origin">
 <input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton" oninput="calculateTotals()">
 <input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight" oninput="calculateTotals()">
 <input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight" oninput="calculateTotals()">
@@ -329,15 +428,15 @@ def build_item_rows(items):
     return rows
 
 
-def render_form(record, action, title, button_text, show_no=False):
+def render_form(record, action, title, button_text, show_no=False, account_id=""):
     rows = build_item_rows(record.get("items", []))
     no_input = ""
     if show_no:
         no_input = f'<div class="field"><label>Booking Record No</label><input type="text" name="booking_record_no" value="{html_attr(record.get("booking_record_no", ""))}" placeholder="Booking Record No" readonly></div>'
-    shipment_select = select_html("shipment_no", record.get("shipment_no", ""), doc_options(load_shipments(), "shipment_no"), "Select Shipment")
-    si_select = select_html("si_no", record.get("si_no", ""), doc_options(load_shipping_instructions(), "si_no"), "Select S/I")
-    packing_select = select_html("packing_no", record.get("packing_no", ""), doc_options(load_packing_lists(), "packing_no"), "Select Packing List")
-    bl_select = select_html("bl_no", record.get("bl_no", ""), doc_options(load_bills_of_lading(), "bl_no"), "Select B/L")
+    shipment_select = select_html("shipment_no", record.get("shipment_no", ""), doc_options(load_shipments(account_id), "shipment_no"), "Select Shipment")
+    si_select = select_html("si_no", record.get("si_no", ""), doc_options(load_shipping_instructions(account_id), "si_no"), "Select S/I")
+    packing_select = select_html("packing_no", record.get("packing_no", ""), doc_options(load_packing_lists(account_id), "packing_no"), "Select Packing List")
+    bl_select = select_html("bl_no", record.get("bl_no", ""), doc_options(load_bills_of_lading(account_id), "bl_no"), "Select B/L")
 
     html = """
 <!DOCTYPE html>
@@ -355,7 +454,7 @@ h1{text-align:center;font-size:46px;margin:8px 0 10px;}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
 .record-links{column-gap:20px;row-gap:18px;align-items:start;}
 .field{display:flex;flex-direction:column;gap:8px;min-width:0;}
-.item-row{display:grid;grid-template-columns:1.35fr 1fr .8fr .8fr .9fr .9fr;gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:18px;margin-bottom:16px;background:#F9FAFB;}
+.item-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:18px;margin-bottom:16px;background:#F9FAFB;}
 label{display:block;font-weight:bold;margin:0 0 7px;color:#374151;}
 .field label{margin:0;line-height:1.2;}
 input,select,textarea{width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;background:white;}
@@ -400,6 +499,17 @@ __NO_INPUT__
 <div><label>Container Count</label><input type="text" name="container_count" value="__CONTAINER_COUNT__" placeholder="Container Count"></div>
 </div>
 </div>
+<div class="card"><h2>Exporter / Consignee</h2><div class="grid">
+<input type="text" name="exporter_name" value="__EXPORTER__" placeholder="Exporter Name">
+<input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address">
+<input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email">
+<input type="text" name="exporter_phone" value="__EXPORTER_PHONE__" placeholder="Exporter Phone">
+<input type="text" name="consignee_name" value="__CONSIGNEE__" placeholder="Consignee Name">
+<input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" placeholder="Consignee Address">
+<input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email">
+<input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin">
+<input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country">
+</div></div>
 <div class="card">
 <h2>Transport Schedule</h2>
 <div class="grid">
@@ -442,6 +552,7 @@ function addItem(){
     <input type="text" name="item_name" placeholder="Item">
     <input type="text" name="hs_code" placeholder="HS Code">
     <input type="text" name="quantity" placeholder="Quantity">
+    <input type="text" name="origin" placeholder="Origin">
     <input type="text" name="carton" placeholder="Carton" oninput="calculateTotals()">
     <input type="text" name="net_weight" placeholder="Net Weight" oninput="calculateTotals()">
     <input type="text" name="gross_weight" placeholder="Gross Weight" oninput="calculateTotals()">
@@ -476,6 +587,15 @@ calculateTotals();
         "__BL_SELECT__": bl_select,
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
         "__BOOKING_NO__": html_attr(record.get("booking_no", "")),
+        "__EXPORTER__": html_attr(record.get("exporter", "")),
+        "__EXPORTER_ADDRESS__": html_attr(record.get("exporter_address", "")),
+        "__EXPORTER_EMAIL__": html_attr(record.get("exporter_email", "")),
+        "__EXPORTER_PHONE__": html_attr(record.get("exporter_phone", "")),
+        "__CONSIGNEE__": html_attr(record.get("consignee", "")),
+        "__CONSIGNEE_ADDRESS__": html_attr(record.get("consignee_address", "")),
+        "__CONSIGNEE_EMAIL__": html_attr(record.get("consignee_email", "")),
+        "__COUNTRY_OF_ORIGIN__": html_attr(record.get("country_of_origin", "")),
+        "__DESTINATION_COUNTRY__": html_attr(record.get("destination_country", "")),
         "__CARRIER__": html_attr(record.get("carrier", "")),
         "__CONTAINER_TYPE__": html_attr(record.get("container_type", "")),
         "__CONTAINER_COUNT__": html_attr(record.get("container_count", "")),
@@ -501,8 +621,8 @@ calculateTotals();
 
 
 @router.get("/booking-list", response_class=HTMLResponse)
-def booking_list(search: str = ""):
-    records = sorted(load_bookings(), key=lambda r: r.get("booking_record_no", ""), reverse=True)
+def booking_list(request: Request, search: str = ""):
+    records = sorted(load_bookings(_account_id(request)), key=lambda r: r.get("booking_record_no", ""), reverse=True)
     if search:
         term = search.lower()
         records = [
@@ -539,10 +659,11 @@ body{{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;color:#111827
 
 
 @router.get("/booking-form", response_class=HTMLResponse)
-def booking_form(shipment_no: str = "", si_no: str = "", packing_no: str = "", bl_no: str = ""):
-    record = payload_from_sources(shipment_no, si_no, packing_no, bl_no)
-    record["booking_record_no"] = next_booking_record_no(load_bookings())
-    return render_form(record, "/booking", "New Booking Confirmation", "Save Booking", show_no=True)
+def booking_form(request: Request, shipment_no: str = "", si_no: str = "", packing_no: str = "", bl_no: str = ""):
+    account_id = _account_id(request)
+    record = payload_from_sources(shipment_no, si_no, packing_no, bl_no, account_id)
+    record["booking_record_no"] = next_booking_record_no(load_booking_records())
+    return render_form(record, "/booking", "New Booking Confirmation", "Save Booking", show_no=True, account_id=account_id)
 
 
 def form_fields():
@@ -559,6 +680,7 @@ def form_fields():
 
 @router.post("/booking")
 def save_booking(
+    request: Request,
     booking_date: str = Form(""), shipment_no: str = Form(""), si_no: str = Form(""),
     packing_no: str = Form(""), bl_no: str = Form(""), invoice_no: str = Form(""),
     booking_no: str = Form(""), carrier: str = Form(""), vessel: str = Form(""),
@@ -567,29 +689,41 @@ def save_booking(
     port_of_discharge: str = Form(""), place_of_delivery: str = Form(""),
     cut_off_date: str = Form(""), loading_place: str = Form(""), remarks: str = Form(""),
     item_name: List[str] = Form([]), hs_code: List[str] = Form([]), quantity: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     carton: List[str] = Form([]), net_weight: List[str] = Form([]), gross_weight: List[str] = Form([]),
     total_carton: str = Form(""), total_net_weight: str = Form(""), total_gross_weight: str = Form(""),
+    origin: Annotated[Optional[List[str]], Form()] = None,
+    exporter_name: Annotated[Optional[str], Form()] = None, exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None, exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None, consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None, country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
 ):
-    validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no)
+    account_id = _account_id(request)
+    validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no, account_id)
     booking_no = require_text("Booking number", booking_no)
     def add_booking(records):
-        record = build_record(next_identifier(records, "booking_record_no", "BK"), booking_date, shipment_no, si_no, packing_no, bl_no, invoice_no, booking_no, carrier, vessel, voyage_no, container_type, container_count, etd, eta, port_of_loading, port_of_discharge, place_of_delivery, cut_off_date, loading_place, remarks, item_name, hs_code, quantity, carton, net_weight, gross_weight, total_carton, total_net_weight, total_gross_weight)
+        snapshot = resolve_booking_snapshot({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no}, account_id)
+        record = build_record(next_identifier(records, "booking_record_no", "BK"), booking_date, shipment_no, si_no, packing_no, bl_no, invoice_no, booking_no, carrier, vessel, voyage_no, container_type, container_count, etd, eta, port_of_loading, port_of_discharge, place_of_delivery, cut_off_date, loading_place, remarks, item_name, hs_code, quantity, carton, net_weight, gross_weight, total_carton, total_net_weight, total_gross_weight, origin, snapshot.get("exporter_name", "") if exporter_name is None else exporter_name, snapshot.get("exporter_address", "") if exporter_address is None else exporter_address, snapshot.get("exporter_email", "") if exporter_email is None else exporter_email, snapshot.get("exporter_phone", "") if exporter_phone is None else exporter_phone, snapshot.get("consignee_name", "") if consignee_name is None else consignee_name, snapshot.get("consignee_address", "") if consignee_address is None else consignee_address, snapshot.get("consignee_email", "") if consignee_email is None else consignee_email, snapshot.get("country_of_origin", "") if country_of_origin is None else country_of_origin, snapshot.get("destination_country", "") if destination_country is None else destination_country)
+        assign_item_ids(record["items"], item_id)
+        record = resolve_booking_snapshot(record, account_id)
+        record["account_id"] = account_id
         records.append(record)
     locked_json_mutation(BOOKING_FILE, [], add_booking, list)
     return RedirectResponse("/booking-list", status_code=303)
 
 
 @router.get("/edit-booking/{booking_record_no}", response_class=HTMLResponse)
-def edit_booking(booking_record_no: str):
-    record = find_record(load_bookings(), "booking_record_no", booking_record_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    return render_form(record, f"/update-booking/{html_attr(booking_record_no)}", "Edit Booking Confirmation", "Update Booking", show_no=True)
+def edit_booking(booking_record_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_booking_snapshot(public_booking(_owned_booking(booking_record_no, account_id)), account_id)
+    return render_form(record, f"/update-booking/{html_attr(booking_record_no)}", "Edit Booking Confirmation", "Update Booking", show_no=True, account_id=account_id)
 
 
 @router.post("/update-booking/{booking_record_no}")
 def update_booking(
     booking_record_no: str,
+    request: Request,
     booking_date: str = Form(""), shipment_no: str = Form(""), si_no: str = Form(""),
     packing_no: str = Form(""), bl_no: str = Form(""), invoice_no: str = Form(""),
     booking_no: str = Form(""), carrier: str = Form(""), vessel: str = Form(""),
@@ -598,16 +732,34 @@ def update_booking(
     port_of_discharge: str = Form(""), place_of_delivery: str = Form(""),
     cut_off_date: str = Form(""), loading_place: str = Form(""), remarks: str = Form(""),
     item_name: List[str] = Form([]), hs_code: List[str] = Form([]), quantity: List[str] = Form([]),
-    carton: List[str] = Form([]), net_weight: List[str] = Form([]), gross_weight: List[str] = Form([]),
+    item_id: List[str] = Form([]),
+    carton: Annotated[Optional[List[str]], Form()] = None, net_weight: Annotated[Optional[List[str]], Form()] = None, gross_weight: Annotated[Optional[List[str]], Form()] = None,
     total_carton: str = Form(""), total_net_weight: str = Form(""), total_gross_weight: str = Form(""),
+    origin: Annotated[Optional[List[str]], Form()] = None,
+    exporter_name: Annotated[Optional[str], Form()] = None, exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None, exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None, consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None, country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
 ):
-    validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no)
+    account_id = _account_id(request)
+    current = _owned_booking(booking_record_no, account_id)
+    validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no, account_id)
     booking_no = require_text("Booking number", booking_no)
     def replace_booking(records):
         for index, record in enumerate(records):
-            if record.get("booking_record_no") != booking_record_no:
+            if (record.get("booking_record_no") != booking_record_no
+                    or str(record.get("account_id", "") or "").strip() != account_id):
                 continue
-            records[index] = build_record(booking_record_no, booking_date, shipment_no, si_no, packing_no, bl_no, invoice_no, booking_no, carrier, vessel, voyage_no, container_type, container_count, etd, eta, port_of_loading, port_of_discharge, place_of_delivery, cut_off_date, loading_place, remarks, item_name, hs_code, quantity, carton, net_weight, gross_weight, total_carton, total_net_weight, total_gross_weight)
+            updated = build_record(booking_record_no, booking_date, shipment_no, si_no, packing_no, bl_no, invoice_no, booking_no, carrier, vessel, voyage_no, container_type, container_count, etd, eta, port_of_loading, port_of_discharge, place_of_delivery, cut_off_date, loading_place, remarks, item_name, hs_code, quantity, carton, net_weight, gross_weight, total_carton, total_net_weight, total_gross_weight, origin, exporter_name or current.get("exporter_name", ""), current.get("exporter_address", "") if exporter_address is None else exporter_address, current.get("exporter_email", "") if exporter_email is None else exporter_email, current.get("exporter_phone", "") if exporter_phone is None else exporter_phone, consignee_name or current.get("consignee_name", ""), current.get("consignee_address", "") if consignee_address is None else consignee_address, current.get("consignee_email", "") if consignee_email is None else consignee_email, current.get("country_of_origin", "") if country_of_origin is None else country_of_origin, current.get("destination_country", "") if destination_country is None else destination_country)
+            assign_item_ids(updated["items"], item_id, current.get("items", []))
+            preserve_omitted_item_fields(
+                updated["items"], current.get("items", []),
+                [field for values, field in ((origin, "origin"), (carton, "carton"), (net_weight, "net_weight"), (gross_weight, "gross_weight")) if values is None],
+            )
+            updated = resolve_booking_snapshot(updated, account_id)
+            updated["account_id"] = account_id
+            records[index] = updated
             return
         raise HTTPException(status_code=404, detail="Booking not found")
     locked_json_mutation(BOOKING_FILE, [], replace_booking, list)
@@ -615,20 +767,33 @@ def update_booking(
 
 
 @router.get("/delete-booking/{booking_record_no}")
-def delete_booking(booking_record_no: str):
-    return identifier_delete_confirmation("Booking Confirmation", "Booking Confirmation", booking_record_no, BOOKING_FILE, "booking_record_no", f"/delete-booking/{booking_record_no}", "/booking-list")
+def delete_booking(booking_record_no: str, request: Request):
+    _owned_booking(booking_record_no, _account_id(request))
+    return render_delete_page("Booking Confirmation", booking_record_no, f"/delete-booking/{booking_record_no}", "/booking-list", find_dependencies("Booking Confirmation", booking_record_no, _account_id(request)))
 
 @router.post("/delete-booking/{booking_record_no}")
-def confirm_delete_booking(booking_record_no: str):
-    return confirmed_identifier_delete("Booking Confirmation", "Booking Confirmation", booking_record_no, BOOKING_FILE, "booking_record_no", f"/delete-booking/{booking_record_no}", "/booking-list", "/booking-list")
+def confirm_delete_booking(booking_record_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_booking(booking_record_no, account_id)
+    dependencies = find_dependencies("Booking Confirmation", booking_record_no, account_id)
+    if dependencies:
+        return render_delete_page("Booking Confirmation", booking_record_no, f"/delete-booking/{booking_record_no}", "/booking-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((index for index, record in enumerate(records)
+                      if isinstance(record, dict)
+                      and str(record.get("booking_record_no", "") or "").strip() == booking_record_no
+                      and str(record.get("account_id", "") or "").strip() == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        records.pop(index)
+    locked_json_mutation(BOOKING_FILE, [], remove, list)
+    return RedirectResponse("/booking-list", status_code=303)
 
 
 @router.get("/booking-data/{booking_record_no}")
-def booking_data(booking_record_no: str):
-    record = find_record(load_bookings(), "booking_record_no", booking_record_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    return record
+def booking_data(booking_record_no: str, request: Request):
+    account_id = _account_id(request)
+    return resolve_booking_snapshot(public_booking(_owned_booking(booking_record_no, account_id)), account_id)
 
 
 def status_card(label, value, exists, pdf="", edit="", detail=""):
@@ -645,10 +810,9 @@ def status_card(label, value, exists, pdf="", edit="", detail=""):
 
 
 @router.get("/booking/{booking_record_no}", response_class=HTMLResponse)
-def booking_detail(booking_record_no: str):
-    record = find_record(load_bookings(), "booking_record_no", booking_record_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Booking not found")
+def booking_detail(booking_record_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_booking_snapshot(public_booking(_owned_booking(booking_record_no, account_id)), account_id)
     shipment_no = record.get("shipment_no", "")
     si_no = record.get("si_no", "")
     packing_no = record.get("packing_no", "")
@@ -658,10 +822,10 @@ def booking_detail(booking_record_no: str):
         for i, item in enumerate(record.get("items", []), 1)
     )
     cards = (
-        status_card("Shipment", shipment_no, shipment_exists(shipment_no), detail=f"/shipment/{shipment_no}" if shipment_no else "")
-        + status_card("Shipping Instruction", si_no, si_exists(si_no), pdf=f"/si-pdf/{si_no}" if si_no else "", edit=f"/edit-si/{si_no}" if si_no else "")
-        + status_card("Packing List", packing_no, packing_exists(packing_no), pdf=f"/packing-list-pdf/{packing_no}" if packing_no else "", edit=f"/edit-packing/{packing_no}" if packing_no else "")
-        + status_card("Bill of Lading", bl_no, bl_exists(bl_no), pdf=f"/bl-pdf/{bl_no}" if bl_no else "", edit=f"/edit-bl/{bl_no}" if bl_no else "")
+        status_card("Shipment", shipment_no, shipment_exists(shipment_no, account_id), detail=f"/shipment/{shipment_no}" if shipment_no else "")
+        + status_card("Shipping Instruction", si_no, si_exists(si_no, account_id), pdf=f"/si-pdf/{si_no}" if si_no else "", edit=f"/edit-si/{si_no}" if si_no else "")
+        + status_card("Packing List", packing_no, packing_exists(packing_no, account_id), pdf=f"/packing-list-pdf/{packing_no}" if packing_no else "", edit=f"/edit-packing/{packing_no}" if packing_no else "")
+        + status_card("Bill of Lading", bl_no, bl_exists(bl_no, _account_id(request)), pdf=f"/bl-pdf/{bl_no}" if bl_no else "", edit=f"/edit-bl/{bl_no}" if bl_no else "")
     )
     html = f"""
 <!DOCTYPE html><html><head><meta charset="UTF-8"><title>{html_text(booking_record_no)}</title><style>
@@ -687,6 +851,7 @@ def draw_text_fit(pdf, text, x, y, max_width, font="Helvetica", size=8, min_size
 
 
 def create_booking_pdf_buffer(payload):
+    payload = public_booking(payload)
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
@@ -713,6 +878,9 @@ def create_booking_pdf_buffer(payload):
             ("Booking Date", payload.get("booking_date", "")), ("Shipment No", payload.get("shipment_no", "")),
             ("S/I No", payload.get("si_no", "")), ("Packing No", payload.get("packing_no", "")),
             ("B/L No", payload.get("bl_no", "")), ("Invoice No", payload.get("invoice_no", "")),
+            ("Exporter", payload.get("exporter", "")), ("Consignee", payload.get("consignee", "")),
+            ("Exporter Addr", payload.get("exporter_address", "")), ("Consignee Addr", payload.get("consignee_address", "")),
+            ("Exporter Contact", " / ".join(v for v in (payload.get("exporter_email", ""), payload.get("exporter_phone", "")) if v)), ("Consignee Email", payload.get("consignee_email", "")),
         ]
         y = height - 122
         for idx, (label, value) in enumerate(info):
@@ -799,16 +967,20 @@ def create_booking_pdf_buffer(payload):
 
 
 @router.post("/booking/pdf")
-def create_booking_pdf(payload: dict = Body(...)):
+def create_booking_pdf(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    validate_booking_links(payload.get("shipment_no", ""), payload.get("si_no", ""), payload.get("packing_no", ""), payload.get("bl_no", ""), payload.get("invoice_no", ""), account_id)
+    payload = public_booking(payload)
+    payload = resolve_booking_snapshot(payload, account_id)
     pdf_buffer = create_booking_pdf_buffer(payload)
     filename = f"{payload.get('booking_record_no', 'booking')}.pdf"
     return Response(pdf_buffer.getvalue(), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
 @router.get("/booking-pdf/{booking_record_no}")
-def booking_pdf(booking_record_no: str):
-    record = find_record(load_bookings(), "booking_record_no", booking_record_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Booking not found")
+def booking_pdf(booking_record_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_booking_snapshot(public_booking(_owned_booking(booking_record_no, account_id)), account_id)
+    set_pdf_export_record(request, record)
     pdf_buffer = create_booking_pdf_buffer(record)
     return Response(pdf_buffer.getvalue(), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={booking_record_no}.pdf"})

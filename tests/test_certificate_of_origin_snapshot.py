@@ -70,7 +70,8 @@ def test_co_snapshot_create_edit_update_pdf_legacy_and_account_isolation(tmp_pat
     assert stored["shipment_no"] == "SHP-001"
     assert stored["exporter_address"] == "Exporter Address"
     assert stored["consignee_email"] == "consignee@example.com"
-    assert stored["items"][0] == items[0]
+    assert {k: v for k, v in stored["items"][0].items() if k != "item_id"} == items[0]
+    assert stored["items"][0]["item_id"].startswith("ITEM-")
     edit = certificate.edit_co("CO-001", _request("A")).body.decode()
     assert all(value in edit for value in ("Exporter Address", "consignee@example.com", "44"))
 

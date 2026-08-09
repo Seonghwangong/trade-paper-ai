@@ -22,6 +22,7 @@ from app.routers.company import ACCOUNT_COMPANIES_FILE
 from app import invoice as invoice_module
 from app import buyer as buyer_module
 from app.export import set_pdf_export_record
+from app.snapshot import assign_item_ids
 
 COMPANY_FILE = data_path("company.json")
 PACKING_FILE = data_path("packing_lists.json")
@@ -135,6 +136,7 @@ def create_packing_list(request: Request, payload: dict = Body(...)):
     for field, fallback in snapshot_fallbacks.items():
         record[field] = record.get(field) or fallback
     require_items(record.get("items", []))
+    record["items"] = assign_item_ids([dict(item) for item in record.get("items", [])])
     def add_packing(records):
         record["packing_no"] = next_identifier(records, "packing_no", "PK")
         records.append(record)
@@ -200,6 +202,7 @@ def save_packing(
     seller_phone: Annotated[Optional[str], Form()] = None,
     buyer_address: Annotated[Optional[str], Form()] = None,
     buyer_email: Annotated[Optional[str], Form()] = None,
+    item_id: List[str] = Form([]),
 ):
     invoice_no = require_text("Invoice No", invoice_no)
     account_id = _account_id(request)
@@ -221,6 +224,7 @@ def save_packing(
         })
 
     require_items(items)
+    assign_item_ids(items, item_id)
     def add_packing(packing_lists):
         packing = {
         "account_id": account_id,
@@ -269,6 +273,7 @@ def edit_packing(packing_no: str, request: Request):
             for item in items:
                 html += f"""
 <div class="item-row">
+<input type="hidden" name="item_id" value="{html_lib.escape(str(item.get('item_id','') or ''), quote=True)}">
 
 <p>Item Name</p>
 <input type="text" name="item_name" value="{item.get('name','')}">
@@ -313,10 +318,11 @@ def update_packing(
     seller_phone: Annotated[Optional[str], Form()] = None,
     buyer_address: Annotated[Optional[str], Form()] = None,
     buyer_email: Annotated[Optional[str], Form()] = None,
+    item_id: List[str] = Form([]),
 ):
     invoice_no = require_text("Invoice No", invoice_no)
     account_id = _account_id(request)
-    _owned_packing(packing_no, account_id)
+    current = public_packing(_owned_packing(packing_no, account_id))
     _owned_invoice(invoice_no, account_id)
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
@@ -340,6 +346,7 @@ def update_packing(
         })
 
     require_items(items)
+    assign_item_ids(items, item_id, current.get("items", []))
     def replace_packing(packing_lists):
         for packing in packing_lists:
             if (packing.get("packing_no") != packing_no

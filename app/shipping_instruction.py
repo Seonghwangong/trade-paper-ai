@@ -1,4 +1,5 @@
-from typing import List
+from typing import Annotated, List, Optional
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
@@ -6,7 +7,7 @@ import html as html_lib
 import json
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -16,8 +17,18 @@ router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
 from app.shipment import link_direct_document
+from app.account_shipping_instruction import ensure_legacy_shipping_instruction_ownership, public_shipping_instruction
+from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, set_submitted_snapshot_fields, snapshot_value
+from app.export import set_pdf_export_record
+from app.auth import USERS_FILE
+from app import packing as packing_module
+from app import invoice as invoice_module
+from app import shipment as shipment_module
+from app import buyer as buyer_module
+from app.account_company import load_account_company
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 
 SI_FILE = data_path("shipping_instructions.json")
 PACKING_FILE = data_path("packing_lists.json")
@@ -25,22 +36,59 @@ INVOICE_FILE = data_path("invoices.json")
 SHIPMENT_FILE = data_path("shipments.json")
 
 
-def load_shipping_instructions():
-    return load_json_strict(SI_FILE, [], list)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_shipping_instruction_records():
+    return ensure_legacy_shipping_instruction_ownership(SI_FILE, USERS_FILE)
+
+
+def owned_shipping_instruction_records(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        record for record in load_shipping_instruction_records()
+        if isinstance(record, dict)
+        and str(record.get("account_id", "") or "").strip() == owner
+    ]
+
+
+def load_shipping_instructions(account_id):
+    return [public_shipping_instruction(record) for record in owned_shipping_instruction_records(account_id)]
+
+
+def _owned_shipping_instruction(si_no, account_id):
+    target = str(si_no or "").strip()
+    record = next(
+        (record for record in owned_shipping_instruction_records(account_id)
+         if str(record.get("si_no", "") or "").strip() == target),
+        None,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Shipping instruction not found")
+    return record
 
 
 def save_shipping_instructions(records):
     atomic_write_json(SI_FILE, records, list)
 
 
-def load_packing_lists():
-    return load_json_strict(PACKING_FILE, [], list)
+def load_packing_lists(account_id):
+    return packing_module.owned_packing_records(account_id)
 
 
-def validate_si_links(packing_no, invoice_no):
-    packing = require_existing_reference("Packing List", packing_no, load_packing_lists(), "packing_no", required=True)
+def load_invoices(account_id):
+    return invoice_module.load_invoices(account_id)
+
+
+def load_shipments(account_id):
+    return shipment_module.load_shipments(account_id)
+
+
+def validate_si_links(packing_no, invoice_no, account_id):
+    packing = require_existing_reference("Packing List", packing_no, load_packing_lists(account_id), "packing_no", required=True)
     require_consistent_reference("Invoice", invoice_no, packing.get("invoice_no", ""), "selected Packing List")
-    require_existing_reference("Invoice", invoice_no or packing.get("invoice_no", ""), load_json_strict(INVOICE_FILE, [], list), "invoice_no", required=True)
 
 
 def next_si_no(records):
@@ -112,6 +160,7 @@ def build_item_rows(items):
     for item in items:
         rows += f"""
 <div class="item-row">
+<input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
 <input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item Name">
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
@@ -130,8 +179,19 @@ def blank_payload():
         "si_date": datetime.now().strftime("%Y-%m-%d"),
         "packing_no": "",
         "invoice_no": "",
+        "shipment_no": "",
+        "booking_no": "",
         "shipper": "",
         "consignee": "",
+        "exporter_name": "",
+        "exporter_address": "",
+        "exporter_email": "",
+        "exporter_phone": "",
+        "consignee_name": "",
+        "consignee_address": "",
+        "consignee_email": "",
+        "country_of_origin": "",
+        "destination_country": "",
         "notify_party": "",
         "carrier": "",
         "vessel": "",
@@ -149,12 +209,100 @@ def blank_payload():
     }
 
 
-def payload_from_packing(packing_no):
+def _first_record(records, field, value):
+    target = str(value or "").strip()
+    if not target:
+        return {}
+    return next(
+        (record for record in records
+         if str(record.get(field, "") or "").strip() == target),
+        {},
+    )
+
+
+def resolve_si_snapshot(record, account_id, shipment=None, packing=None, invoice=None, preserve_empty=None):
+    """Resolve a read-only Shipping Instruction snapshot from account-owned sources."""
+    resolved = deepcopy(record or {})
+    if preserve_empty is None:
+        preserve_empty = bool(resolved.get("si_no"))
+
+    shipment_no = str(resolved.get("shipment_no", "") or "").strip()
+    if shipment is None:
+        shipment = _first_record(load_shipments(account_id), "shipment_no", shipment_no)
+    shipment = shipment or {}
+
+    packing_no = str(snapshot_value(
+        resolved, "packing_no", (shipment.get("packing_no"),), preserve_empty=preserve_empty,
+    ) or "").strip()
+    if packing is None:
+        packing = _first_record(load_packing_lists(account_id), "packing_no", packing_no)
+    packing = packing or {}
+
+    invoice_no = str(snapshot_value(
+        resolved, "invoice_no",
+        (shipment.get("invoice_no"), packing.get("invoice_no")),
+        preserve_empty=preserve_empty,
+    ) or "").strip()
+    if invoice is None:
+        invoice = _first_record(load_invoices(account_id), "invoice_no", invoice_no)
+    invoice = invoice or {}
+
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    consignee_lookup = (
+        resolved.get("consignee_name") or resolved.get("consignee")
+        or shipment.get("consignee") or packing.get("buyer") or invoice.get("buyer") or ""
+    )
+    buyer = next(
+        (candidate for candidate in buyer_module.load_buyers(account_id)
+         if str(candidate.get("name", "") or "").strip().casefold()
+         == str(consignee_lookup or "").strip().casefold()),
+        {},
+    )
+
+    fallbacks = {
+        "exporter_name": (resolved.get("shipper"), shipment.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "exporter_address": (shipment.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "exporter_email": (shipment.get("shipper_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "exporter_phone": (shipment.get("shipper_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee_name": (resolved.get("consignee"), shipment.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (shipment.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (shipment.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+        "booking_no": (shipment.get("booking_no"), packing.get("booking_no"), invoice.get("booking_no")),
+        "country_of_origin": (shipment.get("country_of_origin"), shipment.get("origin_country"), packing.get("country_of_origin"), invoice.get("country_of_origin"), company.get("country")),
+        "destination_country": (shipment.get("destination_country"), packing.get("destination_country"), invoice.get("destination_country"), buyer.get("country")),
+    }
+    fill_missing_snapshot_fields(resolved, fallbacks, preserve_empty=preserve_empty)
+    resolved["shipper"] = resolved.get("exporter_name", resolved.get("shipper", ""))
+    resolved["consignee"] = resolved.get("consignee_name", resolved.get("consignee", ""))
+
+    if "items" not in resolved or (not preserve_empty and not resolved["items"]):
+        resolved["items"] = deepcopy(
+            shipment.get("items") or packing.get("items") or invoice.get("items") or []
+        )
+    for total, item_field in (
+        ("total_carton", "carton"),
+        ("total_net_weight", "net_weight"),
+        ("total_gross_weight", "gross_weight"),
+    ):
+        if total not in resolved or (not preserve_empty and not resolved[total]):
+            resolved[total] = (
+                shipment.get(total) or packing.get(total)
+                or format_number(numeric_total(resolved.get("items", []), item_field))
+            )
+    resolved.update({
+        "shipment_no": shipment_no,
+        "packing_no": packing_no,
+        "invoice_no": invoice_no,
+    })
+    return resolved
+
+
+def payload_from_packing(packing_no, account_id):
     payload = blank_payload()
     if not packing_no:
         return payload
 
-    for packing in load_packing_lists():
+    for packing in load_packing_lists(account_id):
         if packing.get("packing_no") == packing_no:
             items = packing.get("items", [])
             payload.update({
@@ -274,6 +422,7 @@ __SI_NO_INPUT__
 <input type="date" name="si_date" value="__SI_DATE__">
 <input type="text" name="packing_no" value="__PACKING_NO__" placeholder="Packing No">
 <input type="text" name="invoice_no" value="__INVOICE_NO__" placeholder="Invoice No">
+<input type="text" name="booking_no" value="__BOOKING_NO__" placeholder="Booking No">
 </div>
 </div>
 
@@ -281,7 +430,12 @@ __SI_NO_INPUT__
 <h2>Party Information</h2>
 <div class="grid">
 <input type="text" name="shipper" value="__SHIPPER__" placeholder="Shipper">
+<input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address">
+<input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email">
+<input type="text" name="exporter_phone" value="__EXPORTER_PHONE__" placeholder="Exporter Phone">
 <input type="text" name="consignee" value="__CONSIGNEE__" placeholder="Consignee">
+<input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" placeholder="Consignee Address">
+<input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email">
 <input type="text" name="notify_party" value="__NOTIFY_PARTY__" placeholder="Notify Party">
 </div>
 </div>
@@ -295,6 +449,8 @@ __SI_NO_INPUT__
 <input type="text" name="port_of_loading" value="__PORT_OF_LOADING__" placeholder="Port of Loading">
 <input type="text" name="port_of_discharge" value="__PORT_OF_DISCHARGE__" placeholder="Port of Discharge">
 <input type="text" name="place_of_delivery" value="__PLACE_OF_DELIVERY__" placeholder="Place of Delivery">
+<input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin">
+<input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country">
 </div>
 </div>
 
@@ -374,8 +530,14 @@ calculateTotals();
         "__SI_DATE__": html_attr(record.get("si_date", "")),
         "__PACKING_NO__": html_attr(record.get("packing_no", "")),
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
+        "__BOOKING_NO__": html_attr(record.get("booking_no", "")),
         "__SHIPPER__": html_attr(record.get("shipper", "")),
+        "__EXPORTER_ADDRESS__": html_attr(record.get("exporter_address", "")),
+        "__EXPORTER_EMAIL__": html_attr(record.get("exporter_email", "")),
+        "__EXPORTER_PHONE__": html_attr(record.get("exporter_phone", "")),
         "__CONSIGNEE__": html_attr(record.get("consignee", "")),
+        "__CONSIGNEE_ADDRESS__": html_attr(record.get("consignee_address", "")),
+        "__CONSIGNEE_EMAIL__": html_attr(record.get("consignee_email", "")),
         "__NOTIFY_PARTY__": html_attr(record.get("notify_party", "")),
         "__CARRIER__": html_attr(record.get("carrier", "")),
         "__VESSEL__": html_attr(record.get("vessel", "")),
@@ -383,6 +545,8 @@ calculateTotals();
         "__PORT_OF_LOADING__": html_attr(record.get("port_of_loading", "")),
         "__PORT_OF_DISCHARGE__": html_attr(record.get("port_of_discharge", "")),
         "__PLACE_OF_DELIVERY__": html_attr(record.get("place_of_delivery", "")),
+        "__COUNTRY_OF_ORIGIN__": html_attr(record.get("country_of_origin", "")),
+        "__DESTINATION_COUNTRY__": html_attr(record.get("destination_country", "")),
         "__SHIPPING_MARKS__": html_text(record.get("shipping_marks", "")),
         "__FREIGHT_TERMS__": html_text(record.get("freight_terms", "")),
         "__SPECIAL_INSTRUCTIONS__": html_text(record.get("special_instructions", "")),
@@ -398,8 +562,8 @@ calculateTotals();
 
 
 @router.get("/si-list", response_class=HTMLResponse)
-def si_list(search: str = ""):
-    records = sorted(load_shipping_instructions(), key=lambda record: record.get("si_no", ""), reverse=True)
+def si_list(request: Request, search: str = ""):
+    records = sorted(load_shipping_instructions(_account_id(request)), key=lambda record: record.get("si_no", ""), reverse=True)
     if search:
         term = search.lower()
         records = [
@@ -489,15 +653,19 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 
 
 @router.get("/si-form", response_class=HTMLResponse)
-def si_form(packing_no: str = "", shipment_no: str = ""):
-    record = payload_from_packing(packing_no) if packing_no else blank_payload()
-    record["si_no"] = next_si_no(load_shipping_instructions())
+def si_form(request: Request, packing_no: str = "", shipment_no: str = ""):
+    account_id = _account_id(request)
+    record = payload_from_packing(packing_no, account_id) if packing_no else blank_payload()
+    record["si_no"] = next_si_no(load_shipping_instruction_records())
     shipment_context = valid_shipment_context(shipment_no)
+    record["shipment_no"] = shipment_context
+    record = resolve_si_snapshot(record, account_id, preserve_empty=False)
     return render_form(record, "/si", "New Shipping Instruction", "Save Shipping Instruction", show_si_no=True, shipment_no=shipment_context)
 
 
 @router.post("/si")
 def save_si(
+    request: Request,
     shipment_no: str = Form(""),
     si_date: str = Form(""),
     packing_no: str = Form(""),
@@ -515,6 +683,7 @@ def save_si(
     freight_terms: str = Form(""),
     special_instructions: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
     carton: List[str] = Form([]),
@@ -523,8 +692,17 @@ def save_si(
     total_carton: str = Form(""),
     total_net_weight: str = Form(""),
     total_gross_weight: str = Form(""),
+    booking_no: Annotated[Optional[str], Form()] = None,
+    country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
 ):
-    validate_si_links(packing_no, invoice_no)
+    account_id = _account_id(request)
+    validate_si_links(packing_no, invoice_no, account_id)
     shipper = require_text("Shipper", shipper)
     consignee = require_text("Consignee", consignee)
     saved = {}
@@ -537,6 +715,24 @@ def save_si(
         item_name, hs_code, quantity, carton, net_weight, gross_weight,
         total_carton, total_net_weight, total_gross_weight,
         )
+        assign_item_ids(record["items"], item_id)
+        record.update({
+            "shipment_no": shipment_no,
+            "exporter_name": shipper,
+            "consignee_name": consignee,
+        })
+        set_submitted_snapshot_fields(record, {
+            "booking_no": booking_no,
+            "country_of_origin": country_of_origin,
+            "destination_country": destination_country,
+            "exporter_address": exporter_address,
+            "exporter_email": exporter_email,
+            "exporter_phone": exporter_phone,
+            "consignee_address": consignee_address,
+            "consignee_email": consignee_email,
+        })
+        record = resolve_si_snapshot(record, account_id)
+        record["account_id"] = account_id
         records.append(record)
         saved["si_no"] = si_number
     locked_json_mutation(SI_FILE, [], add_si, list)
@@ -548,22 +744,22 @@ def save_si(
 
 
 @router.get("/edit-si/{si_no}", response_class=HTMLResponse)
-def edit_si(si_no: str):
-    for record in load_shipping_instructions():
-        if record.get("si_no") == si_no:
-            return render_form(
-                record,
-                f"/update-si/{html_attr(si_no)}",
-                "Edit Shipping Instruction",
-                "Update Shipping Instruction",
-                show_si_no=True,
-            )
-    raise HTTPException(status_code=404, detail="Shipping instruction not found")
+def edit_si(si_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_si_snapshot(
+        public_shipping_instruction(_owned_shipping_instruction(si_no, account_id)), account_id,
+    )
+    return render_form(
+        record, f"/update-si/{html_attr(si_no)}", "Edit Shipping Instruction",
+        "Update Shipping Instruction", show_si_no=True,
+        shipment_no=record.get("shipment_no", ""),
+    )
 
 
 @router.post("/update-si/{si_no}")
 def update_si(
     si_no: str,
+    request: Request,
     si_date: str = Form(""),
     packing_no: str = Form(""),
     invoice_no: str = Form(""),
@@ -579,24 +775,53 @@ def update_si(
     shipping_marks: str = Form(""),
     freight_terms: str = Form(""),
     special_instructions: str = Form(""),
-    item_name: List[str] = Form([]),
-    hs_code: List[str] = Form([]),
-    quantity: List[str] = Form([]),
-    carton: List[str] = Form([]),
-    net_weight: List[str] = Form([]),
-    gross_weight: List[str] = Form([]),
-    total_carton: str = Form(""),
-    total_net_weight: str = Form(""),
-    total_gross_weight: str = Form(""),
+    item_name: Annotated[Optional[List[str]], Form()] = None,
+    item_id: Annotated[Optional[List[str]], Form()] = None,
+    hs_code: Annotated[Optional[List[str]], Form()] = None,
+    quantity: Annotated[Optional[List[str]], Form()] = None,
+    carton: Annotated[Optional[List[str]], Form()] = None,
+    net_weight: Annotated[Optional[List[str]], Form()] = None,
+    gross_weight: Annotated[Optional[List[str]], Form()] = None,
+    total_carton: Annotated[Optional[str], Form()] = None,
+    total_net_weight: Annotated[Optional[str], Form()] = None,
+    total_gross_weight: Annotated[Optional[str], Form()] = None,
+    shipment_no: Annotated[Optional[str], Form()] = None,
+    booking_no: Annotated[Optional[str], Form()] = None,
+    country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
 ):
-    validate_si_links(packing_no, invoice_no)
+    account_id = _account_id(request)
+    current = public_shipping_instruction(_owned_shipping_instruction(si_no, account_id))
+    validate_si_links(packing_no, invoice_no, account_id)
     shipper = require_text("Shipper", shipper)
     consignee = require_text("Consignee", consignee)
+    current_items = current.get("items", [])
+
+    def item_values(field, submitted):
+        if submitted is not None:
+            return submitted
+        return [item.get(field, "") for item in current_items if isinstance(item, dict)]
+
+    item_name = item_values("name", item_name)
+    hs_code = item_values("hs_code", hs_code)
+    quantity = item_values("quantity", quantity)
+    carton = item_values("carton", carton)
+    net_weight = item_values("net_weight", net_weight)
+    gross_weight = item_values("gross_weight", gross_weight)
+    total_carton = current.get("total_carton", "") if total_carton is None else total_carton
+    total_net_weight = current.get("total_net_weight", "") if total_net_weight is None else total_net_weight
+    total_gross_weight = current.get("total_gross_weight", "") if total_gross_weight is None else total_gross_weight
     def replace_si(records):
         for index, record in enumerate(records):
-            if record.get("si_no") != si_no:
+            if (record.get("si_no") != si_no
+                    or str(record.get("account_id", "") or "").strip() != account_id):
                 continue
-            records[index] = build_record(
+            updated = build_record(
                 si_no, si_date, packing_no, invoice_no, shipper, consignee,
                 notify_party, carrier, vessel, voyage_no, port_of_loading,
                 port_of_discharge, place_of_delivery, shipping_marks, freight_terms,
@@ -604,6 +829,27 @@ def update_si(
                 net_weight, gross_weight, total_carton, total_net_weight,
                 total_gross_weight,
             )
+            assign_item_ids(updated["items"], item_id, current_items)
+            updated.update({"exporter_name": shipper, "consignee_name": consignee})
+            submitted_snapshot = {
+                "shipment_no": shipment_no,
+                "booking_no": booking_no,
+                "country_of_origin": country_of_origin,
+                "destination_country": destination_country,
+                "exporter_address": exporter_address,
+                "exporter_email": exporter_email,
+                "exporter_phone": exporter_phone,
+                "consignee_address": consignee_address,
+                "consignee_email": consignee_email,
+            }
+            for field, value in submitted_snapshot.items():
+                if value is not None:
+                    updated[field] = value
+                elif field in current:
+                    updated[field] = deepcopy(current[field])
+            updated = resolve_si_snapshot(updated, account_id)
+            updated["account_id"] = account_id
+            records[index] = updated
             return
         raise HTTPException(status_code=404, detail="Shipping instruction not found")
     locked_json_mutation(SI_FILE, [], replace_si, list)
@@ -611,23 +857,39 @@ def update_si(
 
 
 @router.get("/delete-si/{si_no}")
-def delete_si(si_no: str):
-    return identifier_delete_confirmation("Shipping Instruction", "Shipping Instruction", si_no, SI_FILE, "si_no", f"/delete-si/{si_no}", "/si-list")
+def delete_si(si_no: str, request: Request):
+    _owned_shipping_instruction(si_no, _account_id(request))
+    return render_delete_page("Shipping Instruction", si_no, f"/delete-si/{si_no}", "/si-list", find_dependencies("Shipping Instruction", si_no, _account_id(request)))
 
 @router.post("/delete-si/{si_no}")
-def confirm_delete_si(si_no: str):
-    return confirmed_identifier_delete("Shipping Instruction", "Shipping Instruction", si_no, SI_FILE, "si_no", f"/delete-si/{si_no}", "/si-list", "/si-list")
+def confirm_delete_si(si_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_shipping_instruction(si_no, account_id)
+    dependencies = find_dependencies("Shipping Instruction", si_no, account_id)
+    if dependencies:
+        return render_delete_page("Shipping Instruction", si_no, f"/delete-si/{si_no}", "/si-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((index for index, record in enumerate(records)
+                      if isinstance(record, dict)
+                      and str(record.get("si_no", "") or "").strip() == si_no
+                      and str(record.get("account_id", "") or "").strip() == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Shipping instruction not found")
+        records.pop(index)
+    locked_json_mutation(SI_FILE, [], remove, list)
+    return RedirectResponse("/si-list", status_code=303)
 
 
 @router.get("/si-data/{si_no}")
-def si_data(si_no: str):
-    for record in load_shipping_instructions():
-        if record.get("si_no") == si_no:
-            return record
-    raise HTTPException(status_code=404, detail="Shipping instruction not found")
+def si_data(si_no: str, request: Request):
+    account_id = _account_id(request)
+    return resolve_si_snapshot(
+        public_shipping_instruction(_owned_shipping_instruction(si_no, account_id)), account_id,
+    )
 
 
 def create_shipping_instruction_pdf(payload):
+    payload = public_shipping_instruction(payload)
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
@@ -687,6 +949,12 @@ def create_shipping_instruction_pdf(payload):
         draw_text_fit(pdf, payload.get("shipper", ""), 52, height - 228, 130, size=8)
         draw_text_fit(pdf, payload.get("consignee", ""), 230, height - 228, 130, size=8)
         draw_text_fit(pdf, payload.get("notify_party", ""), 408, height - 228, 130, size=8)
+        draw_text_fit(pdf, payload.get("exporter_address", ""), 52, height - 241, 130, size=7)
+        draw_text_fit(pdf, " / ".join(filter(None, (
+            payload.get("exporter_email", ""), payload.get("exporter_phone", ""),
+        ))), 52, height - 253, 130, size=7)
+        draw_text_fit(pdf, payload.get("consignee_address", ""), 230, height - 241, 130, size=7)
+        draw_text_fit(pdf, payload.get("consignee_email", ""), 230, height - 253, 130, size=7)
 
         pdf.setFont("Helvetica-Bold", 10)
         pdf.drawString(40, height - 300, "Transport Information")
@@ -789,7 +1057,10 @@ def create_shipping_instruction_pdf(payload):
 
 
 @router.post("/si/pdf")
-def create_si_pdf(payload: dict = Body(...)):
+def create_si_pdf(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    validate_si_links(payload.get("packing_no", ""), payload.get("invoice_no", ""), account_id)
+    payload = resolve_si_snapshot(public_shipping_instruction(payload), account_id)
     pdf_buffer = create_shipping_instruction_pdf(payload)
     return Response(
         pdf_buffer.getvalue(),
@@ -799,14 +1070,15 @@ def create_si_pdf(payload: dict = Body(...)):
 
 
 @router.get("/si-pdf/{si_no}")
-def si_pdf(si_no: str):
-    for record in load_shipping_instructions():
-        if record.get("si_no") == si_no:
-            pdf_buffer = create_shipping_instruction_pdf(record)
-            filename = f"{si_no}.pdf"
-            return Response(
-                pdf_buffer.getvalue(),
-                media_type="application/pdf",
-                headers={"Content-Disposition": f"attachment; filename={filename}"},
-            )
-    raise HTTPException(status_code=404, detail="Shipping instruction not found")
+def si_pdf(si_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_si_snapshot(
+        public_shipping_instruction(_owned_shipping_instruction(si_no, account_id)), account_id,
+    )
+    set_pdf_export_record(request, record)
+    pdf_buffer = create_shipping_instruction_pdf(record)
+    filename = f"{si_no}.pdf"
+    return Response(
+        pdf_buffer.getvalue(), media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

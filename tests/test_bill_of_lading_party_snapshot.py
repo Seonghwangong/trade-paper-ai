@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from fastapi import HTTPException
 from reportlab import rl_config
 from starlette.requests import Request
 
@@ -62,7 +64,7 @@ def test_bill_snapshot_create_edit_update_and_pdf_precedence(tmp_path, monkeypat
         "shipper": "Snapshot Shipper",
         "shipper_address": "Snapshot Shipper Address",
         "shipper_email": "shipper-snapshot@example.com",
-        "shipper_phone": "111-2222",
+        "shipper_phone": "",
         "consignee": "Snapshot Consignee",
         "consignee_address": "Snapshot Consignee Address",
         "consignee_email": "consignee-snapshot@example.com",
@@ -101,12 +103,28 @@ def test_bill_snapshot_create_edit_update_and_pdf_precedence(tmp_path, monkeypat
 
     payload = bill.payload_from_packing("PK-001", "account-a")
     for field, value in snapshot.items():
+        if field == "shipper_phone":
+            continue
         assert payload[field] == value
+    assert payload["shipper_phone"] == "999-9999"
 
     bill.save_bl(_request("account-a"), **_form(snapshot))
     stored = json.loads(bl_file.read_text(encoding="utf-8"))[0]
     for field, value in snapshot.items():
         assert stored[field] == value
+
+    packing.update({
+        "seller": "Changed Packing Shipper",
+        "seller_address": "Changed Packing Address",
+        "seller_email": "changed-packing@example.com",
+        "seller_phone": "added-after-snapshot",
+        "buyer": "Changed Packing Consignee",
+    })
+    api = bill.bl_data(stored["bl_no"], _request("account-a", f"/bl-data/{stored['bl_no']}"))
+    for field, value in snapshot.items():
+        assert api[field] == value
+    assert api["shipper_phone"] == ""
+    assert "account_id" not in api
 
     edit_html = bill.edit_bl(stored["bl_no"], _request("account-a")).body.decode()
     for field, value in snapshot.items():
@@ -122,12 +140,24 @@ def test_bill_snapshot_create_edit_update_and_pdf_precedence(tmp_path, monkeypat
     monkeypatch.setattr(rl_config, "pageCompression", 0)
     pdf = bill.create_bl_pdf(_request("account-a", "/bl/pdf"), updated)
     for value in snapshot.values():
-        assert value.encode() in pdf.body
+        if value:
+            assert value.encode() in pdf.body
     assert b"Changed Master Address" not in pdf.body
     assert b"Changed Buyer Address" not in pdf.body
+    assert b"added-after-snapshot" not in pdf.body
 
 
-def test_legacy_bill_fallback_order_is_packing_then_invoice_then_master(monkeypatch):
+def test_legacy_bill_api_edit_pdf_share_fallback_and_isolate_account(tmp_path, monkeypatch):
+    bl_file = tmp_path / "bills_of_lading.json"
+    users_file = tmp_path / "users.json"
+    bl_file.write_text(json.dumps([{
+        "account_id": "account-a", "bl_no": "BL-LEGACY",
+        "packing_no": "PK-LEGACY", "invoice_no": "INV-LEGACY",
+        "items": [],
+    }]), encoding="utf-8")
+    users_file.write_text(json.dumps([
+        {"account_id": "account-a"}, {"account_id": "account-b"},
+    ]), encoding="utf-8")
     packing = {
         "packing_no": "PK-LEGACY", "invoice_no": "INV-LEGACY",
         "seller": "Packing Shipper", "seller_address": "Packing Shipper Address",
@@ -137,6 +167,8 @@ def test_legacy_bill_fallback_order_is_packing_then_invoice_then_master(monkeypa
         "invoice_no": "INV-LEGACY", "seller_email": "invoice-shipper@example.com",
         "buyer_email": "invoice-consignee@example.com",
     }
+    monkeypatch.setattr(bill, "BL_FILE", bl_file)
+    monkeypatch.setattr(bill, "USERS_FILE", users_file)
     monkeypatch.setattr(bill, "load_packing_lists", lambda account_id: [packing])
     monkeypatch.setattr(bill.invoice_module, "load_invoices", lambda account_id: [invoice])
     monkeypatch.setattr(bill, "load_account_company", lambda account_id, path: {
@@ -158,3 +190,26 @@ def test_legacy_bill_fallback_order_is_packing_then_invoice_then_master(monkeypa
     assert resolved["consignee"] == "Packing Consignee"
     assert resolved["consignee_address"] == "Packing Consignee Address"
     assert resolved["consignee_email"] == "invoice-consignee@example.com"
+
+    api = bill.bl_data("BL-LEGACY", _request("account-a", "/bl-data/BL-LEGACY"))
+    for field in (
+        "shipper", "shipper_address", "shipper_email", "shipper_phone",
+        "consignee", "consignee_address", "consignee_email",
+    ):
+        assert api[field] == resolved[field]
+    assert "account_id" not in api
+
+    edit_html = bill.edit_bl("BL-LEGACY", _request("account-a")).body.decode()
+    for field in ("shipper", "shipper_address", "shipper_email", "shipper_phone"):
+        assert f'name="{field}" value="{resolved[field]}"' in edit_html
+
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+    pdf = bill.bl_pdf("BL-LEGACY", _request("account-a", "/bl-pdf/BL-LEGACY"))
+    for value in resolved.values():
+        if isinstance(value, str) and value:
+            assert value.encode() in pdf.body
+    assert b"account_id" not in pdf.body
+
+    with pytest.raises(HTTPException) as denied:
+        bill.bl_data("BL-LEGACY", _request("account-b"))
+    assert denied.value.status_code == 404

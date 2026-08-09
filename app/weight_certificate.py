@@ -1,11 +1,12 @@
-from typing import List
+from typing import Annotated, List, Optional
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
 import json
 
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -15,8 +16,20 @@ router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_weight import ensure_legacy_weight_ownership, public_weight
+from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, find_by_identifier, preserve_omitted_item_fields, resolve_source_chain, set_submitted_snapshot_fields
+from app.export import set_pdf_export_record
+from app.auth import USERS_FILE
 from app.shipment import shipment_context_redirect_url
+from app import bill_of_lading as bill_of_lading_module
+from app import packing as packing_module
+from app import invoice as invoice_module
+from app import product as product_module
+from app import shipment as shipment_module
+from app import buyer as buyer_module
+from app.account_company import load_account_company
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 
 WEIGHT_FILE = data_path("weight_certificates.json")
 BL_FILE = data_path("bills_of_lading.json")
@@ -24,32 +37,66 @@ PACKING_FILE = data_path("packing_lists.json")
 INVOICE_FILE = data_path("invoices.json")
 
 
-def load_weights():
-    return load_json_strict(WEIGHT_FILE, [], list)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_weight_records():
+    return ensure_legacy_weight_ownership(WEIGHT_FILE, USERS_FILE)
+
+
+def owned_weight_records(account_id):
+    owner = str(account_id or "").strip()
+    return [record for record in load_weight_records()
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+
+
+def load_weights(account_id):
+    return [public_weight(record) for record in owned_weight_records(account_id)]
+
+
+def _owned_weight(weight_no, account_id):
+    target = str(weight_no or "").strip()
+    record = find_by_identifier(
+        owned_weight_records(account_id), "weight_no", target, normalize=True,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Weight certificate not found")
+    return record
 
 
 def save_weights(records):
     atomic_write_json(WEIGHT_FILE, records, list)
 
 
-def load_bills_of_lading():
-    return load_json_strict(BL_FILE, [], list)
+def load_bills_of_lading(account_id):
+    return bill_of_lading_module.load_bills_of_lading(account_id)
 
 
-def load_packing_lists():
-    return load_json_strict(PACKING_FILE, [], list)
+def load_packing_lists(account_id):
+    return packing_module.load_packing_lists(account_id)
 
 
-def load_invoices():
-    return load_json_strict(INVOICE_FILE, [], list)
+def load_invoices(account_id):
+    return invoice_module.load_invoices(account_id)
 
 
-def validate_weight_links(bl_no, packing_no, invoice_no):
-    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(), "bl_no", required=True)
-    require_existing_reference("Packing List", packing_no, load_packing_lists(), "packing_no")
-    require_existing_reference("Invoice", invoice_no, load_invoices(), "invoice_no")
+def load_products(account_id):
+    return product_module.load_products(account_id)
+
+
+def validate_weight_links(bl_no, packing_no, invoice_no, account_id, shipment_no=""):
+    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(account_id), "bl_no", required=True)
+    require_existing_reference("Packing List", packing_no, packing_module.load_packing_lists(account_id), "packing_no")
+    require_existing_reference("Invoice", invoice_no, invoice_module.load_invoices(account_id), "invoice_no")
     require_consistent_reference("Packing List", packing_no, bill.get("packing_no", ""), "selected Bill of Lading")
     require_consistent_reference("Invoice", invoice_no, bill.get("invoice_no", ""), "selected Bill of Lading")
+    if shipment_no:
+        shipment = require_existing_reference("Shipment", shipment_no, shipment_module.load_shipments(account_id), "shipment_no", required=True)
+        require_consistent_reference("Bill of Lading", bl_no, shipment.get("bl_no", ""), "selected Shipment")
+        require_consistent_reference("Packing List", packing_no, shipment.get("packing_no", ""), "selected Shipment")
+        require_consistent_reference("Invoice", invoice_no, shipment.get("invoice_no", ""), "selected Shipment")
 
 
 def next_weight_no(records):
@@ -70,18 +117,21 @@ def html_text(value):
     return html_lib.escape(str(value or ""))
 
 
-def find_record(records, key, value):
-    if not value:
-        return None
-    for record in records:
-        if record.get(key) == value:
-            return record
-    return None
+def find_product(item, products):
+    item_name = str(item.get("name", "") or "").strip().lower()
+    item_hs = str(item.get("hs_code", "") or "").strip().lower()
+    for product in products:
+        if item_name and str(product.get("name", "") or "").strip().lower() == item_name:
+            return product
+    for product in products:
+        if item_hs and str(product.get("hs_code", "") or "").strip().lower() == item_hs:
+            return product
+    return {}
 
 
-def bl_select_html(selected):
+def bl_select_html(selected, account_id):
     options = ['<select name="bl_no">', '<option value="">Select B/L</option>']
-    for bill in load_bills_of_lading():
+    for bill in load_bills_of_lading(account_id):
         bl_no = bill.get("bl_no", "")
         if not bl_no:
             continue
@@ -118,7 +168,11 @@ def draw_text_fit(pdf, text, x, y, max_width, font="Helvetica", size=8, min_size
     pdf.drawString(x, y, text)
 
 
-def build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight):
+def build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight, origin=None):
+    carton = carton if isinstance(carton, (list, tuple)) else []
+    net_weight = net_weight if isinstance(net_weight, (list, tuple)) else []
+    gross_weight = gross_weight if isinstance(gross_weight, (list, tuple)) else []
+    origin = origin if isinstance(origin, (list, tuple)) else []
     items = []
     for i, name in enumerate(item_name):
         if not str(name or "").strip():
@@ -127,6 +181,7 @@ def build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight):
             "name": name,
             "hs_code": hs_code[i] if i < len(hs_code) else "",
             "quantity": quantity[i] if i < len(quantity) else "",
+            "origin": origin[i] if i < len(origin) else "",
             "carton": carton[i] if i < len(carton) else "",
             "net_weight": net_weight[i] if i < len(net_weight) else "",
             "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
@@ -142,9 +197,11 @@ def build_item_rows(items):
     for item in items:
         rows += f"""
 <div class="item-row">
+<input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
 <input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item">
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
+<input type="text" name="origin" value="{html_attr(item.get('origin', ''))}" placeholder="Origin">
 <input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton">
 <input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight" oninput="calculateTotals()">
 <input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight" oninput="calculateTotals()">
@@ -158,11 +215,15 @@ def blank_payload():
     return {
         "weight_no": "",
         "weight_date": datetime.now().strftime("%Y-%m-%d"),
+        "shipment_no": "",
         "bl_no": "",
         "packing_no": "",
         "invoice_no": "",
         "exporter": "",
         "consignee": "",
+        "exporter_name": "", "exporter_address": "", "exporter_email": "", "exporter_phone": "",
+        "consignee_name": "", "consignee_address": "", "consignee_email": "",
+        "country_of_origin": "", "destination_country": "",
         "transport_details": "",
         "port_of_loading": "",
         "port_of_discharge": "",
@@ -175,14 +236,68 @@ def blank_payload():
     }
 
 
-def payload_from_bl(bl_no):
+def resolve_weight_snapshot(record, account_id, shipment=None, bill=None, packing=None, invoice=None):
+    """Resolve Weight Certificate snapshot from account-owned sources."""
+    context = resolve_source_chain(
+        record, account_id, document_id_field="weight_no",
+        load_shipments=shipment_module.load_shipments, load_bills=load_bills_of_lading,
+        load_packings=load_packing_lists, load_invoices=load_invoices,
+        load_company=lambda owner: load_account_company(owner, ACCOUNT_COMPANIES_FILE),
+        load_buyers=buyer_module.load_buyers, shipment=shipment, bill=bill,
+        packing=packing, invoice=invoice,
+    )
+    resolved, preserve_empty = context.resolved, context.preserve_empty
+    shipment, bill, packing, invoice = context.shipment, context.bill, context.packing, context.invoice
+    company, buyer = context.company, context.buyer
+    shipment_no, bl_no, packing_no, invoice_no = context.shipment_no, context.bl_no, context.packing_no, context.invoice_no
+    party_sources = {
+        "exporter_name": (shipment.get("shipper"), bill.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "exporter_address": (shipment.get("shipper_address"), bill.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "exporter_email": (shipment.get("shipper_email"), bill.get("shipper_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "exporter_phone": (shipment.get("shipper_phone"), bill.get("shipper_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee_name": (shipment.get("consignee"), bill.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (shipment.get("consignee_address"), bill.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (shipment.get("consignee_email"), bill.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+    }
+    fill_missing_snapshot_fields(resolved, party_sources, preserve_empty=preserve_empty)
+    resolved["exporter"] = resolved.get("exporter_name", resolved.get("exporter", ""))
+    resolved["consignee"] = resolved.get("consignee_name", resolved.get("consignee", ""))
+    if "items" not in resolved or (not preserve_empty and not resolved["items"]):
+        resolved["items"] = deepcopy(shipment.get("items") or bill.get("items") or packing.get("items") or invoice.get("items") or [])
+    scalar_sources = {
+        "country_of_origin": (shipment.get("country_of_origin"), shipment.get("origin_country")),
+        "destination_country": (shipment.get("destination_country"), bill.get("place_of_delivery"), bill.get("port_of_discharge")),
+        "port_of_loading": (shipment.get("port_of_loading"), bill.get("port_of_loading")),
+        "port_of_discharge": (shipment.get("port_of_discharge"), bill.get("port_of_discharge")),
+        "transport_details": (shipment.get("transport_details"), " / ".join(x for x in (bill.get("vessel", ""), bill.get("voyage_no", "")) if x)),
+    }
+    fill_missing_snapshot_fields(resolved, scalar_sources, preserve_empty=preserve_empty)
+    origins = [item.get("origin") for item in resolved.get("items", []) if isinstance(item, dict) and item.get("origin")]
+    if ("country_of_origin" not in resolved or (not preserve_empty and not resolved["country_of_origin"])) and origins and len(set(origins)) == 1:
+        resolved["country_of_origin"] = origins[0]
+    resolved.update({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no})
+    if "total_net_weight" not in resolved or (not preserve_empty and not resolved["total_net_weight"]):
+        resolved["total_net_weight"] = format_number(numeric_total(resolved.get("items", []), "net_weight"))
+    if "total_gross_weight" not in resolved or (not preserve_empty and not resolved["total_gross_weight"]):
+        resolved["total_gross_weight"] = format_number(numeric_total(resolved.get("items", []), "gross_weight"))
+    return resolved
+
+
+def payload_from_bl(bl_no, account_id):
     payload = blank_payload()
     if not bl_no:
         return payload
 
-    for bill in load_bills_of_lading():
+    for bill in load_bills_of_lading(account_id):
         if bill.get("bl_no") == bl_no:
-            items = bill.get("items", [])
+            products = load_products(account_id)
+            items = []
+            for source_item in bill.get("items", []):
+                item = dict(source_item) if isinstance(source_item, dict) else {}
+                product = find_product(item, products)
+                item["name"] = item.get("name", "") or product.get("name", "")
+                item["hs_code"] = item.get("hs_code", "") or product.get("hs_code", "")
+                items.append(item)
             transport_parts = [
                 str(bill.get("vessel", "") or "").strip(),
                 str(bill.get("voyage_no", "") or "").strip(),
@@ -201,16 +316,17 @@ def payload_from_bl(bl_no):
                 "total_gross_weight": format_number(numeric_total(items, "gross_weight")),
             })
             break
-    return payload
+    return resolve_weight_snapshot(payload, account_id)
 
 
 def build_record(
     weight_no, weight_date, bl_no, packing_no, invoice_no, exporter, consignee,
     transport_details, port_of_loading, port_of_discharge, weighing_place,
     weighing_method, remarks, item_name, hs_code, quantity, carton, net_weight,
-    gross_weight, total_net_weight, total_gross_weight,
+    gross_weight, total_net_weight, total_gross_weight, shipment_no="", origin=None,
+    country_of_origin="", destination_country="",
 ):
-    items = build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight)
+    items = build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight, origin)
     if not total_net_weight:
         total_net_weight = format_number(numeric_total(items, "net_weight"))
     if not total_gross_weight:
@@ -219,11 +335,14 @@ def build_record(
     return {
         "weight_no": weight_no,
         "weight_date": weight_date,
+        "shipment_no": shipment_no,
         "bl_no": bl_no,
         "packing_no": packing_no,
         "invoice_no": invoice_no,
         "exporter": exporter,
         "consignee": consignee,
+        "country_of_origin": country_of_origin,
+        "destination_country": destination_country,
         "transport_details": transport_details,
         "port_of_loading": port_of_loading,
         "port_of_discharge": port_of_discharge,
@@ -236,7 +355,7 @@ def build_record(
     }
 
 
-def render_form(record, action, title, button_text, show_weight_no=False, shipment_no=""):
+def render_form(record, action, title, button_text, show_weight_no=False, shipment_no="", account_id=""):
     rows = build_item_rows(record.get("items", []))
     weight_no_input = ""
     if show_weight_no:
@@ -256,7 +375,7 @@ h1{text-align:center;font-size:46px;margin:8px 0 10px;}
 .nav-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:25px;}
 .card{border:1px solid #E5E7EB;border-radius:16px;padding:25px;margin-bottom:25px;background:#fff;}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
-.item-row{display:grid;grid-template-columns:1.4fr 1fr .8fr .8fr .9fr .9fr;gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:18px;margin-bottom:16px;background:#F9FAFB;}
+.item-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:18px;margin-bottom:16px;background:#F9FAFB;}
 input,select,textarea{width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;background:white;}
 textarea{min-height:100px;resize:vertical;}
 button{padding:15px 18px;background:#111827;color:white;border:none;border-radius:12px;font-size:16px;cursor:pointer;}
@@ -293,8 +412,15 @@ __BL_SELECT__
 <div class="card">
 <h2>Exporter / Consignee</h2>
 <div class="grid">
-<input type="text" name="exporter" value="__EXPORTER__" placeholder="Exporter">
-<input type="text" name="consignee" value="__CONSIGNEE__" placeholder="Consignee">
+<input type="text" name="exporter_name" value="__EXPORTER__" placeholder="Exporter Name">
+<input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address">
+<input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email">
+<input type="text" name="exporter_phone" value="__EXPORTER_PHONE__" placeholder="Exporter Phone">
+<input type="text" name="consignee_name" value="__CONSIGNEE__" placeholder="Consignee Name">
+<input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" placeholder="Consignee Address">
+<input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email">
+<input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin">
+<input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country">
 </div>
 </div>
 
@@ -336,6 +462,7 @@ function itemRowHtml(item = {}){
     <input type="text" name="item_name" value="${escapeAttr(item.name || "")}" placeholder="Item">
     <input type="text" name="hs_code" value="${escapeAttr(item.hs_code || "")}" placeholder="HS Code">
     <input type="text" name="quantity" value="${escapeAttr(item.quantity || "")}" placeholder="Quantity">
+    <input type="text" name="origin" value="${escapeAttr(item.origin || "")}" placeholder="Origin">
     <input type="text" name="carton" value="${escapeAttr(item.carton || "")}" placeholder="Carton">
     <input type="text" name="net_weight" value="${escapeAttr(item.net_weight || "")}" placeholder="Net Weight" oninput="calculateTotals()">
     <input type="text" name="gross_weight" value="${escapeAttr(item.gross_weight || "")}" placeholder="Gross Weight" oninput="calculateTotals()">
@@ -378,8 +505,13 @@ async function loadBlPrefill(blNo){
     const bill = await response.json();
     document.querySelector('[name="packing_no"]').value = bill.packing_no || "";
     document.querySelector('[name="invoice_no"]').value = bill.invoice_no || "";
-    document.querySelector('[name="exporter"]').value = bill.shipper || "";
-    document.querySelector('[name="consignee"]').value = bill.consignee || "";
+    document.querySelector('[name="exporter_name"]').value = bill.shipper || "";
+    document.querySelector('[name="exporter_address"]').value = bill.shipper_address || "";
+    document.querySelector('[name="exporter_email"]').value = bill.shipper_email || "";
+    document.querySelector('[name="exporter_phone"]').value = bill.shipper_phone || "";
+    document.querySelector('[name="consignee_name"]').value = bill.consignee || "";
+    document.querySelector('[name="consignee_address"]').value = bill.consignee_address || "";
+    document.querySelector('[name="consignee_email"]').value = bill.consignee_email || "";
     document.querySelector('[name="transport_details"]').value = [bill.vessel || "", bill.voyage_no || ""].filter(Boolean).join(" / ");
     document.querySelector('[name="port_of_loading"]').value = bill.port_of_loading || "";
     document.querySelector('[name="port_of_discharge"]').value = bill.port_of_discharge || "";
@@ -387,6 +519,7 @@ async function loadBlPrefill(blNo){
       name: item.name || "",
       hs_code: item.hs_code || "",
       quantity: item.quantity || "",
+      origin: item.origin || "",
       carton: item.carton || "",
       net_weight: item.net_weight || "",
       gross_weight: item.gross_weight || ""
@@ -409,11 +542,18 @@ calculateTotals();
         "__ACTION__": html_attr(action),
         "__WEIGHT_NO_INPUT__": weight_no_input,
         "__WEIGHT_DATE__": html_attr(record.get("weight_date", "")),
-        "__BL_SELECT__": bl_select_html(record.get("bl_no", "")),
+        "__BL_SELECT__": bl_select_html(record.get("bl_no", ""), account_id),
         "__PACKING_NO__": html_attr(record.get("packing_no", "")),
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
         "__EXPORTER__": html_attr(record.get("exporter", "")),
+        "__EXPORTER_ADDRESS__": html_attr(record.get("exporter_address", "")),
+        "__EXPORTER_EMAIL__": html_attr(record.get("exporter_email", "")),
+        "__EXPORTER_PHONE__": html_attr(record.get("exporter_phone", "")),
         "__CONSIGNEE__": html_attr(record.get("consignee", "")),
+        "__CONSIGNEE_ADDRESS__": html_attr(record.get("consignee_address", "")),
+        "__CONSIGNEE_EMAIL__": html_attr(record.get("consignee_email", "")),
+        "__COUNTRY_OF_ORIGIN__": html_attr(record.get("country_of_origin", "")),
+        "__DESTINATION_COUNTRY__": html_attr(record.get("destination_country", "")),
         "__WEIGHING_PLACE__": html_attr(record.get("weighing_place", "")),
         "__WEIGHING_METHOD__": html_attr(record.get("weighing_method", "")),
         "__TRANSPORT_DETAILS__": html_attr(record.get("transport_details", "")),
@@ -424,7 +564,7 @@ calculateTotals();
         "__TOTAL_NET_WEIGHT__": html_attr(record.get("total_net_weight", "")),
         "__TOTAL_GROSS_WEIGHT__": html_attr(record.get("total_gross_weight", "")),
         "__BUTTON_TEXT__": html_text(button_text),
-        "__SHIPMENT_CONTEXT__": f'<input type="hidden" name="shipment_no" value="{html_attr(shipment_no)}">' if shipment_no else "",
+        "__SHIPMENT_CONTEXT__": f'<input type="hidden" name="shipment_no" value="{html_attr(shipment_no or record.get("shipment_no", ""))}">' if shipment_no or record.get("shipment_no") else "",
     }
     for key, value in replacements.items():
         html = html.replace(key, value)
@@ -432,8 +572,8 @@ calculateTotals();
 
 
 @router.get("/weight-list", response_class=HTMLResponse)
-def weight_list(search: str = ""):
-    records = sorted(load_weights(), key=lambda record: record.get("weight_no", ""), reverse=True)
+def weight_list(request: Request, search: str = ""):
+    records = sorted(load_weights(_account_id(request)), key=lambda record: record.get("weight_no", ""), reverse=True)
     if search:
         term = search.lower()
         records = [
@@ -523,8 +663,8 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 
 
 @router.get("/weight-source/bl/{bl_no}")
-def weight_source_bl(bl_no: str):
-    record = find_record(load_bills_of_lading(), "bl_no", bl_no)
+def weight_source_bl(bl_no: str, request: Request):
+    record = find_by_identifier(load_bills_of_lading(request.scope["trade_paper_user"]["account_id"]), "bl_no", bl_no)
     if not record:
         raise HTTPException(status_code=404, detail="Bill of Lading not found")
     return record
@@ -550,18 +690,17 @@ def linked_status_card(label, value, exists_record, pdf_href="", edit_href=""):
 
 
 @router.get("/weight/{weight_no}", response_class=HTMLResponse)
-def weight_detail(weight_no: str):
-    record = find_record(load_weights(), "weight_no", weight_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Weight certificate not found")
+def weight_detail(weight_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_weight_snapshot(public_weight(_owned_weight(weight_no, account_id)), account_id)
 
     bl_no = record.get("bl_no", "")
     packing_no = record.get("packing_no", "")
     invoice_no = record.get("invoice_no", "")
     cards = "".join([
-        linked_status_card("B/L", bl_no, find_record(load_bills_of_lading(), "bl_no", bl_no), f"/bl-pdf/{bl_no}", f"/edit-bl/{bl_no}"),
-        linked_status_card("Packing List", packing_no, find_record(load_packing_lists(), "packing_no", packing_no), f"/packing-list-pdf/{packing_no}", f"/edit-packing/{packing_no}"),
-        linked_status_card("Commercial Invoice", invoice_no, find_record(load_invoices(), "invoice_no", invoice_no), f"/invoice-pdf/{invoice_no}", f"/edit-invoice/{invoice_no}"),
+        linked_status_card("B/L", bl_no, find_by_identifier(load_bills_of_lading(account_id), "bl_no", bl_no), f"/bl-pdf/{bl_no}", f"/edit-bl/{bl_no}"),
+        linked_status_card("Packing List", packing_no, find_by_identifier(load_packing_lists(account_id), "packing_no", packing_no), f"/packing-list-pdf/{packing_no}", f"/edit-packing/{packing_no}"),
+        linked_status_card("Commercial Invoice", invoice_no, find_by_identifier(load_invoices(account_id), "invoice_no", invoice_no), f"/invoice-pdf/{invoice_no}", f"/edit-invoice/{invoice_no}"),
     ])
 
     rows = ""
@@ -642,14 +781,22 @@ td{{padding:13px;border-bottom:1px solid #E5E7EB;}}
 
 
 @router.get("/weight-form", response_class=HTMLResponse)
-def weight_form(bl_no: str = "", shipment_no: str = ""):
-    record = payload_from_bl(bl_no) if bl_no else blank_payload()
-    record["weight_no"] = next_weight_no(load_weights())
-    return render_form(record, "/weight", "New Weight Certificate", "Save Weight Certificate", show_weight_no=True, shipment_no=shipment_no)
+def weight_form(request: Request, bl_no: str = "", shipment_no: str = ""):
+    account_id = request.scope["trade_paper_user"]["account_id"]
+    if shipment_no:
+        record = blank_payload()
+        record.update({"shipment_no": shipment_no, "bl_no": bl_no})
+        record = resolve_weight_snapshot(record, account_id)
+        validate_weight_links(record.get("bl_no", ""), record.get("packing_no", ""), record.get("invoice_no", ""), account_id, shipment_no)
+    else:
+        record = payload_from_bl(bl_no, account_id) if bl_no else blank_payload()
+    record["weight_no"] = next_weight_no(load_weight_records())
+    return render_form(record, "/weight", "New Weight Certificate", "Save Weight Certificate", show_weight_no=True, shipment_no=shipment_no, account_id=account_id)
 
 
 @router.post("/weight")
 def save_weight(
+    request: Request,
     shipment_no: str = Form(""),
     weight_date: str = Form(""),
     bl_no: str = Form(""),
@@ -664,6 +811,7 @@ def save_weight(
     weighing_method: str = Form(""),
     remarks: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
     carton: List[str] = Form([]),
@@ -671,10 +819,21 @@ def save_weight(
     gross_weight: List[str] = Form([]),
     total_net_weight: str = Form(""),
     total_gross_weight: str = Form(""),
+    origin: Annotated[Optional[List[str]], Form()] = None,
+    exporter_name: Annotated[Optional[str], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
+    country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
 ):
-    validate_weight_links(bl_no, packing_no, invoice_no)
-    exporter = require_text("Exporter", exporter)
-    consignee = require_text("Consignee", consignee)
+    account_id = _account_id(request)
+    validate_weight_links(bl_no, packing_no, invoice_no, account_id, shipment_no)
+    exporter = require_text("Exporter", exporter_name or exporter)
+    consignee = require_text("Consignee", consignee_name or consignee)
     saved = {}
     def add_weight(records):
         weight_number = next_identifier(records, "weight_no", "WT")
@@ -683,7 +842,18 @@ def save_weight(
         exporter, consignee, transport_details, port_of_loading, port_of_discharge,
         weighing_place, weighing_method, remarks, item_name, hs_code, quantity,
         carton, net_weight, gross_weight, total_net_weight, total_gross_weight,
+        shipment_no, origin, country_of_origin or "", destination_country or "",
         )
+        assign_item_ids(record["items"], item_id)
+        record.update({"exporter_name": exporter, "consignee_name": consignee})
+        set_submitted_snapshot_fields(record, {
+            "exporter_address": exporter_address, "exporter_email": exporter_email,
+            "exporter_phone": exporter_phone, "consignee_address": consignee_address,
+            "consignee_email": consignee_email, "country_of_origin": country_of_origin,
+            "destination_country": destination_country,
+        })
+        record = resolve_weight_snapshot(record, account_id)
+        record["account_id"] = account_id
         records.append(record)
         saved["weight_no"] = weight_number
     locked_json_mutation(WEIGHT_FILE, [], add_weight, list)
@@ -691,22 +861,18 @@ def save_weight(
 
 
 @router.get("/edit-weight/{weight_no}", response_class=HTMLResponse)
-def edit_weight(weight_no: str):
-    for record in load_weights():
-        if record.get("weight_no") == weight_no:
-            return render_form(
-                record,
-                f"/update-weight/{html_attr(weight_no)}",
-                "Edit Weight Certificate",
-                "Update Weight Certificate",
-                show_weight_no=True,
-            )
-    raise HTTPException(status_code=404, detail="Weight certificate not found")
+def edit_weight(weight_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_weight_snapshot(public_weight(_owned_weight(weight_no, account_id)), account_id)
+    return render_form(record, f"/update-weight/{html_attr(weight_no)}",
+                       "Edit Weight Certificate", "Update Weight Certificate",
+                       show_weight_no=True, account_id=account_id)
 
 
 @router.post("/update-weight/{weight_no}")
 def update_weight(
     weight_no: str,
+    request: Request,
     weight_date: str = Form(""),
     bl_no: str = Form(""),
     packing_no: str = Form(""),
@@ -720,28 +886,60 @@ def update_weight(
     weighing_method: str = Form(""),
     remarks: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
-    carton: List[str] = Form([]),
-    net_weight: List[str] = Form([]),
-    gross_weight: List[str] = Form([]),
+    carton: Annotated[Optional[List[str]], Form()] = None,
+    net_weight: Annotated[Optional[List[str]], Form()] = None,
+    gross_weight: Annotated[Optional[List[str]], Form()] = None,
     total_net_weight: str = Form(""),
     total_gross_weight: str = Form(""),
+    origin: Annotated[Optional[List[str]], Form()] = None,
+    exporter_name: Annotated[Optional[str], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
+    country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
 ):
-    validate_weight_links(bl_no, packing_no, invoice_no)
-    exporter = require_text("Exporter", exporter)
-    consignee = require_text("Consignee", consignee)
+    account_id = _account_id(request)
+    current = _owned_weight(weight_no, account_id)
+    validate_weight_links(bl_no, packing_no, invoice_no, account_id)
+    exporter = require_text("Exporter", exporter_name or exporter)
+    consignee = require_text("Consignee", consignee_name or consignee)
     def replace_weight(records):
         for index, record in enumerate(records):
-            if record.get("weight_no") != weight_no:
+            if record.get("weight_no") != weight_no or record.get("account_id") != account_id:
                 continue
-            records[index] = build_record(
+            updated = build_record(
                 weight_no, weight_date, bl_no, packing_no, invoice_no,
                 exporter, consignee, transport_details, port_of_loading,
                 port_of_discharge, weighing_place, weighing_method, remarks,
                 item_name, hs_code, quantity, carton, net_weight, gross_weight,
-                total_net_weight, total_gross_weight,
+                total_net_weight, total_gross_weight, current.get("shipment_no", ""), origin,
+                current.get("country_of_origin", "") if country_of_origin is None else country_of_origin,
+                current.get("destination_country", "") if destination_country is None else destination_country,
             )
+            assign_item_ids(updated["items"], item_id, current.get("items", []))
+            preserve_omitted_item_fields(
+                updated["items"], current.get("items", []),
+                [field for values, field in ((origin, "origin"), (carton, "carton"), (net_weight, "net_weight"), (gross_weight, "gross_weight")) if values is None],
+            )
+            updated.update({
+                "exporter_name": exporter,
+                "exporter_address": current.get("exporter_address", "") if exporter_address is None else exporter_address,
+                "exporter_email": current.get("exporter_email", "") if exporter_email is None else exporter_email,
+                "exporter_phone": current.get("exporter_phone", "") if exporter_phone is None else exporter_phone,
+                "consignee_name": consignee,
+                "consignee_address": current.get("consignee_address", "") if consignee_address is None else consignee_address,
+                "consignee_email": current.get("consignee_email", "") if consignee_email is None else consignee_email,
+            })
+            updated = resolve_weight_snapshot(updated, account_id)
+            updated["account_id"] = account_id
+            records[index] = updated
             return
         raise HTTPException(status_code=404, detail="Weight certificate not found")
     locked_json_mutation(WEIGHT_FILE, [], replace_weight, list)
@@ -749,20 +947,31 @@ def update_weight(
 
 
 @router.get("/delete-weight/{weight_no}")
-def delete_weight(weight_no: str):
-    return identifier_delete_confirmation("Weight Certificate", "Weight Certificate", weight_no, WEIGHT_FILE, "weight_no", f"/delete-weight/{weight_no}", "/weight-list")
+def delete_weight(weight_no: str, request: Request):
+    _owned_weight(weight_no, _account_id(request))
+    return render_delete_page("Weight Certificate", weight_no, f"/delete-weight/{weight_no}", "/weight-list", find_dependencies("Weight Certificate", weight_no, _account_id(request)))
 
 @router.post("/delete-weight/{weight_no}")
-def confirm_delete_weight(weight_no: str):
-    return confirmed_identifier_delete("Weight Certificate", "Weight Certificate", weight_no, WEIGHT_FILE, "weight_no", f"/delete-weight/{weight_no}", "/weight-list", "/weight-list")
+def confirm_delete_weight(weight_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_weight(weight_no, account_id)
+    dependencies = find_dependencies("Weight Certificate", weight_no, account_id)
+    if dependencies:
+        return render_delete_page("Weight Certificate", weight_no, f"/delete-weight/{weight_no}", "/weight-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((i for i, record in enumerate(records)
+                      if record.get("weight_no") == weight_no and record.get("account_id") == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Weight certificate not found")
+        records.pop(index)
+    locked_json_mutation(WEIGHT_FILE, [], remove, list)
+    return RedirectResponse("/weight-list", status_code=303)
 
 
 @router.get("/weight-data/{weight_no}")
-def weight_data(weight_no: str):
-    for record in load_weights():
-        if record.get("weight_no") == weight_no:
-            return record
-    raise HTTPException(status_code=404, detail="Weight certificate not found")
+def weight_data(weight_no: str, request: Request):
+    account_id = _account_id(request)
+    return resolve_weight_snapshot(public_weight(_owned_weight(weight_no, account_id)), account_id)
 
 
 def create_weight_certificate_pdf(payload):
@@ -823,6 +1032,10 @@ def create_weight_certificate_pdf(payload):
         pdf.setFont("Helvetica", 9)
         draw_text_fit(pdf, payload.get("exporter", ""), 52, height - 228, 210, size=9)
         draw_text_fit(pdf, payload.get("consignee", ""), 322, height - 228, 210, size=9)
+        draw_text_fit(pdf, payload.get("exporter_address", ""), 52, height - 241, 210, size=7)
+        draw_text_fit(pdf, " / ".join(v for v in (payload.get("exporter_email", ""), payload.get("exporter_phone", "")) if v), 52, height - 251, 210, size=7)
+        draw_text_fit(pdf, payload.get("consignee_address", ""), 322, height - 241, 210, size=7)
+        draw_text_fit(pdf, payload.get("consignee_email", ""), 322, height - 251, 210, size=7)
 
         pdf.setFont("Helvetica-Bold", 10)
         pdf.drawString(40, height - 292, "Weight Information")
@@ -920,7 +1133,11 @@ def create_weight_certificate_pdf(payload):
 
 
 @router.post("/weight/pdf")
-def create_weight_pdf(payload: dict = Body(...)):
+def create_weight_pdf(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    validate_weight_links(payload.get("bl_no", ""), payload.get("packing_no", ""), payload.get("invoice_no", ""), account_id)
+    payload = public_weight(payload)
+    payload = resolve_weight_snapshot(payload, account_id)
     pdf_buffer = create_weight_certificate_pdf(payload)
     return Response(
         pdf_buffer.getvalue(),
@@ -930,14 +1147,12 @@ def create_weight_pdf(payload: dict = Body(...)):
 
 
 @router.get("/weight-pdf/{weight_no}")
-def weight_pdf(weight_no: str):
-    for record in load_weights():
-        if record.get("weight_no") == weight_no:
-            pdf_buffer = create_weight_certificate_pdf(record)
-            filename = f"{weight_no}.pdf"
-            return Response(
-                pdf_buffer.getvalue(),
-                media_type="application/pdf",
-                headers={"Content-Disposition": f"attachment; filename={filename}"},
-            )
-    raise HTTPException(status_code=404, detail="Weight certificate not found")
+def weight_pdf(weight_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_weight_snapshot(public_weight(_owned_weight(weight_no, account_id)), account_id)
+    set_pdf_export_record(request, record)
+    validate_weight_links(record.get("bl_no", ""), record.get("packing_no", ""), record.get("invoice_no", ""), _account_id(request))
+    pdf_buffer = create_weight_certificate_pdf(record)
+    filename = f"{weight_no}.pdf"
+    return Response(pdf_buffer.getvalue(), media_type="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"})

@@ -1,11 +1,12 @@
-from typing import List
+from typing import Annotated, List, Optional
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
 import json
 
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -15,8 +16,20 @@ router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_inspection import ensure_legacy_inspection_ownership, public_inspection
+from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, find_by_identifier, preserve_omitted_item_fields, resolve_source_chain, set_submitted_snapshot_fields
+from app.export import set_pdf_export_record
+from app.auth import USERS_FILE
 from app.shipment import shipment_context_redirect_url
+from app import product as product_module
+from app import bill_of_lading as bill_of_lading_module
+from app import packing as packing_module
+from app import invoice as invoice_module
+from app import shipment as shipment_module
+from app import buyer as buyer_module
+from app.account_company import load_account_company
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 
 INSPECTION_FILE = data_path("inspection_certificates.json")
 BL_FILE = data_path("bills_of_lading.json")
@@ -25,36 +38,66 @@ PACKING_FILE = data_path("packing_lists.json")
 INVOICE_FILE = data_path("invoices.json")
 
 
-def load_inspections():
-    return load_json_strict(INSPECTION_FILE, [], list)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_inspection_records():
+    return ensure_legacy_inspection_ownership(INSPECTION_FILE, USERS_FILE)
+
+
+def owned_inspection_records(account_id):
+    owner = str(account_id or "").strip()
+    return [record for record in load_inspection_records()
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+
+
+def load_inspections(account_id):
+    return [public_inspection(record) for record in owned_inspection_records(account_id)]
+
+
+def _owned_inspection(inspection_no, account_id):
+    target = str(inspection_no or "").strip()
+    record = find_by_identifier(
+        owned_inspection_records(account_id), "inspection_no", target, normalize=True,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection Certificate not found")
+    return record
 
 
 def save_inspections(records):
     atomic_write_json(INSPECTION_FILE, records, list)
 
 
-def load_bills_of_lading():
-    return load_json_strict(BL_FILE, [], list)
+def load_bills_of_lading(account_id):
+    return bill_of_lading_module.load_bills_of_lading(account_id)
 
 
-def load_products():
-    return load_json_strict(PRODUCT_FILE, [], list)
+def load_products(account_id):
+    return product_module.load_products(account_id)
 
 
-def load_packing_lists():
-    return load_json_strict(PACKING_FILE, [], list)
+def load_packing_lists(account_id):
+    return packing_module.load_packing_lists(account_id)
 
 
-def load_invoices():
-    return load_json_strict(INVOICE_FILE, [], list)
+def load_invoices(account_id):
+    return invoice_module.load_invoices(account_id)
 
 
-def validate_inspection_links(bl_no, packing_no, invoice_no):
-    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(), "bl_no", required=True)
-    require_existing_reference("Packing List", packing_no, load_packing_lists(), "packing_no")
-    require_existing_reference("Invoice", invoice_no, load_invoices(), "invoice_no")
+def validate_inspection_links(bl_no, packing_no, invoice_no, account_id, shipment_no=""):
+    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(account_id), "bl_no", required=True)
+    require_existing_reference("Packing List", packing_no, packing_module.load_packing_lists(account_id), "packing_no")
+    require_existing_reference("Invoice", invoice_no, invoice_module.load_invoices(account_id), "invoice_no")
     require_consistent_reference("Packing List", packing_no, bill.get("packing_no", ""), "selected Bill of Lading")
     require_consistent_reference("Invoice", invoice_no, bill.get("invoice_no", ""), "selected Bill of Lading")
+    if shipment_no:
+        shipment = require_existing_reference("Shipment", shipment_no, shipment_module.load_shipments(account_id), "shipment_no", required=True)
+        require_consistent_reference("Bill of Lading", bl_no, shipment.get("bl_no", ""), "selected Shipment")
+        require_consistent_reference("Packing List", packing_no, shipment.get("packing_no", ""), "selected Shipment")
+        require_consistent_reference("Invoice", invoice_no, shipment.get("invoice_no", ""), "selected Shipment")
 
 
 def next_inspection_no(records):
@@ -75,18 +118,9 @@ def html_text(value):
     return html_lib.escape(str(value or ""))
 
 
-def find_record(records, key, value):
-    if not value:
-        return None
-    for record in records:
-        if record.get(key) == value:
-            return record
-    return None
-
-
-def bl_select_html(selected):
+def bl_select_html(selected, account_id):
     options = ['<select name="bl_no">', '<option value="">Select B/L</option>']
-    for bl in load_bills_of_lading():
+    for bl in load_bills_of_lading(account_id):
         bl_no = bl.get("bl_no", "")
         if not bl_no:
             continue
@@ -111,7 +145,11 @@ def find_product(item, products):
     return {}
 
 
-def build_items(name, hs_code, quantity):
+def build_items(name, hs_code, quantity, origin=None, carton=None, net_weight=None, gross_weight=None):
+    origin = origin if isinstance(origin, (list, tuple)) else []
+    carton = carton if isinstance(carton, (list, tuple)) else []
+    net_weight = net_weight if isinstance(net_weight, (list, tuple)) else []
+    gross_weight = gross_weight if isinstance(gross_weight, (list, tuple)) else []
     items = []
     for i in range(len(name)):
         if not name[i].strip():
@@ -120,6 +158,10 @@ def build_items(name, hs_code, quantity):
             "name": name[i],
             "hs_code": hs_code[i] if i < len(hs_code) else "",
             "quantity": quantity[i] if i < len(quantity) else "",
+            "origin": origin[i] if i < len(origin) else "",
+            "carton": carton[i] if i < len(carton) else "",
+            "net_weight": net_weight[i] if i < len(net_weight) else "",
+            "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
         })
     return items
 
@@ -132,9 +174,14 @@ def build_item_rows(items):
     for item in items:
         rows += f"""
 <div class="item-row">
+<input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
 <input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item">
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
+<input type="text" name="origin" value="{html_attr(item.get('origin', ''))}" placeholder="Origin">
+<input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton">
+<input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight">
+<input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight">
 <button class="remove" type="button" onclick="removeItem(this)">Remove Item</button>
 </div>
 """
@@ -144,6 +191,7 @@ def build_item_rows(items):
 def blank_payload():
     return {
         "inspection_date": datetime.now().strftime("%Y-%m-%d"),
+        "shipment_no": "",
         "bl_no": "",
         "packing_no": "",
         "invoice_no": "",
@@ -160,13 +208,55 @@ def blank_payload():
     }
 
 
-def payload_from_bl(bl_no):
+def resolve_inspection_snapshot(record, account_id, shipment=None, bill=None, packing=None, invoice=None):
+    """Resolve Inspection snapshot values from account-owned upstream records."""
+    context = resolve_source_chain(
+        record, account_id, document_id_field="inspection_no",
+        load_shipments=shipment_module.load_shipments, load_bills=load_bills_of_lading,
+        load_packings=packing_module.load_packing_lists, load_invoices=invoice_module.load_invoices,
+        load_company=lambda owner: load_account_company(owner, ACCOUNT_COMPANIES_FILE),
+        load_buyers=buyer_module.load_buyers, shipment=shipment, bill=bill,
+        packing=packing, invoice=invoice,
+    )
+    resolved, preserve_empty = context.resolved, context.preserve_empty
+    shipment, bill, packing, invoice = context.shipment, context.bill, context.packing, context.invoice
+    company, buyer = context.company, context.buyer
+    shipment_no, bl_no, packing_no, invoice_no = context.shipment_no, context.bl_no, context.packing_no, context.invoice_no
+    party_sources = {
+        "exporter_name": (shipment.get("shipper"), bill.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "exporter_address": (shipment.get("shipper_address"), bill.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "exporter_email": (shipment.get("shipper_email"), bill.get("shipper_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "exporter_phone": (shipment.get("shipper_phone"), bill.get("shipper_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee_name": (shipment.get("consignee"), bill.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (shipment.get("consignee_address"), bill.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (shipment.get("consignee_email"), bill.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+    }
+    fill_missing_snapshot_fields(resolved, party_sources, preserve_empty=preserve_empty)
+    resolved["exporter"] = resolved.get("exporter_name", resolved.get("exporter", ""))
+    resolved["consignee"] = resolved.get("consignee_name", resolved.get("consignee", ""))
+    if "items" not in resolved or (not preserve_empty and not resolved["items"]):
+        resolved["items"] = deepcopy(shipment.get("items") or bill.get("items") or packing.get("items") or invoice.get("items") or [])
+    scalar_sources = {
+        "country_of_origin": (shipment.get("country_of_origin"), shipment.get("origin_country")),
+        "destination_country": (shipment.get("destination_country"), bill.get("place_of_delivery"), bill.get("port_of_discharge")),
+        "port_of_loading": (shipment.get("port_of_loading"), bill.get("port_of_loading")),
+        "port_of_discharge": (shipment.get("port_of_discharge"), bill.get("port_of_discharge")),
+        "transport_details": (shipment.get("transport_details"), " ".join(x for x in (bill.get("vessel", ""), bill.get("voyage_no", "")) if x)),
+    }
+    fill_missing_snapshot_fields(resolved, scalar_sources, preserve_empty=preserve_empty)
+    origins = [item.get("origin") for item in resolved.get("items", []) if isinstance(item, dict) and item.get("origin")]
+    if ("country_of_origin" not in resolved or (not preserve_empty and not resolved["country_of_origin"])) and origins and len(set(origins)) == 1:
+        resolved["country_of_origin"] = origins[0]
+    resolved.update({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no})
+    return resolved
+
+
+def payload_from_bl(bl_no, products, account_id):
     payload = blank_payload()
     if not bl_no:
         return payload
 
-    products = load_products()
-    for bl in load_bills_of_lading():
+    for bl in load_bills_of_lading(account_id):
         if bl.get("bl_no") != bl_no:
             continue
 
@@ -192,18 +282,20 @@ def payload_from_bl(bl_no):
         })
         break
 
-    return payload
+    return resolve_inspection_snapshot(payload, account_id)
 
 
 def build_record(
     inspection_no, inspection_date, bl_no, packing_no, invoice_no, exporter,
     consignee, inspection_company, inspection_location, inspection_result,
     remarks, port_of_loading, port_of_discharge, transport_details,
-    item_name, hs_code, quantity,
+    item_name, hs_code, quantity, shipment_no="", origin=None, carton=None,
+    net_weight=None, gross_weight=None, country_of_origin="", destination_country="",
 ):
     return {
         "inspection_no": inspection_no,
         "inspection_date": inspection_date,
+        "shipment_no": shipment_no,
         "bl_no": bl_no,
         "packing_no": packing_no,
         "invoice_no": invoice_no,
@@ -216,15 +308,17 @@ def build_record(
         "port_of_loading": port_of_loading,
         "port_of_discharge": port_of_discharge,
         "transport_details": transport_details,
-        "items": build_items(item_name, hs_code, quantity),
+        "country_of_origin": country_of_origin,
+        "destination_country": destination_country,
+        "items": build_items(item_name, hs_code, quantity, origin, carton, net_weight, gross_weight),
     }
 
 
-def render_form(record, action, title, button_text, show_inspection_no=False, shipment_no=""):
+def render_form(record, action, title, button_text, show_inspection_no=False, shipment_no="", products=None, account_id=""):
     inspection_no_input = ""
     if show_inspection_no:
         inspection_no_input = f'<input type="text" value="{html_attr(record.get("inspection_no", ""))}" placeholder="Inspection No" readonly>'
-    product_master_json = json.dumps(load_products(), ensure_ascii=False)
+    product_master_json = json.dumps(products or [], ensure_ascii=False)
 
     html = """
 <!DOCTYPE html>
@@ -239,7 +333,7 @@ h1{text-align:center;font-size:48px;margin-bottom:10px;}
 .sub{text-align:center;color:#6B7280;margin-bottom:35px;}
 .nav-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:25px;}
 .card{border:1px solid #E5E7EB;border-radius:16px;padding:25px;margin-bottom:25px;background:#fff;}
-.item-row{display:grid;grid-template-columns:1.5fr 1fr .8fr;gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:20px;margin-bottom:18px;background:#F9FAFB;}
+.item-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:20px;margin-bottom:18px;background:#F9FAFB;}
 input,select,textarea{width:100%;padding:14px;margin-bottom:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;font-family:Arial,sans-serif;background:white;}
 button{padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;cursor:pointer;}
 .small{width:220px;margin-bottom:25px;}
@@ -269,8 +363,13 @@ __BL_SELECT__
 </div>
 <div class="card">
 <h2>Party Information</h2>
-<input type="text" name="exporter" value="__EXPORTER__" placeholder="Exporter">
-<input type="text" name="consignee" value="__CONSIGNEE__" placeholder="Consignee">
+<input type="text" name="exporter_name" value="__EXPORTER__" placeholder="Exporter Name">
+<input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address">
+<input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email">
+<input type="text" name="exporter_phone" value="__EXPORTER_PHONE__" placeholder="Exporter Phone">
+<input type="text" name="consignee_name" value="__CONSIGNEE__" placeholder="Consignee Name">
+<input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" placeholder="Consignee Address">
+<input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email">
 </div>
 <div class="card">
 <h2>Inspection Information</h2>
@@ -280,6 +379,8 @@ __BL_SELECT__
 <input type="text" name="transport_details" value="__TRANSPORT_DETAILS__" placeholder="Transport Details">
 <input type="text" name="port_of_loading" value="__PORT_OF_LOADING__" placeholder="Port of Loading">
 <input type="text" name="port_of_discharge" value="__PORT_OF_DISCHARGE__" placeholder="Port of Discharge">
+<input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin">
+<input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country">
 <textarea name="remarks" placeholder="Remarks">__REMARKS__</textarea>
 </div>
 <div class="card">
@@ -315,6 +416,10 @@ function itemRowHtml(item = {}){
 <input type="text" name="item_name" value="${escapeAttr(item.name || "")}" placeholder="Item">
 <input type="text" name="hs_code" value="${escapeAttr(item.hs_code || "")}" placeholder="HS Code">
 <input type="text" name="quantity" value="${escapeAttr(item.quantity || "")}" placeholder="Quantity">
+<input type="text" name="origin" value="${escapeAttr(item.origin || "")}" placeholder="Origin">
+<input type="text" name="carton" value="${escapeAttr(item.carton || "")}" placeholder="Carton">
+<input type="text" name="net_weight" value="${escapeAttr(item.net_weight || "")}" placeholder="Net Weight">
+<input type="text" name="gross_weight" value="${escapeAttr(item.gross_weight || "")}" placeholder="Gross Weight">
 <button class="remove" type="button" onclick="removeItem(this)">Remove Item</button>
 </div>`;
 }
@@ -341,8 +446,13 @@ async function loadBlPrefill(blNo){
         const bl = await response.json();
         document.querySelector('[name="packing_no"]').value = bl.packing_no || "";
         document.querySelector('[name="invoice_no"]').value = bl.invoice_no || "";
-        document.querySelector('[name="exporter"]').value = bl.shipper || "";
-        document.querySelector('[name="consignee"]').value = bl.consignee || "";
+        document.querySelector('[name="exporter_name"]').value = bl.shipper || "";
+        document.querySelector('[name="exporter_address"]').value = bl.shipper_address || "";
+        document.querySelector('[name="exporter_email"]').value = bl.shipper_email || "";
+        document.querySelector('[name="exporter_phone"]').value = bl.shipper_phone || "";
+        document.querySelector('[name="consignee_name"]').value = bl.consignee || "";
+        document.querySelector('[name="consignee_address"]').value = bl.consignee_address || "";
+        document.querySelector('[name="consignee_email"]').value = bl.consignee_email || "";
         document.querySelector('[name="transport_details"]').value = [bl.vessel || "", bl.voyage_no || ""].filter(Boolean).join(" ");
         document.querySelector('[name="port_of_loading"]').value = bl.port_of_loading || "";
         document.querySelector('[name="port_of_discharge"]').value = bl.port_of_discharge || "";
@@ -351,7 +461,8 @@ async function loadBlPrefill(blNo){
             return {
                 name: item.name || product.name || "",
                 hs_code: item.hs_code || product.hs_code || "",
-                quantity: item.quantity || ""
+                quantity: item.quantity || "", origin: item.origin || "", carton: item.carton || "",
+                net_weight: item.net_weight || "", gross_weight: item.gross_weight || ""
             };
         });
         renderItems(items);
@@ -371,11 +482,16 @@ document.querySelector('[name="bl_no"]')?.addEventListener("change", event => {
         "__ACTION__": html_attr(action),
         "__INSPECTION_NO_INPUT__": inspection_no_input,
         "__INSPECTION_DATE__": html_attr(record.get("inspection_date", "")),
-        "__BL_SELECT__": bl_select_html(record.get("bl_no", "")),
+        "__BL_SELECT__": bl_select_html(record.get("bl_no", ""), account_id),
         "__PACKING_NO__": html_attr(record.get("packing_no", "")),
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
         "__EXPORTER__": html_attr(record.get("exporter", "")),
+        "__EXPORTER_ADDRESS__": html_attr(record.get("exporter_address", "")),
+        "__EXPORTER_EMAIL__": html_attr(record.get("exporter_email", "")),
+        "__EXPORTER_PHONE__": html_attr(record.get("exporter_phone", "")),
         "__CONSIGNEE__": html_attr(record.get("consignee", "")),
+        "__CONSIGNEE_ADDRESS__": html_attr(record.get("consignee_address", "")),
+        "__CONSIGNEE_EMAIL__": html_attr(record.get("consignee_email", "")),
         "__INSPECTION_COMPANY__": html_attr(record.get("inspection_company", "")),
         "__INSPECTION_LOCATION__": html_attr(record.get("inspection_location", "")),
         "__INSPECTION_RESULT__": html_attr(record.get("inspection_result", "")),
@@ -383,10 +499,12 @@ document.querySelector('[name="bl_no"]')?.addEventListener("change", event => {
         "__PORT_OF_LOADING__": html_attr(record.get("port_of_loading", "")),
         "__PORT_OF_DISCHARGE__": html_attr(record.get("port_of_discharge", "")),
         "__TRANSPORT_DETAILS__": html_attr(record.get("transport_details", "")),
+        "__COUNTRY_OF_ORIGIN__": html_attr(record.get("country_of_origin", "")),
+        "__DESTINATION_COUNTRY__": html_attr(record.get("destination_country", "")),
         "__ITEM_ROWS__": build_item_rows(record.get("items", [])),
         "__BUTTON_TEXT__": html_attr(button_text),
         "__PRODUCT_MASTER__": product_master_json,
-        "__SHIPMENT_CONTEXT__": f'<input type="hidden" name="shipment_no" value="{html_attr(shipment_no)}">' if shipment_no else "",
+        "__SHIPMENT_CONTEXT__": f'<input type="hidden" name="shipment_no" value="{html_attr(shipment_no or record.get("shipment_no", ""))}">' if shipment_no or record.get("shipment_no") else "",
     }
     for key, value in replacements.items():
         html = html.replace(key, value)
@@ -394,8 +512,8 @@ document.querySelector('[name="bl_no"]')?.addEventListener("change", event => {
 
 
 @router.get("/inspection-list")
-def inspection_list(search: str = ""):
-    records = list(reversed(load_inspections()))
+def inspection_list(request: Request, search: str = ""):
+    records = list(reversed(load_inspections(_account_id(request))))
     if search:
         q = search.lower()
         records = [
@@ -466,13 +584,22 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 
 
 @router.get("/inspection-form")
-def inspection_form(bl_no: str = "", shipment_no: str = ""):
-    return render_form(payload_from_bl(bl_no), "/inspection", "Inspection Certificate", "Save Inspection Certificate", shipment_no=shipment_no)
+def inspection_form(request: Request, bl_no: str = "", shipment_no: str = ""):
+    account_id = request.scope["trade_paper_user"]["account_id"]
+    products = product_module.load_products(account_id)
+    if shipment_no:
+        record = blank_payload()
+        record.update({"shipment_no": shipment_no, "bl_no": bl_no})
+        record = resolve_inspection_snapshot(record, account_id)
+        validate_inspection_links(record.get("bl_no", ""), record.get("packing_no", ""), record.get("invoice_no", ""), account_id, shipment_no)
+    else:
+        record = payload_from_bl(bl_no, products, account_id)
+    return render_form(record, "/inspection", "Inspection Certificate", "Save Inspection Certificate", shipment_no=shipment_no, products=products, account_id=account_id)
 
 
 @router.get("/inspection-source/bl/{bl_no}")
-def inspection_source_bl(bl_no: str):
-    record = find_record(load_bills_of_lading(), "bl_no", bl_no)
+def inspection_source_bl(bl_no: str, request: Request):
+    record = find_by_identifier(load_bills_of_lading(request.scope["trade_paper_user"]["account_id"]), "bl_no", bl_no)
     if not record:
         raise HTTPException(status_code=404, detail="Bill of Lading not found")
     return record
@@ -498,18 +625,17 @@ def linked_status_card(label, value, exists_record, pdf_href="", edit_href=""):
 
 
 @router.get("/inspection/{inspection_no}")
-def inspection_detail(inspection_no: str):
-    record = find_record(load_inspections(), "inspection_no", inspection_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Inspection Certificate not found")
+def inspection_detail(inspection_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_inspection_snapshot(public_inspection(_owned_inspection(inspection_no, account_id)), account_id)
 
     bl_no = record.get("bl_no", "")
     packing_no = record.get("packing_no", "")
     invoice_no = record.get("invoice_no", "")
     cards = "".join([
-        linked_status_card("B/L", bl_no, find_record(load_bills_of_lading(), "bl_no", bl_no), f"/bl-pdf/{bl_no}", f"/edit-bl/{bl_no}"),
-        linked_status_card("Packing List", packing_no, find_record(load_packing_lists(), "packing_no", packing_no), f"/packing-list-pdf/{packing_no}", f"/edit-packing/{packing_no}"),
-        linked_status_card("Commercial Invoice", invoice_no, find_record(load_invoices(), "invoice_no", invoice_no), f"/invoice-pdf/{invoice_no}", f"/edit-invoice/{invoice_no}"),
+        linked_status_card("B/L", bl_no, find_by_identifier(load_bills_of_lading(account_id), "bl_no", bl_no), f"/bl-pdf/{bl_no}", f"/edit-bl/{bl_no}"),
+        linked_status_card("Packing List", packing_no, find_by_identifier(load_packing_lists(account_id), "packing_no", packing_no), f"/packing-list-pdf/{packing_no}", f"/edit-packing/{packing_no}"),
+        linked_status_card("Commercial Invoice", invoice_no, find_by_identifier(load_invoices(account_id), "invoice_no", invoice_no), f"/invoice-pdf/{invoice_no}", f"/edit-invoice/{invoice_no}"),
     ])
 
     rows = ""
@@ -587,6 +713,7 @@ td{{padding:13px;border-bottom:1px solid #E5E7EB;}}
 
 @router.post("/inspection")
 def save_inspection(
+    request: Request,
     shipment_no: str = Form(""),
     inspection_date: str = Form(""),
     bl_no: str = Form(""),
@@ -602,12 +729,27 @@ def save_inspection(
     port_of_discharge: str = Form(""),
     transport_details: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
+    origin: Annotated[Optional[List[str]], Form()] = None,
+    carton: Annotated[Optional[List[str]], Form()] = None,
+    net_weight: Annotated[Optional[List[str]], Form()] = None,
+    gross_weight: Annotated[Optional[List[str]], Form()] = None,
+    exporter_name: Annotated[Optional[str], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
+    country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
 ):
-    validate_inspection_links(bl_no, packing_no, invoice_no)
-    exporter = require_text("Exporter", exporter)
-    consignee = require_text("Consignee", consignee)
+    account_id = _account_id(request)
+    validate_inspection_links(bl_no, packing_no, invoice_no, account_id, shipment_no)
+    exporter = require_text("Exporter", exporter_name or exporter)
+    consignee = require_text("Consignee", consignee_name or consignee)
     saved = {}
     def add_inspection(records):
         inspection_number = next_identifier(records, "inspection_no", "IC")
@@ -616,7 +758,19 @@ def save_inspection(
         invoice_no, exporter, consignee, inspection_company,
         inspection_location, inspection_result, remarks, port_of_loading,
         port_of_discharge, transport_details, item_name, hs_code, quantity,
+        shipment_no, origin, carton, net_weight, gross_weight,
+        country_of_origin or "", destination_country or "",
         )
+        assign_item_ids(record["items"], item_id)
+        record.update({"exporter_name": exporter, "consignee_name": consignee})
+        set_submitted_snapshot_fields(record, {
+            "exporter_address": exporter_address, "exporter_email": exporter_email,
+            "exporter_phone": exporter_phone, "consignee_address": consignee_address,
+            "consignee_email": consignee_email, "country_of_origin": country_of_origin,
+            "destination_country": destination_country,
+        })
+        record = resolve_inspection_snapshot(record, account_id)
+        record["account_id"] = account_id
         records.append(record)
         saved["inspection_no"] = inspection_number
     locked_json_mutation(INSPECTION_FILE, [], add_inspection, list)
@@ -624,16 +778,17 @@ def save_inspection(
 
 
 @router.get("/edit-inspection/{inspection_no}")
-def edit_inspection(inspection_no: str):
-    for record in load_inspections():
-        if record.get("inspection_no") == inspection_no:
-            return render_form(record, f"/update-inspection/{inspection_no}", "Edit Inspection Certificate", "Update Inspection Certificate", True)
-    return HTMLResponse("Inspection Certificate Not Found", status_code=404)
+def edit_inspection(inspection_no: str, request: Request):
+    account_id = _account_id(request)
+    products = product_module.load_products(account_id)
+    record = resolve_inspection_snapshot(public_inspection(_owned_inspection(inspection_no, account_id)), account_id)
+    return render_form(record, f"/update-inspection/{inspection_no}", "Edit Inspection Certificate", "Update Inspection Certificate", True, products=products, account_id=account_id)
 
 
 @router.post("/update-inspection/{inspection_no}")
 def update_inspection(
     inspection_no: str,
+    request: Request,
     inspection_date: str = Form(""),
     bl_no: str = Form(""),
     packing_no: str = Form(""),
@@ -648,21 +803,56 @@ def update_inspection(
     port_of_discharge: str = Form(""),
     transport_details: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
+    origin: Annotated[Optional[List[str]], Form()] = None,
+    carton: Annotated[Optional[List[str]], Form()] = None,
+    net_weight: Annotated[Optional[List[str]], Form()] = None,
+    gross_weight: Annotated[Optional[List[str]], Form()] = None,
+    exporter_name: Annotated[Optional[str], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
+    country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
 ):
-    validate_inspection_links(bl_no, packing_no, invoice_no)
-    exporter = require_text("Exporter", exporter)
-    consignee = require_text("Consignee", consignee)
+    account_id = _account_id(request)
+    current = _owned_inspection(inspection_no, account_id)
+    validate_inspection_links(bl_no, packing_no, invoice_no, account_id)
+    exporter = require_text("Exporter", exporter_name or exporter)
+    consignee = require_text("Consignee", consignee_name or consignee)
     updated = build_record(
         inspection_no, inspection_date, bl_no, packing_no, invoice_no,
         exporter, consignee, inspection_company, inspection_location,
         inspection_result, remarks, port_of_loading, port_of_discharge,
         transport_details, item_name, hs_code, quantity,
+        current.get("shipment_no", ""), origin, carton, net_weight, gross_weight,
+        current.get("country_of_origin", "") if country_of_origin is None else country_of_origin,
+        current.get("destination_country", "") if destination_country is None else destination_country,
     )
+    assign_item_ids(updated["items"], item_id, current.get("items", []))
+    preserve_omitted_item_fields(
+        updated["items"], current.get("items", []),
+        [field for values, field in ((origin, "origin"), (carton, "carton"), (net_weight, "net_weight"), (gross_weight, "gross_weight")) if values is None],
+    )
+    updated.update({
+        "exporter_name": exporter,
+        "exporter_address": current.get("exporter_address", "") if exporter_address is None else exporter_address,
+        "exporter_email": current.get("exporter_email", "") if exporter_email is None else exporter_email,
+        "exporter_phone": current.get("exporter_phone", "") if exporter_phone is None else exporter_phone,
+        "consignee_name": consignee,
+        "consignee_address": current.get("consignee_address", "") if consignee_address is None else consignee_address,
+        "consignee_email": current.get("consignee_email", "") if consignee_email is None else consignee_email,
+    })
+    updated = resolve_inspection_snapshot(updated, account_id)
+    updated["account_id"] = account_id
     def replace_inspection(records):
         for index, record in enumerate(records):
-            if record.get("inspection_no") == inspection_no:
+            if record.get("inspection_no") == inspection_no and record.get("account_id") == account_id:
                 records[index] = updated
                 return
         raise HTTPException(status_code=404, detail="Inspection Certificate not found")
@@ -671,24 +861,40 @@ def update_inspection(
 
 
 @router.get("/delete-inspection/{inspection_no}")
-def delete_inspection(inspection_no: str):
-    return identifier_delete_confirmation("Inspection Certificate", "Inspection Certificate", inspection_no, INSPECTION_FILE, "inspection_no", f"/delete-inspection/{inspection_no}", "/inspection-list")
+def delete_inspection(inspection_no: str, request: Request):
+    _owned_inspection(inspection_no, _account_id(request))
+    return render_delete_page("Inspection Certificate", inspection_no, f"/delete-inspection/{inspection_no}", "/inspection-list", find_dependencies("Inspection Certificate", inspection_no, _account_id(request)))
 
 @router.post("/delete-inspection/{inspection_no}")
-def confirm_delete_inspection(inspection_no: str):
-    return confirmed_identifier_delete("Inspection Certificate", "Inspection Certificate", inspection_no, INSPECTION_FILE, "inspection_no", f"/delete-inspection/{inspection_no}", "/inspection-list", "/inspection-list")
+def confirm_delete_inspection(inspection_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_inspection(inspection_no, account_id)
+    dependencies = find_dependencies("Inspection Certificate", inspection_no, account_id)
+    if dependencies:
+        return render_delete_page("Inspection Certificate", inspection_no, f"/delete-inspection/{inspection_no}", "/inspection-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((index for index, record in enumerate(records)
+                      if isinstance(record, dict) and record.get("inspection_no") == inspection_no
+                      and record.get("account_id") == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Inspection Certificate not found")
+        records.pop(index)
+    locked_json_mutation(INSPECTION_FILE, [], remove, list)
+    return RedirectResponse("/inspection-list", status_code=303)
 
 
 @router.get("/inspection-data/{inspection_no}")
-def inspection_data(inspection_no: str):
-    for record in load_inspections():
-        if record.get("inspection_no") == inspection_no:
-            return record
-    raise HTTPException(status_code=404, detail="Inspection Certificate not found")
+def inspection_data(inspection_no: str, request: Request):
+    account_id = _account_id(request)
+    return resolve_inspection_snapshot(public_inspection(_owned_inspection(inspection_no, account_id)), account_id)
 
 
 @router.post("/inspection/pdf")
-def create_inspection_pdf(payload: dict = Body(...)):
+def create_inspection_pdf(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    validate_inspection_links(payload.get("bl_no", ""), payload.get("packing_no", ""), payload.get("invoice_no", ""), account_id)
+    payload = public_inspection(payload)
+    payload = resolve_inspection_snapshot(payload, account_id)
     inspection_no = payload.get("inspection_no") or "-"
     inspection_date = payload.get("inspection_date") or datetime.now().strftime("%Y-%m-%d")
     bl_no = payload.get("bl_no", "")
@@ -696,6 +902,10 @@ def create_inspection_pdf(payload: dict = Body(...)):
     invoice_no = payload.get("invoice_no", "")
     exporter = payload.get("exporter", "")
     consignee = payload.get("consignee", "")
+    exporter_address = payload.get("exporter_address", "")
+    exporter_contact = " / ".join(value for value in (payload.get("exporter_email", ""), payload.get("exporter_phone", "")) if value)
+    consignee_address = payload.get("consignee_address", "")
+    consignee_email = payload.get("consignee_email", "")
     inspection_company = payload.get("inspection_company", "")
     inspection_location = payload.get("inspection_location", "")
     inspection_result = payload.get("inspection_result", "")
@@ -756,6 +966,10 @@ def create_inspection_pdf(payload: dict = Body(...)):
         pdf.setFont("Helvetica", 8)
         pdf.drawString(60, height - 230, fit_text(exporter, 195))
         pdf.drawString(325, height - 230, fit_text(consignee, 195))
+        pdf.drawString(60, height - 242, fit_text(exporter_address, 195, font_size=7))
+        pdf.drawString(60, height - 252, fit_text(exporter_contact, 195, font_size=7))
+        pdf.drawString(325, height - 242, fit_text(consignee_address, 195, font_size=7))
+        pdf.drawString(325, height - 252, fit_text(consignee_email, 195, font_size=7))
 
         pdf.setFillColor(colors.black)
         pdf.setFont("Helvetica-Bold", 8)
@@ -804,7 +1018,12 @@ def create_inspection_pdf(payload: dict = Body(...)):
         pdf.drawString(52, y + 9, str(index))
         pdf.drawString(82, y + 9, fit_text(item.get("name", ""), 165))
         pdf.drawString(270, y + 9, str(item.get("hs_code", "")))
-        pdf.drawRightString(540, y + 9, str(item.get("quantity", "")))
+        cargo_detail = " / ".join(part for part in (
+            str(item.get("quantity", "")), str(item.get("origin", "")),
+            f"C:{item.get('carton', '')}", f"N:{item.get('net_weight', '')}",
+            f"G:{item.get('gross_weight', '')}",
+        ) if part and not part.endswith(":"))
+        pdf.drawRightString(540, y + 9, fit_text(cargo_detail, 190))
         y -= row_h
 
     result_top = y - result_gap
@@ -837,8 +1056,8 @@ def create_inspection_pdf(payload: dict = Body(...)):
 
 
 @router.get("/inspection-pdf/{inspection_no}")
-def inspection_pdf(inspection_no: str):
-    for record in load_inspections():
-        if record.get("inspection_no") == inspection_no:
-            return create_inspection_pdf(record)
-    return {"error": "Inspection Certificate not found"}
+def inspection_pdf(inspection_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_inspection_snapshot(public_inspection(_owned_inspection(inspection_no, account_id)), account_id)
+    set_pdf_export_record(request, record)
+    return create_inspection_pdf(request, record)

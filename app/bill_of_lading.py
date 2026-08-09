@@ -17,6 +17,7 @@ from app.storage import atomic_write_json, data_path, load_json_strict, locked_j
 from app.validation import require_consistent_reference, require_existing_reference, require_text
 from app.referential_integrity import find_dependencies, render_delete_page
 from app.account_bill_of_lading import ensure_legacy_bill_of_lading_ownership, public_bill_of_lading
+from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, snapshot_value
 from app.account_company import load_account_company
 from app.export import set_pdf_export_record
 from app.auth import USERS_FILE
@@ -141,6 +142,7 @@ def build_item_rows(items):
     for item in items:
         rows += f"""
 <div class="item-row">
+<input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
 <input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item Name">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity" oninput="calculateTotals()">
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
@@ -180,6 +182,7 @@ def blank_payload():
 
 def resolve_party_snapshot(payload, account_id, packing=None, invoice=None):
     resolved = dict(payload or {})
+    preserve_empty = bool(resolved.get("bl_no"))
     packing_no = str(resolved.get("packing_no", "") or "").strip()
     invoice_no = str(resolved.get("invoice_no", "") or "").strip()
 
@@ -190,7 +193,7 @@ def resolve_party_snapshot(payload, account_id, packing=None, invoice=None):
             {},
         )
     packing = packing or {}
-    invoice_no = invoice_no or str(packing.get("invoice_no", "") or "").strip()
+    invoice_no = str(snapshot_value(resolved, "invoice_no", (packing.get("invoice_no", ""),), preserve_empty=preserve_empty) or "").strip()
     if invoice is None and invoice_no:
         invoice = next(
             (record for record in invoice_module.load_invoices(account_id)
@@ -220,9 +223,7 @@ def resolve_party_snapshot(payload, account_id, packing=None, invoice=None):
         "consignee_address": (packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
         "consignee_email": (packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
     }
-    for field, candidates in fallbacks.items():
-        if not resolved.get(field):
-            resolved[field] = next((value for value in candidates if value), "")
+    fill_missing_snapshot_fields(resolved, fallbacks, preserve_empty=preserve_empty)
     resolved["invoice_no"] = invoice_no
     return resolved
 
@@ -461,6 +462,7 @@ def save_bl(
     place_of_delivery: str = Form(""),
     bl_date: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     quantity: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     carton: List[str] = Form([]),
@@ -489,6 +491,7 @@ def save_bl(
         net_weight, gross_weight, total_carton, total_net_weight,
         total_gross_weight,
         )
+        assign_item_ids(record["items"], item_id)
         record.update({
             "shipper_address": shipper_address or "",
             "shipper_email": shipper_email or "",
@@ -527,6 +530,7 @@ def update_bl(
     place_of_delivery: str = Form(""),
     bl_date: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     quantity: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     carton: List[str] = Form([]),
@@ -553,6 +557,7 @@ def update_bl(
         net_weight, gross_weight, total_carton, total_net_weight,
         total_gross_weight,
     )
+    assign_item_ids(updated["items"], item_id, current.get("items", []))
     updated.update({
         "shipper_address": current.get("shipper_address", "") if shipper_address is None else shipper_address,
         "shipper_email": current.get("shipper_email", "") if shipper_email is None else shipper_email,
@@ -597,7 +602,9 @@ def confirm_delete_bl(bl_no: str, request: Request):
 
 @router.get("/bl-data/{bl_no}")
 def bl_data(bl_no: str, request: Request):
-    return public_bill_of_lading(_owned_bl(bl_no, _account_id(request)))
+    account_id = _account_id(request)
+    record = public_bill_of_lading(_owned_bl(bl_no, account_id))
+    return resolve_party_snapshot(record, account_id)
 
 
 @router.post("/bl/pdf")

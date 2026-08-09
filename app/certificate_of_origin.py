@@ -18,6 +18,7 @@ from app.storage import atomic_write_json, data_path, load_json_strict, locked_j
 from app.validation import require_consistent_reference, require_existing_reference, require_text
 from app.referential_integrity import find_dependencies, render_delete_page
 from app.account_certificate_of_origin import ensure_legacy_certificate_of_origin_ownership, public_certificate_of_origin
+from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, find_by_identifier, preserve_omitted_item_fields, resolve_source_chain, set_submitted_snapshot_fields
 from app.export import set_pdf_export_record
 from app.auth import USERS_FILE
 from app.shipment import shipment_context_redirect_url
@@ -58,8 +59,9 @@ def load_certificates(account_id):
 
 def _owned_certificate(co_no, account_id):
     target = str(co_no or "").strip()
-    record = next((record for record in owned_certificate_records(account_id)
-                   if str(record.get("co_no", "") or "").strip() == target), None)
+    record = find_by_identifier(
+        owned_certificate_records(account_id), "co_no", target, normalize=True,
+    )
     if record is None:
         raise HTTPException(status_code=404, detail="Certificate of Origin not found")
     return record
@@ -169,6 +171,7 @@ def build_item_rows(items):
     for item in items:
         rows += f"""
 <div class="item-row">
+<input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
 <input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item Name">
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
@@ -201,35 +204,20 @@ def blank_payload():
     }
 
 
-def _first_record(records, field, value):
-    target = str(value or "").strip()
-    return next((row for row in records if str(row.get(field, "") or "").strip() == target), {}) if target else {}
-
-
 def resolve_co_snapshot(record, account_id, shipment=None, bill=None, packing=None, invoice=None, products=None):
     """Resolve a read-only C/O snapshot from account-owned sources, highest priority first."""
-    resolved = deepcopy(record or {})
-    shipment_no = str(resolved.get("shipment_no", "") or "").strip()
-    if shipment is None and shipment_no:
-        shipment = _first_record(shipment_module.load_shipments(account_id), "shipment_no", shipment_no)
-    shipment = shipment or {}
-    bl_no = str(resolved.get("bl_no") or shipment.get("bl_no") or "").strip()
-    if bill is None:
-        bill = _first_record(load_bills_of_lading(account_id), "bl_no", bl_no)
-    bill = bill or {}
-    packing_no = str(resolved.get("packing_no") or shipment.get("packing_no") or bill.get("packing_no") or "").strip()
-    if packing is None:
-        packing = _first_record(packing_module.load_packing_lists(account_id), "packing_no", packing_no)
-    packing = packing or {}
-    invoice_no = str(resolved.get("invoice_no") or shipment.get("invoice_no") or bill.get("invoice_no") or packing.get("invoice_no") or "").strip()
-    if invoice is None:
-        invoice = _first_record(invoice_module.load_invoices(account_id), "invoice_no", invoice_no)
-    invoice = invoice or {}
-    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
-    consignee_name = (resolved.get("consignee_name") or resolved.get("consignee") or shipment.get("consignee")
-                       or bill.get("consignee") or packing.get("buyer") or invoice.get("buyer") or "")
-    buyer = next((row for row in buyer_module.load_buyers(account_id)
-                  if str(row.get("name", "") or "").strip().casefold() == str(consignee_name).strip().casefold()), {})
+    context = resolve_source_chain(
+        record, account_id, document_id_field="co_no",
+        load_shipments=shipment_module.load_shipments, load_bills=load_bills_of_lading,
+        load_packings=packing_module.load_packing_lists, load_invoices=invoice_module.load_invoices,
+        load_company=lambda owner: load_account_company(owner, ACCOUNT_COMPANIES_FILE),
+        load_buyers=buyer_module.load_buyers, shipment=shipment, bill=bill,
+        packing=packing, invoice=invoice,
+    )
+    resolved, preserve_empty = context.resolved, context.preserve_empty
+    shipment, bill, packing, invoice = context.shipment, context.bill, context.packing, context.invoice
+    company, buyer = context.company, context.buyer
+    shipment_no, bl_no, packing_no, invoice_no = context.shipment_no, context.bl_no, context.packing_no, context.invoice_no
     sources = {
         "exporter_name": (shipment.get("shipper"), bill.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
         "exporter_address": (shipment.get("shipper_address"), bill.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
@@ -239,21 +227,19 @@ def resolve_co_snapshot(record, account_id, shipment=None, bill=None, packing=No
         "consignee_address": (shipment.get("consignee_address"), bill.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
         "consignee_email": (shipment.get("consignee_email"), bill.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
     }
-    for field, candidates in sources.items():
-        if not resolved.get(field):
-            resolved[field] = next((value for value in candidates if value), "")
-    resolved["exporter"] = resolved.get("exporter_name") or resolved.get("exporter", "")
-    resolved["consignee"] = resolved.get("consignee_name") or resolved.get("consignee", "")
-    if not resolved.get("items"):
+    fill_missing_snapshot_fields(resolved, sources, preserve_empty=preserve_empty)
+    resolved["exporter"] = resolved.get("exporter_name", resolved.get("exporter", ""))
+    resolved["consignee"] = resolved.get("consignee_name", resolved.get("consignee", ""))
+    if "items" not in resolved or (not preserve_empty and not resolved["items"]):
         resolved["items"] = deepcopy(shipment.get("items") or bill.get("items") or packing.get("items") or invoice.get("items") or [])
     products = product_module.load_products(account_id) if products is None else products
     for item in resolved.get("items", []):
-        if isinstance(item, dict) and not item.get("origin"):
+        if isinstance(item, dict) and ("origin" not in item or (not preserve_empty and not item["origin"])):
             item["origin"] = find_product_origin(item, products)
     origins = [item.get("origin") for item in resolved.get("items", []) if isinstance(item, dict) and item.get("origin")]
-    if not resolved.get("country_of_origin") and origins and len(set(origins)) == 1:
+    if ("country_of_origin" not in resolved or (not preserve_empty and not resolved["country_of_origin"])) and origins and len(set(origins)) == 1:
         resolved["country_of_origin"] = origins[0]
-    if not resolved.get("destination_country"):
+    if "destination_country" not in resolved or (not preserve_empty and not resolved["destination_country"]):
         resolved["destination_country"] = bill.get("place_of_delivery", "")
     resolved.update({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no})
     return resolved
@@ -743,6 +729,7 @@ def save_co(
     port_of_discharge: str = Form(""),
     remarks: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
     origin: List[str] = Form([]),
@@ -768,11 +755,12 @@ def save_co(
         port_of_loading, port_of_discharge, remarks, item_name, hs_code,
         quantity, origin, shipment_no, carton, net_weight, gross_weight,
         )
-        record.update({
-            "exporter_name": exporter, "exporter_address": exporter_address or "",
-            "exporter_email": exporter_email or "", "exporter_phone": exporter_phone or "",
-            "consignee_name": consignee, "consignee_address": consignee_address or "",
-            "consignee_email": consignee_email or "",
+        assign_item_ids(record["items"], item_id)
+        record.update({"exporter_name": exporter, "consignee_name": consignee})
+        set_submitted_snapshot_fields(record, {
+            "exporter_address": exporter_address, "exporter_email": exporter_email,
+            "exporter_phone": exporter_phone, "consignee_address": consignee_address,
+            "consignee_email": consignee_email,
         })
         record = resolve_co_snapshot(record, account_id)
         record["account_id"] = account_id
@@ -809,6 +797,7 @@ def update_co(
     port_of_discharge: str = Form(""),
     remarks: str = Form(""),
     item_name: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     hs_code: List[str] = Form([]),
     quantity: List[str] = Form([]),
     origin: List[str] = Form([]),
@@ -832,12 +821,12 @@ def update_co(
         port_of_loading, port_of_discharge, remarks, item_name, hs_code,
         quantity, origin, current.get("shipment_no", ""), carton, net_weight, gross_weight,
     )
+    assign_item_ids(updated["items"], item_id, current.get("items", []))
     if carton is None or net_weight is None or gross_weight is None:
-        for index, item in enumerate(updated["items"]):
-            prior = current.get("items", [])[index] if index < len(current.get("items", [])) else {}
-            if carton is None: item["carton"] = prior.get("carton", "")
-            if net_weight is None: item["net_weight"] = prior.get("net_weight", "")
-            if gross_weight is None: item["gross_weight"] = prior.get("gross_weight", "")
+        preserve_omitted_item_fields(
+            updated["items"], current.get("items", []),
+            [field for values, field in ((carton, "carton"), (net_weight, "net_weight"), (gross_weight, "gross_weight")) if values is None],
+        )
     updated.update({
         "exporter_name": exporter,
         "exporter_address": current.get("exporter_address", "") if exporter_address is None else exporter_address,

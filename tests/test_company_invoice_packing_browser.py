@@ -289,7 +289,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert stored_packing["seller_phone"] == company_phone
             assert stored_packing["buyer_address"] == buyer_address
             assert stored_packing["buyer_email"] == buyer_email
-            assert stored_packing["items"] == [{
+            assert [{key: value for key, value in item.items() if key != "item_id"}
+                    for item in stored_packing["items"]] == [{
                 "name": product_name,
                 "quantity": 4,
                 "hs_code": "847130",
@@ -297,6 +298,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
                 "net_weight": "40",
                 "gross_weight": "44",
             }]
+            assert stored_packing["items"][0]["item_id"].startswith("ITEM-")
 
             # Packing -> B/L copies and persists the complete party snapshot.
             page.goto(f"{base_url}/bl-form?packing_no={packing_no}")
@@ -331,6 +333,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             stored_bill = next(record for record in stored_bills if record.get("bl_no") == bl_no)
             for field, expected in expected_bl_party.items():
                 assert stored_bill[field] == expected
+            assert stored_bill["items"][0]["item_id"] == stored_packing["items"][0]["item_id"]
 
             # B/L -> Shipment copies and preserves party and cargo snapshots.
             page.goto(f"{base_url}/shipment-form?bl_no={bl_no}")

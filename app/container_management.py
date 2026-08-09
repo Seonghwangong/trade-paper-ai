@@ -1,11 +1,12 @@
-from typing import List
+from typing import Annotated, List, Optional
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
 import json
 
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -15,7 +16,18 @@ router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_at_least_one_reference, require_consistent_reference, require_existing_reference, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_container import ensure_legacy_container_ownership, public_container
+from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, set_submitted_snapshot_fields, snapshot_value
+from app.export import set_pdf_export_record
+from app.auth import USERS_FILE
+from app import packing as packing_module
+from app import invoice as invoice_module
+from app import bill_of_lading as bill_of_lading_module
+from app import shipping_instruction as shipping_instruction_module
+from app import buyer as buyer_module
+from app.account_company import load_account_company
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 
 CONTAINER_FILE = data_path("containers.json")
 SHIPMENT_FILE = data_path("shipments.json")
@@ -36,37 +48,72 @@ def load_json(path, default):
     return load_json_strict(path, default, type(default) if isinstance(default, (list, dict)) else None)
 
 
-def load_containers():
-    return load_json(CONTAINER_FILE, [])
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_container_records():
+    return ensure_legacy_container_ownership(CONTAINER_FILE, USERS_FILE)
+
+
+def owned_container_records(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        record for record in load_container_records()
+        if isinstance(record, dict)
+        and str(record.get("account_id", "") or "").strip() == owner
+    ]
+
+
+def load_containers(account_id):
+    return [public_container(record) for record in owned_container_records(account_id)]
+
+
+def _owned_container(container_record_no, account_id):
+    target = str(container_record_no or "").strip()
+    record = next(
+        (record for record in owned_container_records(account_id)
+         if str(record.get("container_record_no", "") or "").strip() == target),
+        None,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Container record not found")
+    return record
 
 
 def save_containers(records):
     atomic_write_json(CONTAINER_FILE, records, list)
 
 
-def load_shipments():
-    return load_json(SHIPMENT_FILE, [])
+def load_shipments(account_id):
+    from app import shipment as shipment_module
+    return shipment_module.load_shipments(account_id)
 
 
-def load_packing_lists():
-    return load_json(PACKING_FILE, [])
+def load_packing_lists(account_id):
+    return packing_module.load_packing_lists(account_id)
 
 
-def load_bills_of_lading():
-    return load_json(BL_FILE, [])
+def load_bills_of_lading(account_id):
+    return bill_of_lading_module.load_bills_of_lading(account_id)
 
 
-def validate_container_links(shipment_no, packing_no, invoice_no, bl_no):
-    shipments = load_shipments()
-    packings = load_packing_lists()
+def load_shipping_instructions(account_id):
+    return shipping_instruction_module.load_shipping_instructions(account_id)
+
+
+def validate_container_links(shipment_no, packing_no, invoice_no, bl_no, account_id):
+    shipments = load_shipments(account_id)
+    packings = load_packing_lists(account_id)
     require_at_least_one_reference(
         ("Shipment", shipment_no, shipments, "shipment_no"),
         ("Packing List", packing_no, packings, "packing_no"),
     )
     shipment = require_existing_reference("Shipment", shipment_no, shipments, "shipment_no")
     packing = require_existing_reference("Packing List", packing_no, packings, "packing_no")
-    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(), "bl_no")
-    require_existing_reference("Invoice", invoice_no, load_json(INVOICE_FILE, []), "invoice_no")
+    bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(account_id), "bl_no")
+    require_existing_reference("Invoice", invoice_no, invoice_module.load_invoices(account_id), "invoice_no")
     if shipment:
         require_consistent_reference("Packing List", packing_no, shipment.get("packing_no", ""), "selected Shipment")
         require_consistent_reference("Invoice", invoice_no, shipment.get("invoice_no", ""), "selected Shipment")
@@ -114,16 +161,16 @@ def find_record(records, key, value):
     return None
 
 
-def shipment_exists(shipment_no):
-    return bool(find_record(load_shipments(), "shipment_no", shipment_no))
+def shipment_exists(shipment_no, account_id):
+    return bool(find_record(load_shipments(account_id), "shipment_no", shipment_no))
 
 
-def packing_exists(packing_no):
-    return bool(find_record(load_packing_lists(), "packing_no", packing_no))
+def packing_exists(packing_no, account_id):
+    return bool(find_record(load_packing_lists(account_id), "packing_no", packing_no))
 
 
-def bl_exists(bl_no):
-    return bool(find_record(load_bills_of_lading(), "bl_no", bl_no))
+def bl_exists(bl_no, account_id):
+    return bool(find_record(load_bills_of_lading(account_id), "bl_no", bl_no))
 
 
 def doc_options(records, key):
@@ -149,7 +196,17 @@ def blank_payload():
         "packing_no": "",
         "bl_no": "",
         "invoice_no": "",
+        "booking_no": "",
         "container_no": "",
+        "exporter_name": "",
+        "exporter_address": "",
+        "exporter_email": "",
+        "exporter_phone": "",
+        "consignee_name": "",
+        "consignee_address": "",
+        "consignee_email": "",
+        "country_of_origin": "",
+        "destination_country": "",
         "seal_no": "",
         "container_type": "",
         "carrier": "",
@@ -169,8 +226,94 @@ def blank_payload():
     }
 
 
-def copy_packing_payload(payload, packing_no):
-    packing = find_record(load_packing_lists(), "packing_no", packing_no)
+def resolve_container_snapshot(record, account_id, shipment=None, instruction=None, packing=None, invoice=None, preserve_empty=None):
+    """Resolve a read-only Container snapshot from account-owned upstream records."""
+    resolved = deepcopy(record or {})
+    if preserve_empty is None:
+        preserve_empty = bool(resolved.get("container_record_no"))
+
+    shipment_no = str(resolved.get("shipment_no", "") or "").strip()
+    if shipment is None:
+        shipment = find_record(load_shipments(account_id), "shipment_no", shipment_no)
+    shipment = shipment or {}
+
+    si_no = str(shipment.get("si_no", "") or "").strip()
+    if instruction is None:
+        instruction = (
+            find_record(load_shipping_instructions(account_id), "si_no", si_no)
+            if si_no else None
+        )
+    instruction = instruction or {}
+
+    packing_no = str(snapshot_value(
+        resolved, "packing_no",
+        (shipment.get("packing_no"), instruction.get("packing_no")),
+        preserve_empty=preserve_empty,
+    ) or "").strip()
+    if packing is None:
+        packing = find_record(load_packing_lists(account_id), "packing_no", packing_no)
+    packing = packing or {}
+
+    invoice_no = str(snapshot_value(
+        resolved, "invoice_no",
+        (shipment.get("invoice_no"), instruction.get("invoice_no"), packing.get("invoice_no")),
+        preserve_empty=preserve_empty,
+    ) or "").strip()
+    if invoice is None:
+        invoice = find_record(invoice_module.load_invoices(account_id), "invoice_no", invoice_no)
+    invoice = invoice or {}
+
+    company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    consignee_lookup = (
+        resolved.get("consignee_name") or shipment.get("consignee")
+        or instruction.get("consignee_name") or instruction.get("consignee")
+        or packing.get("buyer") or invoice.get("buyer") or ""
+    )
+    buyer = next(
+        (candidate for candidate in buyer_module.load_buyers(account_id)
+         if str(candidate.get("name", "") or "").strip().casefold()
+         == str(consignee_lookup or "").strip().casefold()),
+        {},
+    )
+    fallbacks = {
+        "exporter_name": (shipment.get("shipper"), instruction.get("exporter_name"), instruction.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "exporter_address": (shipment.get("shipper_address"), instruction.get("exporter_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "exporter_email": (shipment.get("shipper_email"), instruction.get("exporter_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "exporter_phone": (shipment.get("shipper_phone"), instruction.get("exporter_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee_name": (shipment.get("consignee"), instruction.get("consignee_name"), instruction.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (shipment.get("consignee_address"), instruction.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (shipment.get("consignee_email"), instruction.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+        "booking_no": (shipment.get("booking_no"), instruction.get("booking_no"), packing.get("booking_no"), invoice.get("booking_no")),
+        "country_of_origin": (shipment.get("country_of_origin"), shipment.get("origin_country"), instruction.get("country_of_origin"), packing.get("country_of_origin"), invoice.get("country_of_origin"), company.get("country")),
+        "destination_country": (shipment.get("destination_country"), instruction.get("destination_country"), packing.get("destination_country"), invoice.get("destination_country"), buyer.get("country")),
+    }
+    fill_missing_snapshot_fields(resolved, fallbacks, preserve_empty=preserve_empty)
+
+    if "items" not in resolved or (not preserve_empty and not resolved["items"]):
+        resolved["items"] = deepcopy(
+            shipment.get("items") or instruction.get("items")
+            or packing.get("items") or invoice.get("items") or []
+        )
+    for total, item_field in (
+        ("total_carton", "carton"),
+        ("total_net_weight", "net_weight"),
+        ("total_gross_weight", "gross_weight"),
+    ):
+        if total not in resolved or (not preserve_empty and not resolved[total]):
+            resolved[total] = (
+                shipment.get(total) or instruction.get(total) or packing.get(total)
+                or format_number(numeric_total(resolved.get("items", []), item_field))
+            )
+    resolved.update({
+        "shipment_no": shipment_no,
+        "packing_no": packing_no,
+        "invoice_no": invoice_no,
+    })
+    return resolved
+
+
+def copy_packing_payload(payload, packing_no, account_id):
+    packing = find_record(load_packing_lists(account_id), "packing_no", packing_no)
     if not packing:
         return payload
     items = packing.get("items", [])
@@ -185,8 +328,8 @@ def copy_packing_payload(payload, packing_no):
     return payload
 
 
-def copy_bl_payload(payload, bl_no):
-    bill = find_record(load_bills_of_lading(), "bl_no", bl_no)
+def copy_bl_payload(payload, bl_no, account_id):
+    bill = find_record(load_bills_of_lading(account_id), "bl_no", bl_no)
     if not bill:
         return payload
     payload.update({
@@ -210,14 +353,14 @@ def copy_bl_payload(payload, bl_no):
     return payload
 
 
-def payload_from_sources(shipment_no="", packing_no="", bl_no=""):
+def payload_from_sources(shipment_no="", packing_no="", bl_no="", account_id=""):
     payload = blank_payload()
-    if shipment_no and shipment_exists(shipment_no):
+    if shipment_no and shipment_exists(shipment_no, account_id):
         payload["shipment_no"] = shipment_no
     if packing_no:
-        payload = copy_packing_payload(payload, packing_no)
+        payload = copy_packing_payload(payload, packing_no, account_id)
     if bl_no:
-        payload = copy_bl_payload(payload, bl_no)
+        payload = copy_bl_payload(payload, bl_no, account_id)
     return payload
 
 
@@ -285,6 +428,7 @@ def build_item_rows(items):
     for item in items:
         rows += f"""
 <div class="item-row">
+<input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
 <input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item">
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
@@ -297,14 +441,14 @@ def build_item_rows(items):
     return rows
 
 
-def render_form(record, action, title, button_text, show_no=False):
+def render_form(record, action, title, button_text, show_no=False, account_id=""):
     rows = build_item_rows(record.get("items", []))
     no_input = ""
     if show_no:
         no_input = f'<div class="field"><label>Container Record No</label><input type="text" name="container_record_no" value="{html_attr(record.get("container_record_no", ""))}" placeholder="Container Record No" readonly></div>'
-    shipment_select = select_html("shipment_no", record.get("shipment_no", ""), doc_options(load_shipments(), "shipment_no"), "Select Shipment")
-    packing_select = select_html("packing_no", record.get("packing_no", ""), doc_options(load_packing_lists(), "packing_no"), "Select Packing List")
-    bl_select = select_html("bl_no", record.get("bl_no", ""), doc_options(load_bills_of_lading(), "bl_no"), "Select B/L")
+    shipment_select = select_html("shipment_no", record.get("shipment_no", ""), doc_options(load_shipments(account_id), "shipment_no"), "Select Shipment")
+    packing_select = select_html("packing_no", record.get("packing_no", ""), doc_options(load_packing_lists(account_id), "packing_no"), "Select Packing List")
+    bl_select = select_html("bl_no", record.get("bl_no", ""), doc_options(load_bills_of_lading(account_id), "bl_no"), "Select B/L")
 
     html = """
 <!DOCTYPE html>
@@ -356,6 +500,22 @@ __NO_INPUT__
 <div class="field"><label>Packing List</label>__PACKING_SELECT__</div>
 <div class="field"><label>Bill of Lading</label>__BL_SELECT__</div>
 <div class="field"><label>Invoice No</label><input type="text" name="invoice_no" value="__INVOICE_NO__" placeholder="Invoice No"></div>
+<div class="field"><label>Booking No</label><input type="text" name="booking_no" value="__BOOKING_NO__" placeholder="Booking No"></div>
+</div>
+</div>
+
+<div class="card">
+<h2>Exporter / Consignee Snapshot</h2>
+<div class="grid">
+<div><label>Exporter</label><input type="text" name="exporter_name" value="__EXPORTER_NAME__" placeholder="Exporter Name"></div>
+<div><label>Exporter Address</label><input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address"></div>
+<div><label>Exporter Email</label><input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email"></div>
+<div><label>Exporter Phone</label><input type="text" name="exporter_phone" value="__EXPORTER_PHONE__" placeholder="Exporter Phone"></div>
+<div><label>Consignee</label><input type="text" name="consignee_name" value="__CONSIGNEE_NAME__" placeholder="Consignee Name"></div>
+<div><label>Consignee Address</label><input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" placeholder="Consignee Address"></div>
+<div><label>Consignee Email</label><input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email"></div>
+<div><label>Country of Origin</label><input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin"></div>
+<div><label>Destination Country</label><input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country"></div>
 </div>
 </div>
 
@@ -445,6 +605,16 @@ calculateTotals();
         "__PACKING_SELECT__": packing_select,
         "__BL_SELECT__": bl_select,
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
+        "__BOOKING_NO__": html_attr(record.get("booking_no", "")),
+        "__EXPORTER_NAME__": html_attr(record.get("exporter_name", "")),
+        "__EXPORTER_ADDRESS__": html_attr(record.get("exporter_address", "")),
+        "__EXPORTER_EMAIL__": html_attr(record.get("exporter_email", "")),
+        "__EXPORTER_PHONE__": html_attr(record.get("exporter_phone", "")),
+        "__CONSIGNEE_NAME__": html_attr(record.get("consignee_name", "")),
+        "__CONSIGNEE_ADDRESS__": html_attr(record.get("consignee_address", "")),
+        "__CONSIGNEE_EMAIL__": html_attr(record.get("consignee_email", "")),
+        "__COUNTRY_OF_ORIGIN__": html_attr(record.get("country_of_origin", "")),
+        "__DESTINATION_COUNTRY__": html_attr(record.get("destination_country", "")),
         "__CONTAINER_NO__": html_attr(record.get("container_no", "")),
         "__SEAL_NO__": html_attr(record.get("seal_no", "")),
         "__CONTAINER_TYPE__": html_attr(record.get("container_type", "")),
@@ -470,8 +640,8 @@ calculateTotals();
 
 
 @router.get("/container-list", response_class=HTMLResponse)
-def container_list(search: str = ""):
-    records = sorted(load_containers(), key=lambda r: r.get("container_record_no", ""), reverse=True)
+def container_list(request: Request, search: str = ""):
+    records = sorted(load_containers(_account_id(request)), key=lambda r: r.get("container_record_no", ""), reverse=True)
     if search:
         term = search.lower()
         records = [
@@ -522,14 +692,17 @@ th{{background:#111827;color:white;text-align:left;padding:14px;font-size:14px;}
 
 
 @router.get("/container-form", response_class=HTMLResponse)
-def container_form(shipment_no: str = "", packing_no: str = "", bl_no: str = ""):
-    record = payload_from_sources(shipment_no, packing_no, bl_no)
-    record["container_record_no"] = next_container_record_no(load_containers())
-    return render_form(record, "/container", "New Container Load Plan", "Save Container Record", show_no=True)
+def container_form(request: Request, shipment_no: str = "", packing_no: str = "", bl_no: str = ""):
+    account_id = _account_id(request)
+    record = payload_from_sources(shipment_no, packing_no, bl_no, account_id)
+    record["container_record_no"] = next_container_record_no(load_container_records())
+    record = resolve_container_snapshot(record, account_id, preserve_empty=False)
+    return render_form(record, "/container", "New Container Load Plan", "Save Container Record", show_no=True, account_id=account_id)
 
 
 @router.post("/container")
 def save_container(
+    request: Request,
     container_date: str = Form(""), shipment_no: str = Form(""), packing_no: str = Form(""),
     bl_no: str = Form(""), invoice_no: str = Form(""), container_no: str = Form(""),
     seal_no: str = Form(""), container_type: str = Form(""), carrier: str = Form(""),
@@ -537,11 +710,23 @@ def save_container(
     port_of_loading: str = Form(""), port_of_discharge: str = Form(""),
     place_of_delivery: str = Form(""), loading_place: str = Form(""), remarks: str = Form(""),
     item_name: List[str] = Form([]), hs_code: List[str] = Form([]), quantity: List[str] = Form([]),
+    item_id: List[str] = Form([]),
     carton: List[str] = Form([]), net_weight: List[str] = Form([]), gross_weight: List[str] = Form([]),
     total_carton: str = Form(""), total_net_weight: str = Form(""), total_gross_weight: str = Form(""),
+    booking_no: Annotated[Optional[str], Form()] = None,
+    exporter_name: Annotated[Optional[str], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
+    country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
 ):
     container_no = require_text("Container number", container_no)
-    validate_container_links(shipment_no, packing_no, invoice_no, bl_no)
+    account_id = _account_id(request)
+    validate_container_links(shipment_no, packing_no, invoice_no, bl_no, account_id)
     def add_container(records):
         record = build_record(
         next_identifier(records, "container_record_no", "CON"), container_date, shipment_no, packing_no, bl_no,
@@ -550,45 +735,119 @@ def save_container(
         remarks, item_name, hs_code, quantity, carton, net_weight, gross_weight,
         total_carton, total_net_weight, total_gross_weight,
         )
+        assign_item_ids(record["items"], item_id)
+        set_submitted_snapshot_fields(record, {
+            "booking_no": booking_no,
+            "exporter_name": exporter_name,
+            "exporter_address": exporter_address,
+            "exporter_email": exporter_email,
+            "exporter_phone": exporter_phone,
+            "consignee_name": consignee_name,
+            "consignee_address": consignee_address,
+            "consignee_email": consignee_email,
+            "country_of_origin": country_of_origin,
+            "destination_country": destination_country,
+        })
+        record = resolve_container_snapshot(record, account_id)
+        record["account_id"] = account_id
         records.append(record)
     locked_json_mutation(CONTAINER_FILE, [], add_container, list)
     return RedirectResponse("/container-list", status_code=303)
 
 
 @router.get("/edit-container/{container_record_no}", response_class=HTMLResponse)
-def edit_container(container_record_no: str):
-    record = find_record(load_containers(), "container_record_no", container_record_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Container record not found")
-    return render_form(record, f"/update-container/{html_attr(container_record_no)}", "Edit Container Load Plan", "Update Container Record", show_no=True)
+def edit_container(container_record_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_container_snapshot(
+        public_container(_owned_container(container_record_no, account_id)), account_id,
+    )
+    return render_form(record, f"/update-container/{html_attr(container_record_no)}", "Edit Container Load Plan", "Update Container Record", show_no=True, account_id=account_id)
 
 
 @router.post("/update-container/{container_record_no}")
 def update_container(
     container_record_no: str,
+    request: Request,
     container_date: str = Form(""), shipment_no: str = Form(""), packing_no: str = Form(""),
     bl_no: str = Form(""), invoice_no: str = Form(""), container_no: str = Form(""),
     seal_no: str = Form(""), container_type: str = Form(""), carrier: str = Form(""),
     vessel: str = Form(""), voyage_no: str = Form(""), etd: str = Form(""), eta: str = Form(""),
     port_of_loading: str = Form(""), port_of_discharge: str = Form(""),
     place_of_delivery: str = Form(""), loading_place: str = Form(""), remarks: str = Form(""),
-    item_name: List[str] = Form([]), hs_code: List[str] = Form([]), quantity: List[str] = Form([]),
-    carton: List[str] = Form([]), net_weight: List[str] = Form([]), gross_weight: List[str] = Form([]),
-    total_carton: str = Form(""), total_net_weight: str = Form(""), total_gross_weight: str = Form(""),
+    item_name: Annotated[Optional[List[str]], Form()] = None,
+    item_id: Annotated[Optional[List[str]], Form()] = None,
+    hs_code: Annotated[Optional[List[str]], Form()] = None,
+    quantity: Annotated[Optional[List[str]], Form()] = None,
+    carton: Annotated[Optional[List[str]], Form()] = None,
+    net_weight: Annotated[Optional[List[str]], Form()] = None,
+    gross_weight: Annotated[Optional[List[str]], Form()] = None,
+    total_carton: Annotated[Optional[str], Form()] = None,
+    total_net_weight: Annotated[Optional[str], Form()] = None,
+    total_gross_weight: Annotated[Optional[str], Form()] = None,
+    booking_no: Annotated[Optional[str], Form()] = None,
+    exporter_name: Annotated[Optional[str], Form()] = None,
+    exporter_address: Annotated[Optional[str], Form()] = None,
+    exporter_email: Annotated[Optional[str], Form()] = None,
+    exporter_phone: Annotated[Optional[str], Form()] = None,
+    consignee_name: Annotated[Optional[str], Form()] = None,
+    consignee_address: Annotated[Optional[str], Form()] = None,
+    consignee_email: Annotated[Optional[str], Form()] = None,
+    country_of_origin: Annotated[Optional[str], Form()] = None,
+    destination_country: Annotated[Optional[str], Form()] = None,
 ):
     container_no = require_text("Container number", container_no)
-    validate_container_links(shipment_no, packing_no, invoice_no, bl_no)
+    account_id = _account_id(request)
+    current = public_container(_owned_container(container_record_no, account_id))
+    validate_container_links(shipment_no, packing_no, invoice_no, bl_no, account_id)
+    current_items = current.get("items", [])
+
+    def item_values(field, submitted):
+        if submitted is not None:
+            return submitted
+        return [item.get(field, "") for item in current_items if isinstance(item, dict)]
+
+    item_name = item_values("name", item_name)
+    hs_code = item_values("hs_code", hs_code)
+    quantity = item_values("quantity", quantity)
+    carton = item_values("carton", carton)
+    net_weight = item_values("net_weight", net_weight)
+    gross_weight = item_values("gross_weight", gross_weight)
+    total_carton = current.get("total_carton", "") if total_carton is None else total_carton
+    total_net_weight = current.get("total_net_weight", "") if total_net_weight is None else total_net_weight
+    total_gross_weight = current.get("total_gross_weight", "") if total_gross_weight is None else total_gross_weight
     def replace_container(records):
         for index, record in enumerate(records):
-            if record.get("container_record_no") != container_record_no:
+            if (record.get("container_record_no") != container_record_no
+                    or str(record.get("account_id", "") or "").strip() != account_id):
                 continue
-            records[index] = build_record(
+            updated = build_record(
                 container_record_no, container_date, shipment_no, packing_no, bl_no,
                 invoice_no, container_no, seal_no, container_type, carrier, vessel,
                 voyage_no, etd, eta, port_of_loading, port_of_discharge, place_of_delivery,
                 loading_place, remarks, item_name, hs_code, quantity, carton, net_weight,
                 gross_weight, total_carton, total_net_weight, total_gross_weight,
             )
+            assign_item_ids(updated["items"], item_id, current_items)
+            submitted_snapshot = {
+                "booking_no": booking_no,
+                "exporter_name": exporter_name,
+                "exporter_address": exporter_address,
+                "exporter_email": exporter_email,
+                "exporter_phone": exporter_phone,
+                "consignee_name": consignee_name,
+                "consignee_address": consignee_address,
+                "consignee_email": consignee_email,
+                "country_of_origin": country_of_origin,
+                "destination_country": destination_country,
+            }
+            for field, value in submitted_snapshot.items():
+                if value is not None:
+                    updated[field] = value
+                elif field in current:
+                    updated[field] = deepcopy(current[field])
+            updated = resolve_container_snapshot(updated, account_id)
+            updated["account_id"] = account_id
+            records[index] = updated
             return
         raise HTTPException(status_code=404, detail="Container record not found")
     locked_json_mutation(CONTAINER_FILE, [], replace_container, list)
@@ -596,20 +855,35 @@ def update_container(
 
 
 @router.get("/delete-container/{container_record_no}")
-def delete_container(container_record_no: str):
-    return identifier_delete_confirmation("Container Management", "Container Management", container_record_no, CONTAINER_FILE, "container_record_no", f"/delete-container/{container_record_no}", "/container-list")
+def delete_container(container_record_no: str, request: Request):
+    _owned_container(container_record_no, _account_id(request))
+    return render_delete_page("Container Management", container_record_no, f"/delete-container/{container_record_no}", "/container-list", find_dependencies("Container Management", container_record_no, _account_id(request)))
 
 @router.post("/delete-container/{container_record_no}")
-def confirm_delete_container(container_record_no: str):
-    return confirmed_identifier_delete("Container Management", "Container Management", container_record_no, CONTAINER_FILE, "container_record_no", f"/delete-container/{container_record_no}", "/container-list", "/container-list")
+def confirm_delete_container(container_record_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_container(container_record_no, account_id)
+    dependencies = find_dependencies("Container Management", container_record_no, account_id)
+    if dependencies:
+        return render_delete_page("Container Management", container_record_no, f"/delete-container/{container_record_no}", "/container-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((index for index, record in enumerate(records)
+                      if isinstance(record, dict)
+                      and str(record.get("container_record_no", "") or "").strip() == container_record_no
+                      and str(record.get("account_id", "") or "").strip() == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Container record not found")
+        records.pop(index)
+    locked_json_mutation(CONTAINER_FILE, [], remove, list)
+    return RedirectResponse("/container-list", status_code=303)
 
 
 @router.get("/container-data/{container_record_no}")
-def container_data(container_record_no: str):
-    record = find_record(load_containers(), "container_record_no", container_record_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Container record not found")
-    return record
+def container_data(container_record_no: str, request: Request):
+    account_id = _account_id(request)
+    return resolve_container_snapshot(
+        public_container(_owned_container(container_record_no, account_id)), account_id,
+    )
 
 
 def status_card(label, value, exists, pdf="", edit="", detail=""):
@@ -626,10 +900,11 @@ def status_card(label, value, exists, pdf="", edit="", detail=""):
 
 
 @router.get("/container/{container_record_no}", response_class=HTMLResponse)
-def container_detail(container_record_no: str):
-    record = find_record(load_containers(), "container_record_no", container_record_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Container record not found")
+def container_detail(container_record_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_container_snapshot(
+        public_container(_owned_container(container_record_no, account_id)), account_id,
+    )
     shipment_no = record.get("shipment_no", "")
     packing_no = record.get("packing_no", "")
     bl_no = record.get("bl_no", "")
@@ -638,9 +913,9 @@ def container_detail(container_record_no: str):
         for i, item in enumerate(record.get("items", []), 1)
     )
     cards = (
-        status_card("Shipment", shipment_no, shipment_exists(shipment_no), detail=f"/shipment/{shipment_no}" if shipment_no else "")
-        + status_card("Packing List", packing_no, packing_exists(packing_no), pdf=f"/packing-list-pdf/{packing_no}" if packing_no else "", edit=f"/edit-packing/{packing_no}" if packing_no else "")
-        + status_card("Bill of Lading", bl_no, bl_exists(bl_no), pdf=f"/bl-pdf/{bl_no}" if bl_no else "", edit=f"/edit-bl/{bl_no}" if bl_no else "")
+        status_card("Shipment", shipment_no, shipment_exists(shipment_no, account_id), detail=f"/shipment/{shipment_no}" if shipment_no else "")
+        + status_card("Packing List", packing_no, packing_exists(packing_no, account_id), pdf=f"/packing-list-pdf/{packing_no}" if packing_no else "", edit=f"/edit-packing/{packing_no}" if packing_no else "")
+        + status_card("Bill of Lading", bl_no, bl_exists(bl_no, _account_id(request)), pdf=f"/bl-pdf/{bl_no}" if bl_no else "", edit=f"/edit-bl/{bl_no}" if bl_no else "")
     )
     html = f"""
 <!DOCTYPE html><html><head><meta charset="UTF-8"><title>{html_text(container_record_no)}</title><style>
@@ -653,6 +928,9 @@ body{{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;color:#111827
 <div class="header"><h1>{html_text(container_record_no)}</h1><div>{html_text(record.get("container_no",""))} / Seal {html_text(record.get("seal_no",""))}</div><div class="meta">
 <div><div class="label">Date</div><div class="value">{html_text(record.get("container_date",""))}</div></div><div><div class="label">Type</div><div class="value">{html_text(record.get("container_type",""))}</div></div><div><div class="label">ETD</div><div class="value">{html_text(record.get("etd",""))}</div></div><div><div class="label">ETA</div><div class="value">{html_text(record.get("eta",""))}</div></div>
 <div><div class="label">Carrier</div><div class="value">{html_text(record.get("carrier",""))}</div></div><div><div class="label">Vessel</div><div class="value">{html_text(record.get("vessel",""))}</div></div><div><div class="label">POL</div><div class="value">{html_text(record.get("port_of_loading",""))}</div></div><div><div class="label">POD</div><div class="value">{html_text(record.get("port_of_discharge",""))}</div></div>
+<div><div class="label">Exporter</div><div class="value">{html_text(record.get("exporter_name",""))}</div></div><div><div class="label">Exporter Contact</div><div class="value">{html_text(record.get("exporter_email",""))}</div></div><div><div class="label">Consignee</div><div class="value">{html_text(record.get("consignee_name",""))}</div></div><div><div class="label">Destination</div><div class="value">{html_text(record.get("destination_country",""))}</div></div>
+<div><div class="label">Exporter Address</div><div class="value">{html_text(record.get("exporter_address",""))}</div></div><div><div class="label">Exporter Phone</div><div class="value">{html_text(record.get("exporter_phone",""))}</div></div><div><div class="label">Consignee Address</div><div class="value">{html_text(record.get("consignee_address",""))}</div></div><div><div class="label">Consignee Email</div><div class="value">{html_text(record.get("consignee_email",""))}</div></div>
+<div><div class="label">Booking No</div><div class="value">{html_text(record.get("booking_no",""))}</div></div><div><div class="label">Invoice No</div><div class="value">{html_text(record.get("invoice_no",""))}</div></div><div><div class="label">Country of Origin</div><div class="value">{html_text(record.get("country_of_origin",""))}</div></div>
 </div><div class="remarks"><div class="label">Remarks</div><div>{html_text(record.get("remarks",""))}</div></div></div>
 <div class="cards">{cards}</div>
 <div class="table-wrap"><table><thead><tr><th>No</th><th>Item</th><th>HS Code</th><th>Qty</th><th>Carton</th><th>Net Weight</th><th>Gross Weight</th></tr></thead><tbody>{rows}</tbody></table></div>
@@ -698,6 +976,8 @@ def create_container_pdf_buffer(payload):
             ("Type", payload.get("container_type", "")), ("Shipment No", payload.get("shipment_no", "")),
             ("Packing No", payload.get("packing_no", "")), ("B/L No", payload.get("bl_no", "")),
             ("ETD", payload.get("etd", "")), ("ETA", payload.get("eta", "")),
+            ("Exporter", payload.get("exporter_name", "")), ("Consignee", payload.get("consignee_name", "")),
+            ("Exporter Email", payload.get("exporter_email", "")), ("Consignee Email", payload.get("consignee_email", "")),
         ]
         y = height - 122
         for idx, (label, value) in enumerate(info):
@@ -706,7 +986,7 @@ def create_container_pdf_buffer(payload):
                 y -= 16
             pdf.drawString(x, y, f"{label}:")
             draw_text_fit(pdf, value, x + 78, y, 155, size=9)
-        y2 = height - 215
+        y2 = height - 250
         transport = [
             ("Carrier", payload.get("carrier", "")), ("Vessel", payload.get("vessel", "")),
             ("Voyage No", payload.get("voyage_no", "")), ("POL", payload.get("port_of_loading", "")),
@@ -730,7 +1010,7 @@ def create_container_pdf_buffer(payload):
         pdf.setFillColor(colors.black)
 
     header()
-    table_start_y = height - 335
+    table_start_y = height - 370
     y = table_start_y
     table_header(y)
     y -= 20
@@ -781,16 +1061,22 @@ def create_container_pdf_buffer(payload):
 
 
 @router.post("/container/pdf")
-def create_container_pdf(payload: dict = Body(...)):
+def create_container_pdf(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    require_existing_reference("Packing List", payload.get("packing_no", ""), load_packing_lists(account_id), "packing_no")
+    payload = public_container(payload)
+    payload = resolve_container_snapshot(payload, account_id)
     pdf_buffer = create_container_pdf_buffer(payload)
     filename = f"{payload.get('container_record_no', 'container')}.pdf"
     return Response(pdf_buffer.getvalue(), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
 @router.get("/container-pdf/{container_record_no}")
-def container_pdf(container_record_no: str):
-    record = find_record(load_containers(), "container_record_no", container_record_no)
-    if not record:
-        raise HTTPException(status_code=404, detail="Container record not found")
+def container_pdf(container_record_no: str, request: Request):
+    account_id = _account_id(request)
+    record = resolve_container_snapshot(
+        public_container(_owned_container(container_record_no, account_id)), account_id,
+    )
+    set_pdf_export_record(request, record)
     pdf_buffer = create_container_pdf_buffer(record)
     return Response(pdf_buffer.getvalue(), media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={container_record_no}.pdf"})
