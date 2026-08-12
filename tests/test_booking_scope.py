@@ -125,11 +125,11 @@ def test_booking_scope_sources_crud_pdf_search_and_dashboard(tmp_path, monkeypat
     assert "PK-002" in form_b and "PK-001" not in form_b
     html_a = booking.booking_list(_request("account-a")).body.decode()
     assert "BK-001" in html_a and "BK-002" not in html_a
-    assert "BK-001" in booking.booking_list(_request("account-a"), "BOOK-A").body.decode()
-    assert "BK-002" not in booking.booking_list(_request("account-a"), "BOOK-B").body.decode()
+    assert "BK-001" in booking.booking_list(_request("account-a"), "BK-001").body.decode()
+    assert "Total Bookings: 0" in booking.booking_list(_request("account-a"), "BK-002").body.decode()
 
     booking.update_booking("BK-001", _request("account-a"), **_form("SHP-A", "SI-001", "PK-001", "INV-001", "BOOK-A-UPDATED"))
-    assert booking.booking_data("BK-001", _request("account-a"))["booking_no"] == "BOOK-A-UPDATED"
+    assert booking.booking_data("BK-001", _request("account-a"))["booking_no"] == "BK-001"
     with pytest.raises(DataValidationError):
         booking.update_booking("BK-001", _request("account-a"), **_form("SHP-B", "SI-002", "PK-002", "INV-002", "STOLEN"))
     for action in (

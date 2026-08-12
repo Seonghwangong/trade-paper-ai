@@ -3,6 +3,7 @@ from copy import deepcopy
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
+from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -185,6 +186,7 @@ def blank_payload():
         "bl_no": "",
         "invoice_no": "",
         "booking_no": "",
+        "booking_reference": "",
         "exporter": "", "consignee": "",
         "exporter_name": "", "exporter_address": "", "exporter_email": "", "exporter_phone": "",
         "consignee_name": "", "consignee_address": "", "consignee_email": "",
@@ -248,7 +250,8 @@ def resolve_booking_snapshot(record, account_id, shipment=None, bill=None, packi
     origins = [item.get("origin") for item in resolved.get("items", []) if isinstance(item, dict) and item.get("origin")]
     if ("country_of_origin" not in resolved or (not preserve_empty and not resolved["country_of_origin"])) and origins and len(set(origins)) == 1:
         resolved["country_of_origin"] = origins[0]
-    resolved.update({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no})
+    si_no = str(resolved.get("si_no", "") or shipment.get("si_no", "") or "").strip()
+    resolved.update({"shipment_no": shipment_no, "si_no": si_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no})
     for total, field in (("total_carton", "carton"), ("total_net_weight", "net_weight"), ("total_gross_weight", "gross_weight")):
         if total not in resolved or (not preserve_empty and not resolved[total]):
             resolved[total] = format_number(numeric_total(resolved.get("items", []), field))
@@ -402,36 +405,44 @@ def build_record(
     }
 
 
-def build_item_rows(items):
+def build_item_rows(items, readonly=False):
     if not items:
         items = [{}]
     rows = ""
+    readonly_attr = " readonly" if readonly else ""
     for item in items:
         rows += f"""
 <div class="item-row">
 <input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
-<input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item">
-<input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
-<input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
-<input type="text" name="origin" value="{html_attr(item.get('origin', ''))}" placeholder="Origin">
-<input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton" oninput="calculateTotals()">
-<input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight" oninput="calculateTotals()">
-<input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight" oninput="calculateTotals()">
-<button class="remove" type="button" onclick="removeItem(this)">Remove Item</button>
+<input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item"{readonly_attr}>
+<input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code"{readonly_attr}>
+<input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity"{readonly_attr}>
+<input type="text" name="origin" value="{html_attr(item.get('origin', ''))}" placeholder="Origin"{readonly_attr}>
+<input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton"{readonly_attr}>
+<input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight"{readonly_attr}>
+<input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight"{readonly_attr}>
 </div>
 """
     return rows
 
 
-def render_form(record, action, title, button_text, show_no=False, account_id=""):
-    rows = build_item_rows(record.get("items", []))
+def render_form(record, action, title, button_text, show_no=False, account_id="", create_mode=False):
+    rows = build_item_rows(record.get("items", []), readonly=True)
     no_input = ""
     if show_no:
         no_input = f'<div class="field"><label>Booking Record No</label><input type="text" name="booking_record_no" value="{html_attr(record.get("booking_record_no", ""))}" placeholder="Booking Record No" readonly></div>'
     shipment_select = select_html("shipment_no", record.get("shipment_no", ""), doc_options(load_shipments(account_id), "shipment_no"), "Select Shipment")
-    si_select = select_html("si_no", record.get("si_no", ""), doc_options(load_shipping_instructions(account_id), "si_no"), "Select S/I")
-    packing_select = select_html("packing_no", record.get("packing_no", ""), doc_options(load_packing_lists(account_id), "packing_no"), "Select Packing List")
-    bl_select = select_html("bl_no", record.get("bl_no", ""), doc_options(load_bills_of_lading(account_id), "bl_no"), "Select B/L")
+    if create_mode:
+        shipment_select = shipment_select.replace("<select ", '<select required aria-required="true" onchange="selectShipment(this.value)" ', 1)
+    else:
+        shipment_select = f'<input type="hidden" name="shipment_no" value="{html_attr(record.get("shipment_no", ""))}"><input type="text" value="{html_attr(record.get("shipment_no", ""))}" readonly>'
+
+    def readonly_reference(name, value):
+        return f'<input type="hidden" name="{html_attr(name)}" value="{html_attr(value)}"><input type="text" value="{html_attr(value)}" readonly>'
+
+    si_select = readonly_reference("si_no", record.get("si_no", ""))
+    packing_select = readonly_reference("packing_no", record.get("packing_no", ""))
+    bl_select = readonly_reference("bl_no", record.get("bl_no", ""))
 
     html = """
 <!DOCTYPE html>
@@ -453,6 +464,7 @@ h1{text-align:center;font-size:46px;margin:8px 0 10px;}
 label{display:block;font-weight:bold;margin:0 0 7px;color:#374151;}
 .field label{margin:0;line-height:1.2;}
 input,select,textarea{width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;background:white;}
+input[readonly]{background:#F3F4F6;color:#475569;}
 .record-links input,.record-links select{height:48px;padding:0 14px;}
 textarea{min-height:100px;resize:vertical;}
 button{padding:15px 18px;background:#111827;color:white;border:none;border-radius:12px;font-size:16px;cursor:pointer;}
@@ -477,35 +489,36 @@ __IMPORTED_CSS__
 <div class="card">
 <h2>Record Links</h2>
 <div class="grid record-links">
+<div class="field"><label>Shipment *</label>__SHIPMENT_SELECT__</div>
 __NO_INPUT__
 <div class="field"><label>Booking Date</label><input type="date" name="booking_date" value="__BOOKING_DATE__"></div>
-<div class="field"><label>Shipment</label>__SHIPMENT_SELECT__</div>
 <div class="field"><label>Shipping Instruction</label>__SI_SELECT__</div>
 <div class="field"><label>Packing List</label>__PACKING_SELECT__</div>
 <div class="field"><label>Bill of Lading</label>__BL_SELECT__</div>
-<div class="field"><label>Invoice No</label><input type="text" name="invoice_no" value="__INVOICE_NO__" placeholder="Invoice No"></div>
+<div class="field"><label>Commercial Invoice</label><input type="hidden" name="invoice_no" value="__INVOICE_NO__"><input type="text" value="__INVOICE_NO__" readonly></div>
 </div>
 </div>
 <div class="card">
 <h2>Booking Information</h2>
 <div class="grid">
-<div><label>Booking No</label><input type="text" name="booking_no" value="__BOOKING_NO__" placeholder="Carrier Booking No"></div>
-<div><label>Carrier</label><input type="text" name="carrier" value="__CARRIER__" placeholder="Carrier"></div>
+<div><label>Booking No</label><input type="text" name="booking_no" value="__BOOKING_NO__" readonly></div>
+<div><label>Booking Reference</label><input type="text" name="booking_reference" value="__BOOKING_REFERENCE__" placeholder="Carrier Booking Reference"></div>
+<div><label>Shipping Line</label><input type="text" name="carrier" value="__CARRIER__" placeholder="Shipping Line"></div>
 <div><label>Container Type</label><input type="text" name="container_type" value="__CONTAINER_TYPE__" placeholder="40HC / 20GP"></div>
 <div><label>Container Count</label><input type="text" name="container_count" value="__CONTAINER_COUNT__" placeholder="Container Count"></div>
 </div>
 </div>
 __IMPORTED_PARTY_START__
 <h2>Exporter / Consignee</h2><div class="grid">
-<input type="text" name="exporter_name" value="__EXPORTER__" placeholder="Exporter Name">
-<input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address">
-<input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email">
-<input type="text" name="exporter_phone" value="__EXPORTER_PHONE__" placeholder="Exporter Phone">
-<input type="text" name="consignee_name" value="__CONSIGNEE__" placeholder="Consignee Name">
-<input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" placeholder="Consignee Address">
-<input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email">
-<input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin">
-<input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country">
+<input type="text" name="exporter_name" value="__EXPORTER__" placeholder="Exporter Name" readonly>
+<input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address" readonly>
+<input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email" readonly>
+<input type="text" name="exporter_phone" value="__EXPORTER_PHONE__" placeholder="Exporter Phone" readonly>
+<input type="text" name="consignee_name" value="__CONSIGNEE__" placeholder="Consignee Name" readonly>
+<input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" placeholder="Consignee Address" readonly>
+<input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email" readonly>
+<input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin" readonly>
+<input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country" readonly>
 </div>
 __IMPORTED_PARTY_END__
 <div class="card">
@@ -525,7 +538,6 @@ __IMPORTED_PARTY_END__
 __IMPORTED_CARGO_START__
 <h2>Cargo Summary</h2>
 <div id="items">__ITEM_ROWS__</div>
-<button class="add" type="button" onclick="addItem()">+ Add Item</button>
 <input type="hidden" id="total_carton" name="total_carton" value="__TOTAL_CARTON__">
 <input type="hidden" id="total_net_weight" name="total_net_weight" value="__TOTAL_NET_WEIGHT__">
 <input type="hidden" id="total_gross_weight" name="total_gross_weight" value="__TOTAL_GROSS_WEIGHT__">
@@ -543,6 +555,11 @@ __IMPORTED_CARGO_END__
 </form>
 </div>
 <script>
+function selectShipment(value){
+  const url=new URL('/booking-form',window.location.origin);
+  if(value)url.searchParams.set('shipment_no',value);
+  window.location.assign(url.toString());
+}
 function addItem(){
   const div = document.createElement("div");
   div.className = "item-row";
@@ -593,6 +610,7 @@ calculateTotals();
         "__BL_SELECT__": bl_select,
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
         "__BOOKING_NO__": html_attr(record.get("booking_no", "")),
+        "__BOOKING_REFERENCE__": html_attr(record.get("booking_reference", "")),
         "__EXPORTER__": html_attr(record.get("exporter", "")),
         "__EXPORTER_ADDRESS__": html_attr(record.get("exporter_address", "")),
         "__EXPORTER_EMAIL__": html_attr(record.get("exporter_email", "")),
@@ -635,6 +653,7 @@ def booking_list(request: Request, search: str = ""):
             r for r in records
             if term in str(r.get("booking_record_no", "")).lower()
             or term in str(r.get("booking_no", "")).lower()
+            or term in str(r.get("booking_reference", "")).lower()
             or term in str(r.get("carrier", "")).lower()
             or term in str(r.get("vessel", "")).lower()
             or term in str(r.get("shipment_no", "")).lower()
@@ -645,7 +664,7 @@ def booking_list(request: Request, search: str = ""):
     for r in records:
         no = r.get("booking_record_no", "")
         rows += f"""
-<tr><td>{html_text(no)}</td><td>{html_text(r.get('booking_no',''))}</td><td>{html_text(r.get('carrier',''))}</td>
+<tr><td>{html_text(no)}</td><td>{html_text(r.get('booking_no',''))}</td><td>{html_text(r.get('booking_reference',''))}</td><td>{html_text(r.get('carrier',''))}</td>
 <td>{html_text(r.get('vessel',''))}</td><td>{html_text(r.get('voyage_no',''))}</td><td>{html_text(r.get('shipment_no',''))}</td>
 <td>{html_text(r.get('si_no',''))}</td><td>{html_text(r.get('packing_no',''))}</td><td>{html_text(r.get('etd',''))}</td><td>{html_text(r.get('eta',''))}</td>
 <td><a class="link" href="/booking/{html_attr(no)}">View</a></td><td><a class="link" href="/booking-pdf/{html_attr(no)}">PDF</a></td>
@@ -659,7 +678,7 @@ body{{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;color:#111827
 <div class="toolbar"><div class="nav"><a class="btn" href="/">Dashboard</a><a class="btn" href="/booking-form">+ New Booking</a></div>
 <form class="search" action="/booking-list" method="get"><input type="text" name="search" value="{html_attr(search)}" placeholder="Search booking, carrier, vessel, shipment, S/I"><button type="submit">Search</button><a class="btn reset" href="/booking-list">Reset</a></form></div>
 <div class="count">Total Bookings: {len(records)}</div><div class="table-wrap"><table><thead><tr>
-<th>Booking Record No</th><th>Booking No</th><th>Carrier</th><th>Vessel</th><th>Voyage No</th><th>Shipment No</th><th>S/I No</th><th>Packing No</th><th>ETD</th><th>ETA</th><th>View</th><th>PDF</th><th>Edit</th><th>Delete</th>
+<th>Booking Record No</th><th>Booking No</th><th>Booking Reference</th><th>Shipping Line</th><th>Vessel</th><th>Voyage No</th><th>Shipment No</th><th>S/I No</th><th>Packing No</th><th>ETD</th><th>ETA</th><th>View</th><th>PDF</th><th>Edit</th><th>Delete</th>
 </tr></thead><tbody>{rows}</tbody></table></div></div></body></html>"""
     return HTMLResponse(html)
 
@@ -668,8 +687,18 @@ body{{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;color:#111827
 def booking_form(request: Request, shipment_no: str = "", si_no: str = "", packing_no: str = "", bl_no: str = ""):
     account_id = _account_id(request)
     record = payload_from_sources(shipment_no, si_no, packing_no, bl_no, account_id)
-    record["booking_record_no"] = next_booking_record_no(load_booking_records())
-    return render_form(record, "/booking", "New Booking Confirmation", "Save Booking", show_no=True, account_id=account_id)
+    next_no = next_booking_record_no(load_booking_records())
+    record["booking_record_no"] = next_no
+    record["booking_no"] = next_no
+    return render_form(record, "/booking", "New Booking Confirmation", "Save Booking", show_no=True, account_id=account_id, create_mode=True)
+
+
+def booking_success_response(record, shipment_url):
+    shipment_no = str(record.get("shipment_no", "") or "")
+    packing_no = str(record.get("packing_no", "") or "")
+    booking_record_no = str(record.get("booking_record_no", "") or "")
+    bl_url = html_attr(f'/bl-form?packing_no={quote(packing_no, safe="")}&shipment_no={quote(shipment_no, safe="")}')
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Booking Saved</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}.card{{width:min(620px,100%);padding:34px;border:1px solid #E5E7EB;border-radius:18px;background:#fff;text-align:center;box-shadow:0 14px 34px rgba(15,23,42,.09)}}h1{{margin:0 0 10px}}p{{color:#475569}}.actions{{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:20px}}a{{display:inline-flex;min-height:46px;align-items:center;padding:11px 16px;border-radius:10px;background:#E5E7EB;color:#111827;text-decoration:none;font-weight:800}}a.primary{{background:#111827;color:#fff}}</style></head><body><main><section class="card"><h1>Booking Saved</h1><p>✓ {html_text(booking_record_no)} was created successfully.</p><div class="actions"><a class="primary" href="{bl_url}">Continue to Bill of Lading →</a><a href="/booking/{html_attr(booking_record_no)}">View Booking</a><a href="{html_attr(shipment_url)}">View Shipment</a></div></section></main></body></html>''')
 
 
 def form_fields():
@@ -689,7 +718,7 @@ def save_booking(
     request: Request,
     booking_date: str = Form(""), shipment_no: str = Form(""), si_no: str = Form(""),
     packing_no: str = Form(""), bl_no: str = Form(""), invoice_no: str = Form(""),
-    booking_no: str = Form(""), carrier: str = Form(""), vessel: str = Form(""),
+    booking_no: str = Form(""), booking_reference: str = Form(""), carrier: str = Form(""), vessel: str = Form(""),
     voyage_no: str = Form(""), container_type: str = Form(""), container_count: str = Form(""),
     etd: str = Form(""), eta: str = Form(""), port_of_loading: str = Form(""),
     port_of_discharge: str = Form(""), place_of_delivery: str = Form(""),
@@ -706,19 +735,22 @@ def save_booking(
     destination_country: Annotated[Optional[str], Form()] = None,
 ):
     account_id = _account_id(request)
+    booking_reference = booking_reference if isinstance(booking_reference, str) else ""
     validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no, account_id)
-    booking_no = require_text("Booking number", booking_no)
+    saved = {}
     def add_booking(records):
+        generated_no = next_identifier(records, "booking_record_no", "BK")
         snapshot = resolve_booking_snapshot({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no}, account_id)
-        record = build_record(next_identifier(records, "booking_record_no", "BK"), booking_date, shipment_no, si_no, packing_no, bl_no, invoice_no, booking_no, carrier, vessel, voyage_no, container_type, container_count, etd, eta, port_of_loading, port_of_discharge, place_of_delivery, cut_off_date, loading_place, remarks, item_name, hs_code, quantity, carton, net_weight, gross_weight, total_carton, total_net_weight, total_gross_weight, origin, snapshot.get("exporter_name", "") if exporter_name is None else exporter_name, snapshot.get("exporter_address", "") if exporter_address is None else exporter_address, snapshot.get("exporter_email", "") if exporter_email is None else exporter_email, snapshot.get("exporter_phone", "") if exporter_phone is None else exporter_phone, snapshot.get("consignee_name", "") if consignee_name is None else consignee_name, snapshot.get("consignee_address", "") if consignee_address is None else consignee_address, snapshot.get("consignee_email", "") if consignee_email is None else consignee_email, snapshot.get("country_of_origin", "") if country_of_origin is None else country_of_origin, snapshot.get("destination_country", "") if destination_country is None else destination_country)
+        record = build_record(generated_no, booking_date, shipment_no, si_no, packing_no, bl_no, invoice_no, generated_no, carrier, vessel, voyage_no, container_type, container_count, etd, eta, port_of_loading, port_of_discharge, place_of_delivery, cut_off_date, loading_place, remarks, item_name, hs_code, quantity, carton, net_weight, gross_weight, total_carton, total_net_weight, total_gross_weight, origin, snapshot.get("exporter_name", "") if exporter_name is None else exporter_name, snapshot.get("exporter_address", "") if exporter_address is None else exporter_address, snapshot.get("exporter_email", "") if exporter_email is None else exporter_email, snapshot.get("exporter_phone", "") if exporter_phone is None else exporter_phone, snapshot.get("consignee_name", "") if consignee_name is None else consignee_name, snapshot.get("consignee_address", "") if consignee_address is None else consignee_address, snapshot.get("consignee_email", "") if consignee_email is None else consignee_email, snapshot.get("country_of_origin", "") if country_of_origin is None else country_of_origin, snapshot.get("destination_country", "") if destination_country is None else destination_country)
+        record["booking_reference"] = booking_reference
         assign_item_ids(record["items"], item_id)
         record = resolve_booking_snapshot(record, account_id)
         record["account_id"] = account_id
         records.append(record)
+        saved.update(record)
     locked_json_mutation(BOOKING_FILE, [], add_booking, list)
-    return RedirectResponse(
-        shipment_detail_redirect_url(shipment_no, account_id, "/booking-list"), status_code=303,
-    )
+    shipment_url = shipment_detail_redirect_url(shipment_no, account_id, "/booking-list")
+    return booking_success_response(saved, shipment_url)
 
 
 @router.get("/edit-booking/{booking_record_no}", response_class=HTMLResponse)
@@ -734,7 +766,7 @@ def update_booking(
     request: Request,
     booking_date: str = Form(""), shipment_no: str = Form(""), si_no: str = Form(""),
     packing_no: str = Form(""), bl_no: str = Form(""), invoice_no: str = Form(""),
-    booking_no: str = Form(""), carrier: str = Form(""), vessel: str = Form(""),
+    booking_no: str = Form(""), booking_reference: str = Form(""), carrier: str = Form(""), vessel: str = Form(""),
     voyage_no: str = Form(""), container_type: str = Form(""), container_count: str = Form(""),
     etd: str = Form(""), eta: str = Form(""), port_of_loading: str = Form(""),
     port_of_discharge: str = Form(""), place_of_delivery: str = Form(""),
@@ -752,14 +784,16 @@ def update_booking(
 ):
     account_id = _account_id(request)
     current = _owned_booking(booking_record_no, account_id)
+    booking_reference = booking_reference if isinstance(booking_reference, str) else str(current.get("booking_reference", "") or "")
     validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no, account_id)
-    booking_no = require_text("Booking number", booking_no)
+    booking_no = current.get("booking_no", "") or current.get("booking_record_no", "")
     def replace_booking(records):
         for index, record in enumerate(records):
             if (record.get("booking_record_no") != booking_record_no
                     or str(record.get("account_id", "") or "").strip() != account_id):
                 continue
             updated = build_record(booking_record_no, booking_date, shipment_no, si_no, packing_no, bl_no, invoice_no, booking_no, carrier, vessel, voyage_no, container_type, container_count, etd, eta, port_of_loading, port_of_discharge, place_of_delivery, cut_off_date, loading_place, remarks, item_name, hs_code, quantity, carton, net_weight, gross_weight, total_carton, total_net_weight, total_gross_weight, origin, exporter_name or current.get("exporter_name", ""), current.get("exporter_address", "") if exporter_address is None else exporter_address, current.get("exporter_email", "") if exporter_email is None else exporter_email, current.get("exporter_phone", "") if exporter_phone is None else exporter_phone, consignee_name or current.get("consignee_name", ""), current.get("consignee_address", "") if consignee_address is None else consignee_address, current.get("consignee_email", "") if consignee_email is None else consignee_email, current.get("country_of_origin", "") if country_of_origin is None else country_of_origin, current.get("destination_country", "") if destination_country is None else destination_country)
+            updated["booking_reference"] = booking_reference
             assign_item_ids(updated["items"], item_id, current.get("items", []))
             preserve_omitted_item_fields(
                 updated["items"], current.get("items", []),
@@ -841,7 +875,7 @@ def booking_detail(booking_record_no: str, request: Request):
 <!DOCTYPE html><html><head><meta charset="UTF-8"><title>{html_text(booking_record_no)}</title><style>
 body{{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;color:#111827;}}.container{{width:94%;max-width:1180px;margin:auto;}}.nav-row{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:25px;}}.btn{{display:inline-block;padding:13px 18px;background:#111827;color:white;border:none;border-radius:12px;text-decoration:none;font-size:15px;}}.header{{background:#111827;color:white;border-radius:16px;padding:30px;box-shadow:0 12px 35px rgba(15,23,42,.12);}}.header h1{{font-size:42px;margin:0 0 8px 0;}}.meta{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:22px;}}.meta div,.remarks{{background:#1F2937;border-radius:12px;padding:14px;}}.label{{color:#CBD5E1;font-size:13px;margin-bottom:5px;}}.value{{font-weight:bold;}}.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;margin:24px 0;}}.mini{{background:white;border:1px solid #E5E7EB;border-radius:16px;padding:20px;box-shadow:0 10px 25px rgba(15,23,42,.07);}}.mini b,.mini span{{display:block;margin-bottom:10px;}}.ok{{color:#166534;background:#DCFCE7;padding:7px 10px;border-radius:999px;font-style:normal;font-weight:bold;}}.bad{{color:#991B1B;background:#FEE2E2;padding:7px 10px;border-radius:999px;font-style:normal;font-weight:bold;}}.actions{{display:flex;gap:8px;margin-top:15px;}}.actions a{{background:#111827;color:white;text-decoration:none;padding:9px 11px;border-radius:9px;font-weight:bold;}}.table-wrap{{background:white;border-radius:16px;overflow:auto;border:1px solid #E5E7EB;}}table{{width:100%;border-collapse:collapse;min-width:760px;}}th{{background:#111827;color:white;text-align:left;padding:13px;}}td{{padding:13px;border-bottom:1px solid #E5E7EB;}}@media(max-width:780px){{body{{padding:18px}}.meta{{grid-template-columns:1fr}}}}
 </style></head><body><div class="container"><div class="nav-row"><a class="btn" href="/">Dashboard</a><a class="btn" href="/booking-list">Booking List</a><a class="btn" href="/edit-booking/{html_attr(booking_record_no)}">Edit</a><a class="btn" href="/booking-pdf/{html_attr(booking_record_no)}">PDF</a></div>
-<div class="header"><h1>{html_text(booking_record_no)}</h1><div>Booking No: {html_text(record.get("booking_no",""))}</div><div class="meta">
+<div class="header"><h1>{html_text(booking_record_no)}</h1><div>Booking No: {html_text(record.get("booking_no",""))} · Reference: {html_text(record.get("booking_reference",""))}</div><div class="meta">
 <div><div class="label">Carrier</div><div class="value">{html_text(record.get("carrier",""))}</div></div><div><div class="label">Vessel / Voyage</div><div class="value">{html_text(record.get("vessel",""))} / {html_text(record.get("voyage_no",""))}</div></div><div><div class="label">ETD</div><div class="value">{html_text(record.get("etd",""))}</div></div><div><div class="label">ETA</div><div class="value">{html_text(record.get("eta",""))}</div></div>
 </div><div class="remarks"><div class="label">Remarks</div><div>{html_text(record.get("remarks",""))}</div></div></div>
 <div class="cards">{cards}</div>
@@ -886,6 +920,7 @@ def create_booking_pdf_buffer(payload):
         pdf.setFont(TP_UNICODE, 9)
         info = [
             ("Record No", payload.get("booking_record_no", "")), ("Booking No", payload.get("booking_no", "")),
+            ("Booking Reference", payload.get("booking_reference", "")), ("Shipping Line", payload.get("carrier", "")),
             ("Booking Date", payload.get("booking_date", "")), ("Shipment No", payload.get("shipment_no", "")),
             ("S/I No", payload.get("si_no", "")), ("Packing No", payload.get("packing_no", "")),
             ("B/L No", payload.get("bl_no", "")), ("Invoice No", payload.get("invoice_no", "")),
