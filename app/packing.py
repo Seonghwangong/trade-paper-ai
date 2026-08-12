@@ -6,14 +6,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib import colors
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
 import html as html_lib
-import json
-from pathlib import Path
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
-from app.validation import require_existing_reference, require_items, require_text
+from app.validation import DataValidationError, require_items, require_text
 from app.referential_integrity import find_dependencies, render_delete_page
-from app.shipment import link_direct_document
+from app.shipment import direct_document_shipment_no, link_direct_document, shipment_detail_redirect_url
 from app.ui import badge, button, form_footer, form_page, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
 from app.account_packing import ensure_legacy_packing_ownership, public_packing
 from app.account_company import load_account_company
@@ -100,18 +99,6 @@ def load_invoice_records():
     return load_json_strict(INVOICE_FILE, [], list)
 
 
-def next_packing_no(packing_lists):
-    return next_identifier(packing_lists, "packing_no", "PK")
-    existing_numbers = [
-        int(p.get("packing_no", "PK-000").split("-")[1])
-        for p in packing_lists
-        if p.get("packing_no", "").startswith("PK-")
-    ]
-
-    next_no = max(existing_numbers, default=0) + 1
-    return f"PK-{next_no:03d}"
-
-
 @router.post("/packing-list")
 def create_packing_list(request: Request, payload: dict = Body(...)):
     record = dict(payload)
@@ -178,7 +165,7 @@ def packing_list(request: Request, search: str = ""):
             "<br>".join(escaped(item.get("carton", "")) for item in items),
             "<br>".join(escaped(item.get("net_weight", "")) for item in items),
             "<br>".join(escaped(item.get("gross_weight", "")) for item in items),
-            button("PDF", f"/packing-list-pdf/{packing_no}", "secondary"),
+            button("Download PDF", f"/packing-list-pdf/{packing_no}", "secondary"),
             button("Edit", f"/edit-packing/{packing_no}", "secondary"),
             button("Delete", f"/packing-delete/{packing_no}", "danger"),
         ])
@@ -332,7 +319,13 @@ def update_packing(
         if not item_name[i].strip():
             continue
 
-        quantity_value = float(quantity[i] or 0) if i < len(quantity) else 0
+        try:
+            quantity_value = float(quantity[i] or 0) if i < len(quantity) else 0
+        except (TypeError, ValueError) as exc:
+            raise DataValidationError(
+                "Quantity", "Quantity must be a number.",
+                "Enter a numeric quantity, then save again.",
+            ) from exc
         if quantity_value.is_integer():
             quantity_value = int(quantity_value)
 
@@ -370,12 +363,10 @@ def update_packing(
         raise HTTPException(status_code=404, detail="Packing List not found")
     locked_json_mutation(PACKING_FILE, [], replace_packing, list)
 
-    return HTMLResponse("""
-<script>
-alert("Packing Updated");
-window.location.href = "/packing-list";
-</script>
-""")
+    shipment_no = direct_document_shipment_no("packing_no", packing_no, account_id)
+    return RedirectResponse(
+        url=shipment_detail_redirect_url(shipment_no, account_id, "/packing-list"), status_code=303,
+    )
 
 
 @router.get("/packing-delete/{packing_no}")
@@ -439,6 +430,7 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
     items = payload.get("items", [])
 
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
@@ -454,30 +446,23 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
     summary_h = 95
     summary_gap = 20
 
-    def fit_text(text, max_width, font_name="Helvetica", font_size=8):
-        text = str(text or "")
-        if pdf.stringWidth(text, font_name, font_size) <= max_width:
-            return text
-
-        suffix = "..."
-        while text and pdf.stringWidth(text + suffix, font_name, font_size) > max_width:
-            text = text[:-1]
-        return text + suffix if text else suffix
+    def fit_text(text, max_width, font_name=TP_UNICODE, font_size=8):
+        return fit_pdf_text(pdf, text, max_width, font_name, font_size)
 
     def draw_document_header():
         pdf.setFillColor(colors.HexColor("#111827"))
         pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 24)
+        pdf.setFont(TP_UNICODE_BOLD, 24)
         pdf.drawString(45, height - 55, "PACKING LIST")
 
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
         pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 11)
+        pdf.setFont(TP_UNICODE_BOLD, 11)
         pdf.drawString(45, height - 125, f"Packing No: {packing_no}")
         pdf.drawString(45, height - 143, f"Invoice No: {invoice_no}")
         pdf.drawString(45, height - 161, f"Date: {today}")
@@ -488,18 +473,18 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
         pdf.roundRect(310, height - 260, 240, 80, 8, fill=1)
 
         pdf.setFillColor(colors.HexColor("#111827"))
-        pdf.setFont("Helvetica-Bold", 11)
+        pdf.setFont(TP_UNICODE_BOLD, 11)
         pdf.drawString(60, height - 197, "SELLER")
         pdf.drawString(325, height - 197, "BUYER")
 
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(60, height - 220, seller)
-        pdf.drawString(60, height - 235, seller_address)
+        pdf.setFont(TP_UNICODE, 9)
+        pdf.drawString(60, height - 220, fit_text(seller, 210, font_size=9))
+        pdf.drawString(60, height - 235, fit_text(seller_address, 210, font_size=9))
         seller_contact = " · ".join(value for value in (seller_email, seller_phone) if value)
-        pdf.drawString(60, height - 250, seller_contact)
-        pdf.drawString(325, height - 220, buyer)
-        pdf.drawString(325, height - 235, buyer_address)
-        pdf.drawString(325, height - 250, buyer_email)
+        pdf.drawString(60, height - 250, fit_text(seller_contact, 210, font_size=9))
+        pdf.drawString(325, height - 220, fit_text(buyer, 210, font_size=9))
+        pdf.drawString(325, height - 235, fit_text(buyer_address, 210, font_size=9))
+        pdf.drawString(325, height - 250, fit_text(buyer_email, 210, font_size=9))
 
     def draw_table_header():
         header_y = height - 315
@@ -508,7 +493,7 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
         pdf.rect(table_x, header_y, table_w, table_header_h, fill=1, stroke=0)
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 8)
+        pdf.setFont(TP_UNICODE_BOLD, 8)
         pdf.drawString(52, header_y + 10, "No")
         pdf.drawString(80, header_y + 10, "Item")
         pdf.drawRightString(235, header_y + 10, "Quantity")
@@ -517,7 +502,7 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
         pdf.drawRightString(455, header_y + 10, "Net Weight")
         pdf.drawRightString(540, header_y + 10, "Gross Weight")
 
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
         return header_y - table_header_h
 
@@ -527,12 +512,12 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
 
     def draw_signature_footer():
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica", 10)
+        pdf.setFont(TP_UNICODE, 10)
         pdf.drawString(45, 115, "Authorized Signature:")
         pdf.line(170, 115, 330, 115)
 
         pdf.setFillColor(colors.HexColor("#6B7280"))
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
         pdf.drawString(45, 45, "For trade documentation automation.")
 
@@ -602,7 +587,7 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
 
     pdf.setFillColor(colors.white)
 
-    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFont(TP_UNICODE_BOLD, 10)
     text_x = summary_x + 15
     text_y = summary_top - 28
     line_gap = 18

@@ -1,6 +1,5 @@
 from typing import Annotated, List, Optional
 from copy import deepcopy
-from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
@@ -11,11 +10,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
 
 router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
-from app.validation import require_consistent_reference, require_existing_reference, require_text
+from app.validation import DataValidationError, require_consistent_reference, require_existing_reference, require_text
 from app.referential_integrity import render_delete_page
 from app.account_customs import ensure_legacy_customs_ownership, public_customs
 from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, find_by_identifier, preserve_omitted_item_fields, resolve_source_chain, set_submitted_snapshot_fields
@@ -31,6 +31,7 @@ from app import bill_of_lading as bill_of_lading_module
 from app import buyer as buyer_module
 from app.account_company import load_account_company
 from app.routers.company import ACCOUNT_COMPANIES_FILE
+from app.shipment import shipment_detail_redirect_url
 
 CUSTOMS_FILE = data_path("customs_declarations.json")
 SHIPMENT_FILE = data_path("shipments.json")
@@ -136,14 +137,112 @@ def validate_customs_links(shipment_no, booking_record_no, invoice_no, packing_n
         require_consistent_reference("Packing List", packing_no, bill.get("packing_no", ""), "selected Bill of Lading")
 
 
+def shipment_reference_assist(shipment_no, account_id):
+    """Return the minimum account-owned reference projection needed by the Customs form."""
+    shipment = find_by_identifier(load_shipments(account_id), "shipment_no", shipment_no)
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+
+    invoices = load_invoices(account_id)
+    packings = load_packing_lists(account_id)
+    bills = load_bills_of_lading(account_id)
+    bookings = load_bookings(account_id)
+    containers = load_containers(account_id)
+    direct = {
+        "invoice_no": str(shipment.get("invoice_no", "") or "").strip(),
+        "packing_no": str(shipment.get("packing_no", "") or "").strip(),
+        "bl_no": str(shipment.get("bl_no", "") or "").strip(),
+    }
+    existing = {
+        "invoice_no": direct["invoice_no"] if find_by_identifier(invoices, "invoice_no", direct["invoice_no"]) else "",
+        "packing_no": direct["packing_no"] if find_by_identifier(packings, "packing_no", direct["packing_no"]) else "",
+        "bl_no": direct["bl_no"] if find_by_identifier(bills, "bl_no", direct["bl_no"]) else "",
+    }
+    auto_select = {}
+    suggestions = {field: [] for field in (
+        "invoice_no", "packing_no", "bl_no", "booking_record_no", "container_record_no",
+    )}
+
+    try:
+        validate_customs_links(
+            shipment_no, "", existing["invoice_no"], existing["packing_no"], "", existing["bl_no"], account_id,
+        )
+    except DataValidationError:
+        for field, identifier in existing.items():
+            if identifier:
+                suggestions[field].append({
+                    "identifier": identifier, "source": "Shipment", "relationship": "Review relationship",
+                })
+    else:
+        auto_select.update({field: identifier for field, identifier in existing.items() if identifier})
+
+    def suggest(field, identifier, source):
+        value = str(identifier or "").strip()
+        if not value or value == auto_select.get(field):
+            return
+        if not any(candidate["identifier"] == value for candidate in suggestions[field]):
+            suggestions[field].append({"identifier": value, "source": source, "relationship": "Related"})
+
+    direct_packing = find_by_identifier(packings, "packing_no", existing["packing_no"])
+    direct_bill = find_by_identifier(bills, "bl_no", existing["bl_no"])
+    if not direct["packing_no"] and direct_bill:
+        inferred_packing = str(direct_bill.get("packing_no", "") or "").strip()
+        if find_by_identifier(packings, "packing_no", inferred_packing):
+            suggest("packing_no", inferred_packing, "Bill of Lading")
+    packing_for_inference = direct_packing
+    if packing_for_inference is None and direct_bill:
+        packing_for_inference = find_by_identifier(packings, "packing_no", direct_bill.get("packing_no", ""))
+    if not direct["invoice_no"] and packing_for_inference:
+        inferred_invoice = str(packing_for_inference.get("invoice_no", "") or "").strip()
+        if find_by_identifier(invoices, "invoice_no", inferred_invoice):
+            suggest("invoice_no", inferred_invoice, "Packing List")
+    if not direct["bl_no"] and existing["packing_no"]:
+        for bill in bills:
+            if str(bill.get("packing_no", "") or "").strip() == existing["packing_no"]:
+                suggest("bl_no", bill.get("bl_no", ""), "Packing List")
+
+    base = {
+        "invoice_no": auto_select.get("invoice_no", ""),
+        "packing_no": auto_select.get("packing_no", ""),
+        "bl_no": auto_select.get("bl_no", ""),
+    }
+    for field, records, key, booking_field, container_field in (
+        ("booking_record_no", bookings, "booking_record_no", True, False),
+        ("container_record_no", containers, "container_record_no", False, True),
+    ):
+        matches = [record for record in records if str(record.get("shipment_no", "") or "").strip() == shipment_no]
+        projected = []
+        for record in matches:
+            identifier = str(record.get(key, "") or "").strip()
+            if not identifier:
+                continue
+            try:
+                validate_customs_links(
+                    shipment_no,
+                    identifier if booking_field else "",
+                    base["invoice_no"], base["packing_no"],
+                    identifier if container_field else "",
+                    base["bl_no"], account_id,
+                )
+            except DataValidationError:
+                relationship = "Review relationship"
+            else:
+                relationship = "Related"
+            projected.append({"identifier": identifier, "source": "Shipment", "relationship": relationship})
+        if len(projected) == 1 and projected[0]["relationship"] == "Related":
+            auto_select[field] = projected[0]["identifier"]
+        else:
+            suggestions[field].extend(projected)
+
+    return {
+        "shipment_no": str(shipment_no or "").strip(),
+        "auto_select": auto_select,
+        "suggestions": {field: candidates for field, candidates in suggestions.items() if candidates},
+    }
+
+
 def next_customs_record_no(records):
     return next_identifier(records, "customs_record_no", "CD")
-    numbers = [
-        int(record.get("customs_record_no", "CD-000").split("-")[1])
-        for record in records
-        if record.get("customs_record_no", "").startswith("CD-")
-    ]
-    return f"CD-{max(numbers, default=0) + 1:03d}"
 
 
 def exists(path_records, key, value):
@@ -576,9 +675,9 @@ def render_form(record, action, title, button_text, show_no=False, products=None
 
     html = """
 <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Customs Declaration</title><style>
-body{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;color:#111827;}.container{max-width:1120px;margin:auto;background:white;padding:35px;border-radius:16px;box-shadow:0 12px 35px rgba(15,23,42,.08);}h1{text-align:center;font-size:46px;margin:8px 0 10px;}.sub{text-align:center;color:#6B7280;margin-bottom:35px;}.nav-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:25px;}.card{border:1px solid #E5E7EB;border-radius:16px;padding:25px;margin-bottom:25px;background:#fff;}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}.record-links{column-gap:20px;row-gap:18px;align-items:start;}.field{display:flex;flex-direction:column;gap:8px;min-width:0;}.item-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:18px;margin-bottom:16px;background:#F9FAFB;}label{display:block;font-weight:bold;margin:0 0 7px;color:#374151;}.field label{margin:0;line-height:1.2;}input,select,textarea{width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;background:white;}.record-links input,.record-links select{height:48px;padding:0 14px;}textarea{min-height:100px;resize:vertical;}button{padding:15px 18px;background:#111827;color:white;border:none;border-radius:12px;font-size:16px;cursor:pointer;}.small{min-width:170px;}.full{width:100%;margin-top:10px;font-size:18px;}.add{width:100%;background:#374151;margin-bottom:20px;}.remove{grid-column:1/-1;width:100%;background:#991B1B;}.totals{display:flex;gap:18px;flex-wrap:wrap;font-size:17px;font-weight:bold;color:#111827;margin:8px 0 20px;}@media(max-width:900px){body{padding:18px}.grid,.item-row{grid-template-columns:1fr}h1{font-size:34px}}
+body{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;color:#111827;}.container{max-width:1120px;margin:auto;background:white;padding:35px;border-radius:16px;box-shadow:0 12px 35px rgba(15,23,42,.08);}h1{text-align:center;font-size:46px;margin:8px 0 10px;}.sub{text-align:center;color:#6B7280;margin-bottom:35px;}.nav-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:25px;}.card{border:1px solid #E5E7EB;border-radius:16px;padding:25px;margin-bottom:25px;background:#fff;}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}.record-links{column-gap:20px;row-gap:18px;align-items:start;}.field{display:flex;flex-direction:column;gap:8px;min-width:0;}.reference-assist{grid-column:1/-1;padding:14px;border:1px solid #BFDBFE;border-radius:12px;background:#EFF6FF;color:#1E3A5F}.reference-assist[hidden]{display:none}.reference-assist strong{display:block;margin-bottom:8px}.reference-assist-list{display:flex;gap:8px;flex-wrap:wrap}.reference-suggestion{padding:9px 12px;border:1px solid #93C5FD;background:white;color:#1E3A5F;font-size:14px}.reference-suggestion small{display:block;margin-top:3px;color:#64748B}.item-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:18px;margin-bottom:16px;background:#F9FAFB;}label{display:block;font-weight:bold;margin:0 0 7px;color:#374151;}.field label{margin:0;line-height:1.2;}input,select,textarea{width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;background:white;}.record-links input,.record-links select{height:48px;padding:0 14px;}textarea{min-height:100px;resize:vertical;}button{padding:15px 18px;background:#111827;color:white;border:none;border-radius:12px;font-size:16px;cursor:pointer;}.small{min-width:170px;}.full{width:100%;margin-top:10px;font-size:18px;}.add{width:100%;background:#374151;margin-bottom:20px;}.remove{grid-column:1/-1;width:100%;background:#991B1B;}.totals{display:flex;gap:18px;flex-wrap:wrap;font-size:17px;font-weight:bold;color:#111827;margin:8px 0 20px;}@media(max-width:900px){body{padding:18px}.grid,.item-row{grid-template-columns:1fr}h1{font-size:34px}}
 </style></head><body><div class="container"><div class="nav-row"><a href="/"><button class="small" type="button">Dashboard</button></a><a href="/customs-list"><button class="small" type="button">Customs List</button></a></div><h1>__TITLE__</h1><p class="sub">Prepare export customs declarations from invoice, packing, booking, container, and B/L data</p><form action="__ACTION__" method="post">
-<div class="card"><h2>Record Links</h2><div class="grid record-links">__NO_INPUT__<div class="field"><label>Customs Date</label><input type="date" name="customs_date" value="__CUSTOMS_DATE__"></div><div class="field"><label>Shipment</label>__SHIPMENT_SELECT__</div><div class="field"><label>Booking</label>__BOOKING_SELECT__</div><div class="field"><label>Commercial Invoice</label>__INVOICE_SELECT__</div><div class="field"><label>Packing List</label>__PACKING_SELECT__</div><div class="field"><label>Container</label>__CONTAINER_SELECT__</div><div class="field"><label>Bill of Lading</label>__BL_SELECT__</div></div></div>
+<div class="card"><h2>Record Links</h2><div class="grid record-links">__NO_INPUT__<div class="field"><label>Customs Date</label><input type="date" name="customs_date" value="__CUSTOMS_DATE__"></div><div class="field"><label>Shipment</label>__SHIPMENT_SELECT__</div><div class="field"><label>Booking</label>__BOOKING_SELECT__</div><div class="field"><label>Commercial Invoice</label>__INVOICE_SELECT__</div><div class="field"><label>Packing List</label>__PACKING_SELECT__</div><div class="field"><label>Container</label>__CONTAINER_SELECT__</div><div class="field"><label>Bill of Lading</label>__BL_SELECT__</div><aside id="reference_assist" class="reference-assist" role="status" aria-live="polite" hidden><strong>Related documents found</strong><div class="reference-assist-list"></div></aside></div></div>
 <div class="card"><h2>Customs Declaration Information</h2><div class="grid"><div><label>Declaration No</label><input type="text" name="declaration_no" value="__DECLARATION_NO__"></div><div><label>Declaration Type</label><input type="text" name="declaration_type" value="__DECLARATION_TYPE__"></div><div><label>Customs Office</label><input type="text" name="customs_office" value="__CUSTOMS_OFFICE__"></div><div><label>Incoterms</label><input type="text" name="incoterms" value="__INCOTERMS__"></div><div><label>Currency</label><input type="text" name="currency" value="__CURRENCY__"></div><div><label>Total Invoice Value</label><input type="text" name="total_invoice_value" value="__TOTAL_INVOICE_VALUE__"></div></div></div>
 <div class="card"><h2>Exporter / Consignee</h2><div class="grid"><div><label>Exporter</label><input type="text" name="exporter_name" value="__EXPORTER__"></div><div><label>Exporter Address</label><input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__"></div><div><label>Exporter Email</label><input type="email" name="exporter_email" value="__EXPORTER_EMAIL__"></div><div><label>Exporter Phone</label><input type="text" name="exporter_phone" value="__EXPORTER_PHONE__"></div><div><label>Consignee</label><input type="text" name="consignee_name" value="__CONSIGNEE__"></div><div><label>Consignee Address</label><input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__"></div><div><label>Consignee Email</label><input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__"></div><div><label>Country of Origin</label><input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__"></div><div><label>Destination Country</label><input type="text" name="destination_country" value="__DESTINATION_COUNTRY__"></div></div></div>
 <div class="card"><h2>Transport / Container Information</h2><div class="grid"><div><label>Vessel</label><input type="text" name="vessel" value="__VESSEL__"></div><div><label>Voyage No</label><input type="text" name="voyage_no" value="__VOYAGE_NO__"></div><div><label>Port of Loading</label><input type="text" name="port_of_loading" value="__PORT_OF_LOADING__"></div><div><label>Port of Discharge</label><input type="text" name="port_of_discharge" value="__PORT_OF_DISCHARGE__"></div><div><label>Container No</label><input type="text" name="container_no" value="__CONTAINER_NO__"></div><div><label>Seal No</label><input type="text" name="seal_no" value="__SEAL_NO__"></div></div></div>
@@ -784,6 +883,49 @@ function setLinkedSelect(name, value){
   const hasOption = Array.from(select.options).some(option => option.value === value);
   if(hasOption) select.value = value;
 }
+function setLinkedSelectIfEmpty(name, value){
+  if(!value) return false;
+  const select = document.querySelector(`select[name="${name}"]`);
+  if(!select || select.value) return false;
+  const hasOption = Array.from(select.options).some(option => option.value === value);
+  if(!hasOption) return false;
+  select.value = value;
+  return true;
+}
+function renderReferenceSuggestions(suggestions){
+  const panel = document.getElementById("reference_assist");
+  const list = panel?.querySelector(".reference-assist-list");
+  if(!panel || !list) return;
+  list.replaceChildren();
+  Object.entries(suggestions || {}).forEach(([field, candidates]) => {
+    candidates.forEach(candidate => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "reference-suggestion";
+      button.dataset.field = field;
+      button.dataset.value = candidate.identifier;
+      button.append(document.createTextNode(candidate.identifier));
+      const detail = document.createElement("small");
+      detail.textContent = `${candidate.source} · ${candidate.relationship}`;
+      button.appendChild(detail);
+      button.addEventListener("click", () => setLinkedSelect(field, candidate.identifier));
+      list.appendChild(button);
+    });
+  });
+  panel.hidden = list.childElementCount === 0;
+}
+async function loadShipmentReferenceAssist(shipmentNo){
+  const panel = document.getElementById("reference_assist");
+  if(!shipmentNo){if(panel) panel.hidden = true;return;}
+  try{
+    const result = await fetchSource(`/customs-source/shipment/${encodeURIComponent(shipmentNo)}`);
+    Object.entries(result.auto_select || {}).forEach(([field, value]) => setLinkedSelectIfEmpty(field, value));
+    renderReferenceSuggestions(result.suggestions || {});
+  }catch(error){
+    if(panel) panel.hidden = true;
+    console.error(`Customs shipment reference assist failed for ${shipmentNo}:`, error);
+  }
+}
 async function loadBookingEnrichment(bookingRecordNo){
   if(!bookingRecordNo) return;
   try{
@@ -820,6 +962,9 @@ async function loadContainerEnrichment(containerRecordNo){
 }
 document.querySelector('[name="invoice_no"]')?.addEventListener("change", event => {
   loadInvoicePrefill(event.target.value);
+});
+document.querySelector('[name="shipment_no"]')?.addEventListener("change", event => {
+  loadShipmentReferenceAssist(event.target.value);
 });
 document.querySelector('[name="packing_no"]')?.addEventListener("change", event => {
   loadPackingEnrichment(event.target.value);
@@ -890,6 +1035,11 @@ def customs_source_invoice(invoice_no: str, request: Request):
     return invoice
 
 
+@router.get("/customs-source/shipment/{shipment_no}")
+def customs_source_shipment(shipment_no: str, request: Request):
+    return shipment_reference_assist(shipment_no, _account_id(request))
+
+
 @router.get("/customs-source/packing/{packing_no}")
 def customs_source_packing(packing_no: str, request: Request):
     packing = find_by_identifier(load_packing_lists(_account_id(request)), "packing_no", packing_no)
@@ -942,7 +1092,9 @@ def save_customs_record(
         record["account_id"] = account_id
         records.append(record)
     locked_json_mutation(CUSTOMS_FILE, [], add_customs, list)
-    return RedirectResponse("/customs-list", status_code=303)
+    return RedirectResponse(
+        shipment_detail_redirect_url(shipment_no, account_id, "/customs-list"), status_code=303,
+    )
 
 
 @router.get("/edit-customs/{customs_record_no}", response_class=HTMLResponse)
@@ -990,7 +1142,9 @@ def update_customs(
             return
         raise HTTPException(status_code=404, detail="Customs declaration not found")
     locked_json_mutation(CUSTOMS_FILE, [], replace_customs, list)
-    return RedirectResponse("/customs-list", status_code=303)
+    return RedirectResponse(
+        shipment_detail_redirect_url(shipment_no, account_id, "/customs-list"), status_code=303,
+    )
 
 
 @router.get("/delete-customs/{customs_record_no}")
@@ -1049,17 +1203,18 @@ def customs_detail(customs_record_no: str, request: Request):
     return HTMLResponse(html)
 
 
-def draw_text_fit(pdf, text, x, y, max_width, font="Helvetica", size=8, min_size=6):
+def draw_text_fit(pdf, text, x, y, max_width, font=TP_UNICODE, size=8, min_size=6):
     text = str(text or "")
     current_size = size
     while current_size > min_size and pdf.stringWidth(text, font, current_size) > max_width:
         current_size -= 0.5
     pdf.setFont(font, current_size)
-    pdf.drawString(x, y, text)
+    pdf.drawString(x, y, fit_pdf_text(pdf, text, max_width, font, current_size))
 
 
 def create_customs_pdf_buffer(payload):
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     navy = colors.HexColor("#111827")
@@ -1067,7 +1222,7 @@ def create_customs_pdf_buffer(payload):
     muted = colors.HexColor("#6B7280")
 
     def footer():
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.setFillColor(muted)
         pdf.drawCentredString(width / 2, 30, "Generated by Trade Paper AI")
         pdf.setFillColor(colors.black)
@@ -1076,10 +1231,10 @@ def create_customs_pdf_buffer(payload):
         pdf.setFillColor(navy)
         pdf.roundRect(40, height - 92, width - 80, 56, 8, stroke=0, fill=1)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 22)
+        pdf.setFont(TP_UNICODE_BOLD, 22)
         pdf.drawCentredString(width / 2, height - 70, "CUSTOMS DECLARATION")
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         info = [("Record No", payload.get("customs_record_no", "")), ("Declaration No", payload.get("declaration_no", "")), ("Date", payload.get("customs_date", "")), ("Shipment", payload.get("shipment_no", "")), ("Invoice", payload.get("invoice_no", "")), ("Packing", payload.get("packing_no", "")), ("B/L", payload.get("bl_no", "")), ("Exporter", payload.get("exporter", "")), ("Exporter Addr", payload.get("exporter_address", "")), ("Exporter Contact", " / ".join(v for v in (payload.get("exporter_email", ""), payload.get("exporter_phone", "")) if v)), ("Consignee", payload.get("consignee", "")), ("Consignee Addr", payload.get("consignee_address", "")), ("Consignee Email", payload.get("consignee_email", "")), ("Vessel", payload.get("vessel", "")), ("Origin", payload.get("country_of_origin", "")), ("Destination", payload.get("destination_country", ""))]
         y = height - 122
         for idx, (label, value) in enumerate(info):
@@ -1093,7 +1248,7 @@ def create_customs_pdf_buffer(payload):
         pdf.setFillColor(navy)
         pdf.rect(40, y, width - 80, 24, stroke=0, fill=1)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 7)
+        pdf.setFont(TP_UNICODE_BOLD, 7)
         for x, label in [(46, "No"), (66, "Item"), (176, "HS Code"), (242, "Qty"), (288, "Price"), (340, "Amount"), (398, "Origin"), (460, "Net"), (512, "Gross")]:
             pdf.drawString(x, y + 8, label)
         pdf.setFillColor(colors.black)
@@ -1132,20 +1287,20 @@ def create_customs_pdf_buffer(payload):
     pdf.setFillColor(navy)
     pdf.roundRect(335, summary_y, 220, 84, 8, stroke=0, fill=1)
     pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 9)
+    pdf.setFont(TP_UNICODE_BOLD, 9)
     pdf.drawString(350, summary_y + 60, f"Total Quantity: {payload.get('total_quantity', '')}")
     pdf.drawString(350, summary_y + 42, f"Total Net Weight: {payload.get('total_net_weight', '')}")
     pdf.drawString(350, summary_y + 24, f"Total Gross Weight: {payload.get('total_gross_weight', '')}")
     pdf.drawString(350, summary_y + 6, f"Total Amount: {payload.get('total_amount', '')}")
     pdf.setFillColor(colors.black)
     if payload.get("remarks"):
-        pdf.setFont("Helvetica-Bold", 10)
+        pdf.setFont(TP_UNICODE_BOLD, 10)
         pdf.drawString(40, summary_y + 60, "Remarks")
         draw_text_fit(pdf, payload.get("remarks", ""), 40, summary_y + 42, 260, size=8)
     signature_y = max(90, summary_y - 42)
     pdf.setStrokeColor(colors.black)
     pdf.line(380, signature_y, 555, signature_y)
-    pdf.setFont("Helvetica", 9)
+    pdf.setFont(TP_UNICODE, 9)
     pdf.drawString(415, signature_y - 15, "Authorized Signature")
     footer()
     pdf.save()

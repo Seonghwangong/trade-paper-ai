@@ -1,6 +1,5 @@
 from typing import Annotated, List, Optional
 from copy import deepcopy
-from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
@@ -11,17 +10,18 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
 
 router = APIRouter()
 
-from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
+from app.storage import atomic_write_json, data_path, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
 from app.referential_integrity import find_dependencies, render_delete_page
 from app.account_insurance import ensure_legacy_insurance_ownership, public_insurance
 from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, find_by_identifier, preserve_omitted_item_fields, resolve_source_chain, set_submitted_snapshot_fields
 from app.export import set_pdf_export_record
 from app.auth import USERS_FILE
-from app.shipment import shipment_context_redirect_url
+from app.shipment import shipment_context_redirect_url, shipment_detail_redirect_url
 from app import product as product_module
 from app import bill_of_lading as bill_of_lading_module
 from app import packing as packing_module
@@ -104,16 +104,6 @@ def validate_insurance_links(bl_no, packing_no, invoice_no, account_id, shipment
         require_consistent_reference("Bill of Lading", bl_no, shipment.get("bl_no", ""), "selected Shipment")
         require_consistent_reference("Packing List", packing_no, shipment.get("packing_no", ""), "selected Shipment")
         require_consistent_reference("Invoice", invoice_no, shipment.get("invoice_no", ""), "selected Shipment")
-
-
-def next_insurance_no(records):
-    return next_identifier(records, "insurance_no", "INS")
-    numbers = [
-        int(record.get("insurance_no", "INS-000").split("-")[1])
-        for record in records
-        if record.get("insurance_no", "").startswith("INS-")
-    ]
-    return f"INS-{max(numbers, default=0) + 1:03d}"
 
 
 def html_attr(value):
@@ -886,7 +876,9 @@ def update_inspection(
                 return
         raise HTTPException(status_code=404, detail="Insurance Certificate not found")
     locked_json_mutation(INSURANCE_FILE, [], replace_insurance, list)
-    return RedirectResponse(url="/insurance-list", status_code=303)
+    return RedirectResponse(
+        url=shipment_detail_redirect_url(current.get("shipment_no", ""), account_id, "/insurance-list"), status_code=303,
+    )
 
 
 @router.get("/delete-insurance/{insurance_no}")
@@ -947,6 +939,7 @@ def create_inspection_pdf(request: Request, payload: dict = Body(...)):
     items = payload.get("items", [])
 
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     pdf.setTitle(f"Insurance Certificate {insurance_no}")
@@ -959,28 +952,22 @@ def create_inspection_pdf(request: Request, payload: dict = Body(...)):
     result_h = 105
     result_gap = 20
 
-    def fit_text(text, max_width, font_name="Helvetica", font_size=8):
-        text = str(text or "")
-        if pdf.stringWidth(text, font_name, font_size) <= max_width:
-            return text
-        suffix = "..."
-        while text and pdf.stringWidth(text + suffix, font_name, font_size) > max_width:
-            text = text[:-1]
-        return text + suffix if text else suffix
+    def fit_text(text, max_width, font_name=TP_UNICODE, font_size=8):
+        return fit_pdf_text(pdf, text, max_width, font_name, font_size)
 
     def draw_header():
         pdf.setFillColor(colors.HexColor("#111827"))
         pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 23)
+        pdf.setFont(TP_UNICODE_BOLD, 23)
         pdf.drawString(45, height - 55, "INSURANCE CERTIFICATE")
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
         pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 10)
-        pdf.drawString(45, height - 118, f"Insurance No: {insurance_no}")
+        pdf.setFont(TP_UNICODE_BOLD, 10)
+        pdf.drawString(45, height - 118, fit_text(f"Insurance No: {insurance_no}", 505, TP_UNICODE_BOLD, 10))
         pdf.drawString(45, height - 136, f"Insurance Date: {insurance_date}")
         pdf.drawString(45, height - 154, f"B/L No: {bl_no}")
         pdf.drawString(45, height - 172, f"Packing No: {packing_no}")
@@ -991,10 +978,10 @@ def create_inspection_pdf(request: Request, payload: dict = Body(...)):
         pdf.roundRect(45, height - 260, 240, 72, 8, fill=1)
         pdf.roundRect(310, height - 260, 240, 72, 8, fill=1)
         pdf.setFillColor(colors.HexColor("#111827"))
-        pdf.setFont("Helvetica-Bold", 10)
+        pdf.setFont(TP_UNICODE_BOLD, 10)
         pdf.drawString(60, height - 207, "EXPORTER")
         pdf.drawString(325, height - 207, "CONSIGNEE")
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.drawString(60, height - 230, fit_text(exporter, 195))
         pdf.drawString(325, height - 230, fit_text(consignee, 195))
         pdf.drawString(60, height - 242, fit_text(exporter_address, 195, font_size=7))
@@ -1003,25 +990,25 @@ def create_inspection_pdf(request: Request, payload: dict = Body(...)):
         pdf.drawString(325, height - 252, fit_text(consignee_email, 195, font_size=7))
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 8)
-        pdf.drawString(45, height - 287, f"Insurance Company: {insurance_company}")
-        pdf.drawString(300, height - 287, f"Policy No: {policy_no}")
+        pdf.setFont(TP_UNICODE_BOLD, 8)
+        pdf.drawString(45, height - 287, fit_text(f"Insurance Company: {insurance_company}", 235, TP_UNICODE_BOLD, 8))
+        pdf.drawString(300, height - 287, fit_text(f"Policy No: {policy_no}", 250, TP_UNICODE_BOLD, 8))
         pdf.drawString(45, height - 304, f"Insured Amount: {currency} {insured_amount}")
-        pdf.drawString(300, height - 304, f"Coverage Type: {coverage_type}")
-        pdf.drawString(45, height - 321, f"Inspection Location: {inspection_location}")
-        pdf.drawString(300, height - 321, f"Transport: {transport_details}")
+        pdf.drawString(300, height - 304, fit_text(f"Coverage Type: {coverage_type}", 250, TP_UNICODE_BOLD, 8))
+        pdf.drawString(45, height - 321, fit_text(f"Inspection Location: {inspection_location}", 235, TP_UNICODE_BOLD, 8))
+        pdf.drawString(300, height - 321, fit_text(f"Transport: {transport_details}", 250, TP_UNICODE_BOLD, 8))
 
     def draw_table_header():
         header_y = height - 355
         pdf.setFillColor(colors.HexColor("#E5E7EB"))
         pdf.rect(table_x, header_y, table_w, table_header_h, fill=1, stroke=0)
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 8)
+        pdf.setFont(TP_UNICODE_BOLD, 8)
         pdf.drawString(52, header_y + 10, "No")
         pdf.drawString(82, header_y + 10, "Item")
         pdf.drawString(270, header_y + 10, "HS Code")
         pdf.drawRightString(540, header_y + 10, "Quantity")
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
         return header_y - table_header_h
 
@@ -1031,11 +1018,11 @@ def create_inspection_pdf(request: Request, payload: dict = Body(...)):
 
     def draw_footer():
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica", 10)
+        pdf.setFont(TP_UNICODE, 10)
         pdf.drawString(45, 115, "Authorized Signature:")
         pdf.line(170, 115, 330, 115)
         pdf.setFillColor(colors.HexColor("#6B7280"))
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
         pdf.drawString(45, 45, "For trade documentation automation.")
 
@@ -1069,13 +1056,13 @@ def create_inspection_pdf(request: Request, payload: dict = Body(...)):
     pdf.setFillColor(colors.HexColor("#111827"))
     pdf.roundRect(45, result_bottom, 505, result_h, 8, fill=1, stroke=0)
     pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFont(TP_UNICODE_BOLD, 10)
     pdf.drawString(60, result_top - 25, "Insurance Information")
-    pdf.setFont("Helvetica", 9)
-    pdf.drawString(60, result_top - 45, fit_text(f"Coverage Type: {coverage_type}", 455, "Helvetica", 9))
-    pdf.drawString(60, result_top - 63, fit_text(f"Policy Number: {policy_no} | Insured Amount: {currency} {insured_amount}", 455, "Helvetica", 9))
+    pdf.setFont(TP_UNICODE, 9)
+    pdf.drawString(60, result_top - 45, fit_text(f"Coverage Type: {coverage_type}", 455, TP_UNICODE, 9))
+    pdf.drawString(60, result_top - 63, fit_text(f"Policy Number: {policy_no} | Insured Amount: {currency} {insured_amount}", 455, TP_UNICODE, 9))
     if remarks:
-        pdf.drawString(60, result_top - 81, fit_text(f"Remarks: {remarks}", 455, "Helvetica", 9))
+        pdf.drawString(60, result_top - 81, fit_text(f"Remarks: {remarks}", 455, TP_UNICODE, 9))
 
     draw_footer()
     pdf.showPage()

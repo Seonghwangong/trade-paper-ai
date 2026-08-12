@@ -67,8 +67,14 @@ DEPENDENCY_REGISTRY = {
     ],
     "Shipping Instruction": [("Shipment", "si_no"), ("Booking Confirmation", "si_no")],
     "Shipment": [
+        ("Commercial Invoice", "shipment_no"),
         ("Booking Confirmation", "shipment_no"),
+        ("Shipping Instruction", "shipment_no"),
         ("Container Management", "shipment_no"),
+        ("Certificate of Origin", "shipment_no"),
+        ("Inspection Certificate", "shipment_no"),
+        ("Insurance Certificate", "shipment_no"),
+        ("Weight Certificate", "shipment_no"),
         ("Customs Declaration", "shipment_no"),
     ],
     "Booking Confirmation": [("Customs Declaration", "booking_record_no")],
@@ -127,9 +133,22 @@ def _result(module: str, record: dict[str, Any]) -> dict[str, str] | None:
     }
 
 
-def find_dependencies(module: str, identifier: Any) -> list[dict[str, str]]:
+def find_dependencies(module: str, identifier: Any, account_id: Any = "") -> list[dict[str, str]]:
     target = _normalized(identifier)
-    if not target:
+    owner = _normalized(account_id)
+    if not target or not owner:
+        return []
+    source_meta = SOURCE_META.get(module)
+    if source_meta is None:
+        return []
+    source_filename, source_id_field = source_meta[0], source_meta[1]
+    source_exists = any(
+        isinstance(record, dict)
+        and _normalized(record.get(source_id_field)) == target
+        and _normalized(record.get("account_id")) == owner
+        for record in load_json_strict(data_path(source_filename), [], list)
+    )
+    if not source_exists:
         return []
     dependencies = []
     for dependent_module, reference_field in DEPENDENCY_REGISTRY.get(module, []):
@@ -138,6 +157,8 @@ def find_dependencies(module: str, identifier: Any) -> list[dict[str, str]]:
             if not isinstance(record, dict):
                 continue
             if _normalized(record.get(reference_field)) != target:
+                continue
+            if _normalized(record.get("account_id")) != owner:
                 continue
             normalized = _result(dependent_module, record)
             if normalized:
@@ -148,7 +169,7 @@ def find_dependencies(module: str, identifier: Any) -> list[dict[str, str]]:
     )
 
 
-def find_soft_warnings(module: str, name: Any) -> list[dict[str, str]]:
+def find_soft_warnings(module: str, name: Any, account_id: str = "") -> list[dict[str, str]]:
     target = _normalized(name).casefold()
     if not target:
         return []
@@ -161,6 +182,8 @@ def find_soft_warnings(module: str, name: Any) -> list[dict[str, str]]:
         filename = SOURCE_META[source_module][0]
         for record in load_json_strict(data_path(filename), [], list):
             if not isinstance(record, dict):
+                continue
+            if account_id and _normalized(record.get("account_id")) != _normalized(account_id):
                 continue
             matched = False
             if module == "Product":
@@ -237,25 +260,39 @@ def render_delete_page(
 
 def identifier_delete_confirmation(
     module: str, document: str, identifier: Any, storage_path: str | Path,
-    id_field: str, action_url: str, cancel_url: str,
+    id_field: str, action_url: str, cancel_url: str, account_id: Any = "",
 ) -> HTMLResponse:
     normalized = _normalized(identifier)
+    owner = _normalized(account_id)
     records = load_json_strict(storage_path, [], list)
-    if not any(isinstance(record, dict) and _normalized(record.get(id_field)) == normalized for record in records):
+    if not owner or not any(
+        isinstance(record, dict)
+        and _normalized(record.get(id_field)) == normalized
+        and _normalized(record.get("account_id")) == owner
+        for record in records
+    ):
         raise HTTPException(status_code=404, detail=f"{document} not found")
-    return render_delete_page(document, normalized, action_url, cancel_url, find_dependencies(module, normalized))
+    return render_delete_page(
+        document, normalized, action_url, cancel_url,
+        find_dependencies(module, normalized, owner),
+    )
 
 
 def confirmed_identifier_delete(
     module: str, document: str, identifier: Any, storage_path: str | Path,
     id_field: str, action_url: str, cancel_url: str, redirect_url: str,
+    account_id: Any = "",
 ):
     normalized = _normalized(identifier)
+    owner = _normalized(account_id)
     def remove(records):
-        index = next((i for i, record in enumerate(records) if isinstance(record, dict) and _normalized(record.get(id_field)) == normalized), None)
+        index = next((i for i, record in enumerate(records)
+                      if isinstance(record, dict)
+                      and _normalized(record.get(id_field)) == normalized
+                      and _normalized(record.get("account_id")) == owner), None)
         if index is None:
             raise HTTPException(status_code=404, detail=f"{document} not found")
-        dependencies = find_dependencies(module, normalized)
+        dependencies = find_dependencies(module, normalized, owner)
         if dependencies:
             raise _ProtectedDelete(dependencies)
         records.pop(index)

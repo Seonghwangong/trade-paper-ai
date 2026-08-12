@@ -15,6 +15,7 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 .full{width:100%;margin-top:10px;}
 .total{font-size:26px;font-weight:bold;margin:25px 0;}
 .back button{width:220px;margin-bottom:25px;}
+.demo-preview{display:none;padding:16px;margin-bottom:20px;border:1px solid #BFDBFE;border-radius:12px;background:#EFF6FF;color:#1E3A8A;line-height:1.5;}
 </style>
 </head>
 
@@ -27,6 +28,7 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 
 <h1>Invoice</h1>
 <p class="sub">Create invoice from customer and product master data</p>
+<div class="demo-preview" id="demo-preview"><b>Demo Preview</b><br>Temporary values — nothing is saved until you press Save.</div>
 
 <div class="card">
 <h2>Invoice Information</h2>
@@ -279,11 +281,48 @@ async function loadProformaPrefill(){
     calculateTotal();
 }
 
+function applyDemoPrefill(){
+    const params = new URLSearchParams(window.location.search);
+    if(params.get("demo") !== "1" || getPiNoFromUrl()) return;
+
+    document.getElementById("demo-preview").style.display = "block";
+    const companyIndex = companies.findIndex(company => company && company.name === "Busan Comfort Trading");
+    if(companyIndex >= 0){
+        document.getElementById("sellerSelect").value = String(companyIndex);
+        selectSeller();
+    }else{
+        document.getElementById("seller").value = "Busan Comfort Trading";
+    }
+
+    const buyerIndex = buyers.findIndex(buyer => buyer && buyer.name === "Sakura Retail Co.");
+    if(buyerIndex >= 0){
+        document.getElementById("buyerCompanySelect").value = String(buyerIndex);
+        selectBuyerCompany();
+    }else{
+        document.getElementById("buyer").value = "Sakura Retail Co.";
+        document.getElementById("buyer_address").value = "Tokyo, Japan";
+        document.getElementById("buyer_email").value = "buyer@example.jp";
+    }
+
+    const productIndex = products.findIndex(product => product && product.name === "Notebook Computer");
+    if(productIndex >= 0){
+        document.getElementById("product1").value = String(productIndex);
+        selectProduct(1);
+    }else{
+        document.getElementById("item1").value = "Notebook Computer";
+        document.getElementById("hs1").value = "847130";
+        document.getElementById("price1").value = "850";
+    }
+    document.getElementById("qty1").value = "1";
+    calculateTotal();
+}
+
 window.onload = async function(){
     await loadCompany();
     await loadBuyers();
     await loadProducts();
     await loadProformaPrefill();
+    applyDemoPrefill();
 };
 
 </script>

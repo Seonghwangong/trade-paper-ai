@@ -1,31 +1,84 @@
 from typing import List
-from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 import html as html_lib
-import json
 
-from fastapi import APIRouter, Form, Body, HTTPException
+from fastapi import APIRouter, Form, Body, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 router = APIRouter()
 
-from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
-from app.validation import require_items, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.storage import atomic_write_json, data_path, locked_json_mutation, next_identifier
+from app.validation import DataValidationError, require_consistent_reference, require_items, require_text
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_quotation import ensure_legacy_quotation_ownership, public_quotation
+from app.export import set_pdf_export_record
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
+from app.account_company import load_account_company
+from app.auth import USERS_FILE
+from app.routers.company import ACCOUNT_COMPANIES_FILE
+from app import buyer as buyer_module
+from app import product as product_module
 from app.ui import badge, button, form_css, form_footer, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
 
 QUOTATION_FILE = data_path("quotations.json")
 COMPANY_FILE = data_path("company.json")
 
-def load_company():
-    return load_json_strict(COMPANY_FILE, {}, dict)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
 
-def load_quotations():
-    return load_json_strict(QUOTATION_FILE, [], list)
+
+def load_company(account_id):
+    return load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+
+def load_quotation_records():
+    return ensure_legacy_quotation_ownership(QUOTATION_FILE, USERS_FILE)
+
+
+def owned_quotation_records(account_id):
+    owner = str(account_id or "").strip()
+    return [record for record in load_quotation_records()
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+
+
+def load_quotations(account_id):
+    return [public_quotation(record) for record in owned_quotation_records(account_id)]
+
+
+def _owned_quotation(quotation_no, account_id):
+    record = next((record for record in owned_quotation_records(account_id)
+                   if str(record.get("quotation_no", "") or "").strip() == str(quotation_no or "").strip()), None)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+    return record
+
+
+def validate_quotation_sources(account_id, seller, buyer_name, buyer_address, buyer_email, items):
+    company = load_company(account_id)
+    require_consistent_reference("Seller", seller, company.get("name", ""), "Company Master")
+    buyer = next((record for record in buyer_module.load_buyers(account_id)
+                  if str(record.get("name", "") or "").strip() == str(buyer_name or "").strip()), None)
+    if buyer is None:
+        raise DataValidationError("Buyer", "The selected Buyer is no longer available.", "Select a Buyer from Buyer Master, then save again.")
+    require_consistent_reference("Buyer address", buyer_address, buyer.get("address", ""), "Buyer Master")
+    require_consistent_reference("Buyer email", buyer_email, buyer.get("email", ""), "Buyer Master")
+    products = product_module.load_products(account_id)
+    enriched = []
+    for submitted in items:
+        product = next((record for record in products
+                        if str(record.get("name", "") or "").strip() == str(submitted.get("name", "") or "").strip()), None)
+        if product is None:
+            raise DataValidationError("Product", "The selected Product is no longer available.", "Select a Product from Product Master, then save again.")
+        item = dict(submitted)
+        require_consistent_reference("HS Code", item.get("hs_code", ""), product.get("hs_code", ""), "Product Master")
+        item["hs_code"] = item.get("hs_code", "") or product.get("hs_code", "")
+        item["unit_price"] = item.get("unit_price", "") or product.get("unit_price", "")
+        enriched.append(item)
+    return enriched
 
 
 def save_quotations(quotations):
@@ -33,8 +86,8 @@ def save_quotations(quotations):
 
 
 @router.get("/quotation-list")
-def quotation_list(search: str = ""):
-    quotations = load_quotations()
+def quotation_list(request: Request, search: str = ""):
+    quotations = load_quotations(_account_id(request))
     quotations = list(reversed(quotations))
 
     if search:
@@ -80,7 +133,7 @@ def quotation_list(search: str = ""):
     return HTMLResponse(page_shell("Quotation List", content, subtitle="Manage all quotation documents"))
 
 @router.get("/quotation-form")
-def quotation_form():
+def quotation_form(request: Request):
 
     html = """
 <!DOCTYPE html>
@@ -302,11 +355,9 @@ loadProducts();
     return HTMLResponse(html)
 
 @router.get("/edit-quotation/{quotation_no}")
-def edit_quotation(quotation_no: str):
-    quotations = load_quotations()
-
-    for quotation in quotations:
-        if quotation.get("quotation_no") == quotation_no:
+def edit_quotation(quotation_no: str, request: Request):
+    quotation = public_quotation(_owned_quotation(quotation_no, _account_id(request)))
+    if quotation:
             items = quotation.get("items", [])
 
             html = f"""
@@ -391,10 +442,9 @@ function calculateAmount(target) {
 
             return HTMLResponse(html)
 
-    return HTMLResponse("Quotation Not Found")  
-
 @router.post("/quotation")
 def save_quotation(
+    request: Request,
     buyer_name: str = Form(""),
     buyer_address: str = Form(""),
     buyer_email: str = Form(""),
@@ -423,7 +473,8 @@ def save_quotation(
             "amount": amount[i] if i < len(amount) else "",
         })
 
-    require_items(items)
+    items = validate_quotation_sources(_account_id(request), seller, buyer_name, buyer_address, buyer_email, require_items(items))
+    account_id = _account_id(request)
     def add_quotation(quotations):
         quotation = {
         "quotation_no": next_identifier(quotations, "quotation_no", "QT"),
@@ -434,6 +485,7 @@ def save_quotation(
         "valid_until": valid_until,
         "currency": currency,
         "items": items,
+        "account_id": account_id,
         }
         quotations.append(quotation)
     locked_json_mutation(QUOTATION_FILE, [], add_quotation, list)
@@ -443,6 +495,7 @@ def save_quotation(
 @router.post("/update-quotation/{quotation_no}")
 def update_quotation(
     quotation_no: str,
+    request: Request,
     buyer_name: str = Form(""),
     buyer_address: str = Form(""),
     buyer_email: str = Form(""),
@@ -470,10 +523,12 @@ def update_quotation(
             "amount": amount[i] if i < len(amount) else "",
         })
 
-    require_items(items)
+    account_id = _account_id(request)
+    _owned_quotation(quotation_no, account_id)
+    items = validate_quotation_sources(account_id, seller, buyer_name, buyer_address, buyer_email, require_items(items))
     def replace_quotation(quotations):
         for quotation in quotations:
-            if quotation.get("quotation_no") != quotation_no:
+            if quotation.get("quotation_no") != quotation_no or quotation.get("account_id") != account_id:
                 continue
             quotation["buyer_name"] = buyer_name
             quotation["buyer_address"] = buyer_address
@@ -491,16 +546,37 @@ def update_quotation(
     ) 
 
 @router.get("/delete-quotation/{quotation_no}")
-def delete_quotation(quotation_no: str):
-    return identifier_delete_confirmation("Quotation", "Quotation", quotation_no, QUOTATION_FILE, "quotation_no", f"/delete-quotation/{quotation_no}", "/quotation-list")
+def delete_quotation(quotation_no: str, request: Request):
+    _owned_quotation(quotation_no, _account_id(request))
+    return render_delete_page("Quotation", quotation_no, f"/delete-quotation/{quotation_no}", "/quotation-list", find_dependencies("Quotation", quotation_no, _account_id(request)))
 
 @router.post("/delete-quotation/{quotation_no}")
-def confirm_delete_quotation(quotation_no: str):
-    return confirmed_identifier_delete("Quotation", "Quotation", quotation_no, QUOTATION_FILE, "quotation_no", f"/delete-quotation/{quotation_no}", "/quotation-list", "/quotation-list")
+def confirm_delete_quotation(quotation_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_quotation(quotation_no, account_id)
+    dependencies = find_dependencies("Quotation", quotation_no, account_id)
+    if dependencies:
+        return render_delete_page("Quotation", quotation_no, f"/delete-quotation/{quotation_no}", "/quotation-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((i for i, record in enumerate(records)
+                      if record.get("quotation_no") == quotation_no and record.get("account_id") == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        records.pop(index)
+    locked_json_mutation(QUOTATION_FILE, [], remove, list)
+    return RedirectResponse("/quotation-list", status_code=303)
 
 @router.post("/quotation/pdf")
-def create_quotation_pdf(payload: dict = Body(...)):
-    company = load_company()
+def create_quotation_pdf(request: Request, payload: dict = Body(...), validate_sources: bool = True):
+    account_id = _account_id(request)
+    payload = public_quotation(payload)
+    if validate_sources:
+        payload["items"] = validate_quotation_sources(
+            account_id, payload.get("seller", ""), payload.get("buyer_name", ""),
+            payload.get("buyer_address", ""), payload.get("buyer_email", ""),
+            require_items(payload.get("items", [])),
+        )
+    company = load_company(account_id)
 
     quotation_no = payload.get("quotation_no", "QT-001")
     valid_until = payload.get("valid_until", "")
@@ -518,6 +594,7 @@ def create_quotation_pdf(payload: dict = Body(...)):
     total_amount = 0
 
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
@@ -533,22 +610,25 @@ def create_quotation_pdf(payload: dict = Body(...)):
     summary_h = 65
     summary_gap = 20
 
+    def fit_text(text, max_width, font_name=TP_UNICODE, font_size=8):
+        return fit_pdf_text(pdf, text, max_width, font_name, font_size)
+
     def draw_document_header():
         pdf.setFillColor(colors.HexColor("#111827"))
         pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 24)
+        pdf.setFont(TP_UNICODE_BOLD, 24)
         pdf.drawString(45, height - 55, "QUOTATION")
 
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
         pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 11)
-        pdf.drawString(45, height - 125, f"Quotation No: {quotation_no}")
-        pdf.drawString(45, height - 143, f"Valid Until: {valid_until}")
+        pdf.setFont(TP_UNICODE_BOLD, 11)
+        pdf.drawString(45, height - 125, fit_text(f"Quotation No: {quotation_no}", 505, TP_UNICODE_BOLD, 11))
+        pdf.drawString(45, height - 143, fit_text(f"Valid Until: {valid_until}", 505, TP_UNICODE_BOLD, 11))
         pdf.drawString(45, height - 161, f"Date: {today}")
 
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
@@ -557,18 +637,18 @@ def create_quotation_pdf(payload: dict = Body(...)):
         pdf.roundRect(310, height - 260, 240, 80, 8, fill=1)
 
         pdf.setFillColor(colors.HexColor("#111827"))
-        pdf.setFont("Helvetica-Bold", 11)
+        pdf.setFont(TP_UNICODE_BOLD, 11)
         pdf.drawString(60, height - 197, "SELLER")
         pdf.drawString(325, height - 197, "BUYER")
 
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(60, height - 220, seller)
-        pdf.drawString(60, height - 235, seller_address)
-        pdf.drawString(60, height - 250, seller_email)
+        pdf.setFont(TP_UNICODE, 9)
+        pdf.drawString(60, height - 220, fit_text(seller, 210, font_size=9))
+        pdf.drawString(60, height - 235, fit_text(seller_address, 210, font_size=9))
+        pdf.drawString(60, height - 250, fit_text(seller_email, 210, font_size=9))
 
-        pdf.drawString(325, height - 220, buyer_name)
-        pdf.drawString(325, height - 235, buyer_address)
-        pdf.drawString(325, height - 250, buyer_email)
+        pdf.drawString(325, height - 220, fit_text(buyer_name, 210, font_size=9))
+        pdf.drawString(325, height - 235, fit_text(buyer_address, 210, font_size=9))
+        pdf.drawString(325, height - 250, fit_text(buyer_email, 210, font_size=9))
 
     def draw_table_header():
         header_y = height - 315
@@ -577,7 +657,7 @@ def create_quotation_pdf(payload: dict = Body(...)):
         pdf.rect(table_x, header_y, table_w, table_header_h, fill=1, stroke=0)
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 8)
+        pdf.setFont(TP_UNICODE_BOLD, 8)
         pdf.drawString(52, header_y + 10, "No")
         pdf.drawString(80, header_y + 10, "Item")
         pdf.drawString(205, header_y + 10, "HS Code")
@@ -585,7 +665,7 @@ def create_quotation_pdf(payload: dict = Body(...)):
         pdf.drawRightString(430, header_y + 10, "Unit Price")
         pdf.drawRightString(540, header_y + 10, "Amount")
 
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
         return header_y - table_header_h
 
@@ -595,12 +675,12 @@ def create_quotation_pdf(payload: dict = Body(...)):
 
     def draw_signature_footer():
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica", 10)
+        pdf.setFont(TP_UNICODE, 10)
         pdf.drawString(45, 115, "Authorized Signature:")
         pdf.line(170, 115, 330, 115)
 
         pdf.setFillColor(colors.HexColor("#6B7280"))
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
         pdf.drawString(45, 45, "For trade documentation automation.")
 
@@ -626,11 +706,11 @@ def create_quotation_pdf(payload: dict = Body(...)):
 
         pdf.rect(table_x, y, table_w, row_h, fill=0)
         pdf.drawString(52, y + 9, str(index))
-        pdf.drawString(80, y + 9, str(item.get("name", ""))[:25])
-        pdf.drawString(205, y + 9, str(item.get("hs_code", "")))
-        pdf.drawRightString(330, y + 9, str(item.get("qty", "")))
-        pdf.drawRightString(430, y + 9, str(item.get("unit_price", "")))
-        pdf.drawRightString(540, y + 9, str(item.get("amount", "")))
+        pdf.drawString(80, y + 9, fit_text(item.get("name", ""), 110))
+        pdf.drawString(205, y + 9, fit_text(item.get("hs_code", ""), 75))
+        pdf.drawRightString(330, y + 9, fit_text(item.get("qty", ""), 55))
+        pdf.drawRightString(430, y + 9, fit_text(item.get("unit_price", ""), 85))
+        pdf.drawRightString(540, y + 9, fit_text(item.get("amount", ""), 85))
         y -= row_h
 
     summary_x = table_right - summary_w
@@ -647,13 +727,14 @@ def create_quotation_pdf(payload: dict = Body(...)):
     pdf.roundRect(summary_x, summary_bottom, summary_w, summary_h, 8, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFont(TP_UNICODE_BOLD, 10)
     text_x = summary_x + 15
     text_y = summary_top - 23
     line_gap = 18
-    pdf.drawString(text_x, text_y, f"Total Amount: {currency} {total_amount:,.2f}")
-    pdf.drawString(text_x, text_y - line_gap, f"Currency: {currency}")
-    pdf.drawString(text_x, text_y - line_gap * 2, f"Valid Until: {valid_until}")
+    summary_text_w = summary_w - 30
+    pdf.drawString(text_x, text_y, fit_text(f"Total Amount: {currency} {total_amount:,.2f}", summary_text_w, TP_UNICODE_BOLD, 10))
+    pdf.drawString(text_x, text_y - line_gap, fit_text(f"Currency: {currency}", summary_text_w, TP_UNICODE_BOLD, 10))
+    pdf.drawString(text_x, text_y - line_gap * 2, fit_text(f"Valid Until: {valid_until}", summary_text_w, TP_UNICODE_BOLD, 10))
 
     draw_signature_footer()
 
@@ -670,11 +751,7 @@ def create_quotation_pdf(payload: dict = Body(...)):
     )
 
 @router.get("/quotation-pdf/{quotation_no}")
-def quotation_pdf(quotation_no: str):
-    quotations = load_quotations()
-
-    for quotation in quotations:
-        if quotation.get("quotation_no") == quotation_no:
-            return create_quotation_pdf(quotation)
-
-    return {"error": "Quotation not found"}     
+def quotation_pdf(quotation_no: str, request: Request):
+    record = public_quotation(_owned_quotation(quotation_no, _account_id(request)))
+    set_pdf_export_record(request, record)
+    return create_quotation_pdf(request, record, validate_sources=False)

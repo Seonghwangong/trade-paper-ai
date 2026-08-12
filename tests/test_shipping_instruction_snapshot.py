@@ -73,6 +73,15 @@ def test_shipping_instruction_snapshot_empty_legacy_and_account_isolation(tmp_pa
     })
     monkeypatch.setattr(shipping, "valid_shipment_context", lambda value: "")
 
+    new_html = shipping.si_form(_request("A"), packing_no="PK-001", shipment_no="SHP-001").body.decode()
+    assert '<details class="tp-imported-section" data-imported-section="party">' in new_html
+    assert '<details class="tp-imported-section" data-imported-section="cargo">' in new_html
+    assert '<details class="tp-imported-section" data-imported-section="party" open>' not in new_html
+    assert '<select id="packing_no" name="packing_no" aria-label="Packing No">' in new_html
+    assert '<option value="PK-001" selected>PK-001</option>' in new_html
+    assert '"invoice_no": "INV-001"' in new_html
+    assert '"name": "Snapshot Cargo"' in new_html
+
     shipping.save_si(
         _request("A"), exporter_email="", exporter_address=None,
         exporter_phone=None, consignee_address=None, consignee_email=None,
@@ -95,6 +104,13 @@ def test_shipping_instruction_snapshot_empty_legacy_and_account_isolation(tmp_pa
         "items": [{**items[0], "name": "CHANGED UPSTREAM CARGO"}],
     })
     edit = shipping.edit_si("SI-001", _request("A")).body.decode()
+    assert '<option value="PK-001" selected>PK-001</option>' in edit
+    assert edit.count("Imported from previous document") == 2
+    assert '<details class="tp-imported-section" data-imported-section="party">' in edit
+    assert '<details class="tp-imported-section" data-imported-section="cargo">' in edit
+    assert '<details class="tp-imported-section" data-imported-section="party" open>' not in edit
+    assert edit.index('data-imported-section="party"') < edit.index('name="shipper"')
+    assert edit.index('data-imported-section="cargo"') < edit.index('id="items"')
     assert 'name="exporter_email" value=""' in edit
     assert "Snapshot Exporter Address" in edit
     assert "added-after-snapshot@example.com" not in edit

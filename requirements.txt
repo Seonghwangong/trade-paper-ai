@@ -9,10 +9,13 @@ h11==0.16.0
 httptools==0.7.1
 idna==3.13
 pillow==11.3.0
+playwright==1.55.0
 pydantic==2.13.3
 pydantic_core==2.46.3
 python-dotenv==1.2.1
 python-multipart==0.0.20
+pytest==8.4.2
+pypdf==6.1.1
 PyYAML==6.0.3
 reportlab==4.5.0
 starlette==0.49.3

@@ -1,37 +1,70 @@
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation
+from app.account_product import ensure_legacy_product_ownership, public_product
+from app.auth import USERS_FILE
+from app.storage import data_path, locked_json_mutation
 from app.validation import require_text
-from app.referential_integrity import confirmed_indexed_delete, indexed_delete_confirmation
+from app.referential_integrity import find_soft_warnings, render_delete_page
+from app.ui import html_escape
 
 router = APIRouter()
 
 PRODUCT_FILE = data_path("products.json")
 
 
-def load_products():
-    return load_json_strict(PRODUCT_FILE, [], list)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+
+def load_product_records():
+    return ensure_legacy_product_ownership(PRODUCT_FILE, USERS_FILE)
+
+
+def owned_product_entries(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        (index, record)
+        for index, record in enumerate(load_product_records())
+        if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner
+    ]
+
+
+def load_products(account_id):
+    return [public_product(record) for _, record in owned_product_entries(account_id)]
+
+
+def _owned_product(index, account_id):
+    records = load_product_records()
+    if (
+        index < 0
+        or index >= len(records)
+        or not isinstance(records[index], dict)
+        or str(records[index].get("account_id", "") or "").strip() != str(account_id or "").strip()
+    ):
+        raise HTTPException(status_code=404, detail="Product not found")
+    return records[index]
 
 @router.get("/product-data")
-def product_data():
-    return load_products()
-
-
-def save_products(products):
-    atomic_write_json(PRODUCT_FILE, products, list)
+def product_data(request: Request):
+    return load_products(_account_id(request))
 
 
 @router.get("/products")
-def product_list(search: str = ""):
-    products = load_products()
+def product_list(request: Request, search: str = ""):
+    entries = owned_product_entries(_account_id(request))
 
     if search:
-        products = [
-            p for p in products
-            if search.lower() in p.get("name", "").lower()
-            or search.lower() in p.get("hs_code", "").lower()
-            or search.lower() in p.get("origin", "").lower()
+        entries = [
+            (index, product) for index, product in entries
+            if search.lower() in str(product.get("name", "")).lower()
+            or search.lower() in str(product.get("hs_code", "")).lower()
+            or search.lower() in str(product.get("origin", "")).lower()
         ]
+    next_action = (
+        '<a href="/invoice"><button style="padding:13px 22px;background:#1D4ED8;color:white;border:none;border-radius:10px;font-size:16px;">Next: Create Invoice →</button></a>'
+        if entries else ""
+    )
 
     html = f"""
 <h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
@@ -60,8 +93,10 @@ Manage all registered products
 </a>
 </div>
 
+{next_action}
+
 <form action="/products" method="get" style="display:flex;gap:10px;align-items:center;margin:0;">
-<input type="text" name="search" value="{search}" placeholder="Search product"
+<input type="text" name="search" value="{html_escape(search, attribute=True)}" placeholder="Search product"
 style="padding:13px;width:320px;border:1px solid #D1D5DB;border-radius:10px;font-size:15px;">
 
 <button type="submit" style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:15px;">
@@ -74,7 +109,7 @@ Search
 </div>
 
 <p style="font-size:18px;font-weight:bold;margin:25px 0;">
-Total Products : {len(products)}
+Total Products : {len(entries)}
 </p>
 
 <div style="background:white;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
@@ -91,7 +126,7 @@ Total Products : {len(products)}
 </tr>
 """
 
-    if not products:
+    if not entries:
         html += """
 <tr>
 <td colspan="7" style="padding:35px;text-align:center;color:#6B7280;">
@@ -100,14 +135,14 @@ No products have been registered yet.
 </tr>
 """
     else:
-        for index, product in enumerate(products):
+        for row_number, (index, product) in enumerate(entries, start=1):
             html += f"""
 <tr style="border-top:1px solid #E5E7EB;">
-<td style="padding:14px;text-align:center;">{index + 1}</td>
-<td style="padding:14px;word-break:break-word;">{product.get("name", "")}</td>
-<td style="padding:14px;text-align:center;word-break:break-word;">{product.get("hs_code", "")}</td>
-<td style="padding:14px;text-align:center;word-break:break-word;">{product.get("unit_price", "")}</td>
-<td style="padding:14px;text-align:center;word-break:break-word;">{product.get("origin", "")}</td>
+<td style="padding:14px;text-align:center;">{row_number}</td>
+<td style="padding:14px;word-break:break-word;">{html_escape(product.get("name", ""))}</td>
+<td style="padding:14px;text-align:center;word-break:break-word;">{html_escape(product.get("hs_code", ""))}</td>
+<td style="padding:14px;text-align:center;word-break:break-word;">{html_escape(product.get("unit_price", ""))}</td>
+<td style="padding:14px;text-align:center;word-break:break-word;">{html_escape(product.get("origin", ""))}</td>
 <td style="text-align:center;">
 <a href="/edit-product/{index}" style="color:#111827;text-decoration:none;font-weight:bold;">Edit</a>
 </td>
@@ -127,14 +162,8 @@ No products have been registered yet.
     
         
 @router.get("/edit-product/{index}")
-def edit_product(index: int):
-
-    products = load_products()
-
-    if index >= len(products):
-        return HTMLResponse("Product not found")
-
-    product = products[index]
+def edit_product(index: int, request: Request):
+    product = _owned_product(index, _account_id(request))
 
     html = f"""
 <!DOCTYPE html>
@@ -176,10 +205,10 @@ Update registered product information
 
 <form action="/update-product/{index}" method="post">
 
-<input name="name" value="{product.get('name','')}" placeholder="Product Name">
-<input name="hs_code" value="{product.get('hs_code','')}" placeholder="HS Code">
-<input name="unit_price" value="{product.get('unit_price','')}" placeholder="Unit Price">
-<input name="origin" value="{product.get('origin','')}" placeholder="Country of Origin">
+<input name="name" value="{html_escape(product.get('name', ''), attribute=True)}" placeholder="Product Name">
+<input name="hs_code" value="{html_escape(product.get('hs_code', ''), attribute=True)}" placeholder="HS Code">
+<input name="unit_price" value="{html_escape(product.get('unit_price', ''), attribute=True)}" placeholder="Unit Price">
+<input name="origin" value="{html_escape(product.get('origin', ''), attribute=True)}" placeholder="Country of Origin">
 
 <button type="submit" class="full">Update Product</button>
 
@@ -196,16 +225,23 @@ Update registered product information
 @router.post("/update-product/{index}")
 def update_product(
     index: int,
+    request: Request,
     name: str = Form(""),
     hs_code: str = Form(""),
     unit_price: str = Form(""),
     origin: str = Form(""),
 ):
     name = require_text("Product name", name)
+    account_id = _account_id(request)
     def replace_product(products):
-        if not 0 <= index < len(products):
+        if (
+            not 0 <= index < len(products)
+            or not isinstance(products[index], dict)
+            or str(products[index].get("account_id", "") or "").strip() != account_id
+        ):
             raise HTTPException(status_code=404, detail="Product not found")
         products[index] = {
+            "account_id": account_id,
             "name": name,
             "hs_code": hs_code,
             "unit_price": unit_price,
@@ -216,7 +252,18 @@ def update_product(
     return RedirectResponse(url="/products", status_code=303)
 
 @router.get("/product-form")
-def product_form():
+def product_form(demo: int = 0):
+    demo_values = {
+        "name": "Notebook Computer",
+        "hs_code": "847130",
+        "unit_price": "850",
+        "origin": "Korea",
+    } if demo == 1 else {"name": "", "hs_code": "", "unit_price": "", "origin": ""}
+    demo_notice = (
+        '<div class="demo-preview"><b>Demo Preview</b><br>'
+        'Temporary values — nothing is saved until you press Save.</div>'
+        if demo == 1 else ""
+    )
 
     html = """
 <!DOCTYPE html>
@@ -235,6 +282,7 @@ input{width:100%;padding:14px;margin-bottom:14px;border:1px solid #D1D5DB;border
 button{padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;cursor:pointer;}
 .small{padding:13px 22px;font-size:16px;border-radius:10px;}
 .full{width:100%;}
+.demo-preview{padding:16px;margin-bottom:20px;border:1px solid #BFDBFE;border-radius:12px;background:#EFF6FF;color:#1E3A8A;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -252,16 +300,17 @@ Product Master
 <p class="sub">
 Manage product information for trade documents
 </p>
+__DEMO_NOTICE__
 
 <div class="card">
 <h2 style="margin-top:0;">Add Product</h2>
 
 <form action="/save-product" method="post">
 
-<input name="name" placeholder="Product Name">
-<input name="hs_code" placeholder="HS Code">
-<input name="unit_price" placeholder="Unit Price">
-<input name="origin" placeholder="Country of Origin">
+<input name="name" value="__DEMO_NAME__" placeholder="Product Name">
+<input name="hs_code" value="__DEMO_HS_CODE__" placeholder="HS Code">
+<input name="unit_price" value="__DEMO_UNIT_PRICE__" placeholder="Unit Price">
+<input name="origin" value="__DEMO_ORIGIN__" placeholder="Country of Origin">
 
 <button type="submit" class="full">Save Product</button>
 
@@ -273,10 +322,18 @@ Manage product information for trade documents
 </html>
 """
 
+    html = (
+        html.replace("__DEMO_NOTICE__", demo_notice)
+        .replace("__DEMO_NAME__", demo_values["name"])
+        .replace("__DEMO_HS_CODE__", demo_values["hs_code"])
+        .replace("__DEMO_UNIT_PRICE__", demo_values["unit_price"])
+        .replace("__DEMO_ORIGIN__", demo_values["origin"])
+    )
     return HTMLResponse(html)
 
 @router.post("/save-product")
 def save_product(
+    request: Request,
     name: str = Form(""),
     hs_code: str = Form(""),
     unit_price: str = Form(""),
@@ -284,6 +341,7 @@ def save_product(
 ):
     name = require_text("Product name", name)
     product = {
+        "account_id": _account_id(request),
         "name": name,
         "hs_code": hs_code,
         "unit_price": unit_price,
@@ -296,9 +354,33 @@ def save_product(
 
 
 @router.get("/delete-product/{index}")
-def delete_product(index: int):
-    return indexed_delete_confirmation("Product", "Product", index, PRODUCT_FILE, "name", f"/delete-product/{index}", "/products")
+def delete_product(index: int, request: Request):
+    account_id = _account_id(request)
+    product = _owned_product(index, account_id)
+    name = str(product.get("name", "") or "").strip()
+    return render_delete_page(
+        "Product",
+        name,
+        f"/delete-product/{index}",
+        "/products",
+        warnings=find_soft_warnings("Product", name, account_id=account_id),
+        expected_name=name,
+    )
 
 @router.post("/delete-product/{index}")
-def confirm_delete_product(index: int, expected_name: str = Form("")):
-    return confirmed_indexed_delete("Product", "Product", index, expected_name, PRODUCT_FILE, "name", f"/delete-product/{index}", "/products", "/products")
+def confirm_delete_product(index: int, request: Request, expected_name: str = Form("")):
+    account_id = _account_id(request)
+    expected = str(expected_name or "").strip()
+
+    def remove(products):
+        if (
+            not 0 <= index < len(products)
+            or not isinstance(products[index], dict)
+            or str(products[index].get("account_id", "") or "").strip() != account_id
+            or str(products[index].get("name", "") or "").strip().casefold() != expected.casefold()
+        ):
+            raise HTTPException(status_code=404, detail="Product not found")
+        products.pop(index)
+
+    locked_json_mutation(PRODUCT_FILE, [], remove, list)
+    return RedirectResponse("/products", status_code=303)

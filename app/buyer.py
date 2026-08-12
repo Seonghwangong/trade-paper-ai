@@ -1,30 +1,63 @@
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
-from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation
+from app.account_buyer import ensure_legacy_buyer_ownership, public_buyer
+from app.auth import USERS_FILE
+from app.storage import data_path, locked_json_mutation
 from app.validation import require_text
-from app.referential_integrity import confirmed_indexed_delete, indexed_delete_confirmation
+from app.referential_integrity import find_soft_warnings, render_delete_page
+from app.ui import html_escape
 
 router = APIRouter()
 
 BUYER_FILE = data_path("buyers.json")
 
 
-def load_buyers():
-    return load_json_strict(BUYER_FILE, [], list)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
 
 
-def save_buyers(buyers):
-    atomic_write_json(BUYER_FILE, buyers, list)
+def load_buyer_records():
+    return ensure_legacy_buyer_ownership(BUYER_FILE, USERS_FILE)
+
+
+def owned_buyer_entries(account_id):
+    owner = str(account_id or "").strip()
+    return [
+        (index, record)
+        for index, record in enumerate(load_buyer_records())
+        if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner
+    ]
+
+
+def load_buyers(account_id):
+    return [public_buyer(record) for _, record in owned_buyer_entries(account_id)]
+
+
+def _owned_buyer(index, account_id):
+    records = load_buyer_records()
+    if (
+        index < 0
+        or index >= len(records)
+        or not isinstance(records[index], dict)
+        or str(records[index].get("account_id", "") or "").strip() != str(account_id or "").strip()
+    ):
+        raise HTTPException(status_code=404, detail="Buyer not found")
+    return records[index]
 
 
 @router.get("/buyer-data")
-def buyer_data():
-    return load_buyers()
+def buyer_data(request: Request):
+    return load_buyers(_account_id(request))
 
 
 @router.get("/buyers")
-def buyer_list():
-    buyers = load_buyers()
+def buyer_list(request: Request):
+    entries = owned_buyer_entries(_account_id(request))
+    next_action = (
+        '<a href="/product-form"><button style="padding:13px 22px;background:#1D4ED8;color:white;border:none;border-radius:10px;font-size:16px;">Next: Add Product →</button></a>'
+        if entries else ""
+    )
 
     html = """
 <h1 style="font-family:Arial;text-align:center;font-size:48px;margin-bottom:10px;">
@@ -51,10 +84,11 @@ Manage registered buyer information
 </button>
 </a>
 </div>
+""" + next_action + """
 </div>
 
 <p style="font-size:18px;font-weight:bold;margin:25px 0;">
-Total Buyers : """ + str(len(buyers)) + """
+Total Buyers : """ + str(len(entries)) + """
 </p>
 
 <div style="background:white;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
@@ -71,14 +105,14 @@ Total Buyers : """ + str(len(buyers)) + """
 </tr>
 """
 
-    for index, buyer in enumerate(buyers):
+    for row_number, (index, buyer) in enumerate(entries, start=1):
         html += f"""
 <tr style="border-top:1px solid #E5E7EB;">
-<td style="padding:14px;text-align:center;">{index + 1}</td>
-<td style="padding:14px;word-break:break-word;">{buyer.get("name", "")}</td>
-<td style="padding:14px;word-break:break-word;">{buyer.get("address", "")}</td>
-<td style="padding:14px;word-break:break-word;">{buyer.get("email", "")}</td>
-<td style="padding:14px;text-align:center;word-break:break-word;">{buyer.get("country", "")}</td>
+<td style="padding:14px;text-align:center;">{row_number}</td>
+<td style="padding:14px;word-break:break-word;">{html_escape(buyer.get("name", ""))}</td>
+<td style="padding:14px;word-break:break-word;">{html_escape(buyer.get("address", ""))}</td>
+<td style="padding:14px;word-break:break-word;">{html_escape(buyer.get("email", ""))}</td>
+<td style="padding:14px;text-align:center;word-break:break-word;">{html_escape(buyer.get("country", ""))}</td>
 <td style="text-align:center;">
 <a href="/edit-buyer/{index}" style="color:#111827;font-weight:bold;text-decoration:none;">Edit</a>
 </td>
@@ -98,7 +132,18 @@ Total Buyers : """ + str(len(buyers)) + """
 
 
 @router.get("/buyer-form")
-def buyer_form():
+def buyer_form(demo: int = 0):
+    demo_values = {
+        "name": "Sakura Retail Co.",
+        "address": "Tokyo, Japan",
+        "email": "buyer@example.jp",
+        "country": "Japan",
+    } if demo == 1 else {"name": "", "address": "", "email": "", "country": ""}
+    demo_notice = (
+        '<div class="demo-preview"><b>Demo Preview</b><br>'
+        'Temporary values — nothing is saved until you press Save.</div>'
+        if demo == 1 else ""
+    )
     html = """
 <!DOCTYPE html>
 <html lang="en">
@@ -116,6 +161,7 @@ input{width:100%;padding:14px;margin-bottom:14px;border:1px solid #D1D5DB;border
 button{padding:16px;background:#111827;color:white;border:none;border-radius:12px;font-size:18px;cursor:pointer;}
 .small{padding:13px 22px;font-size:16px;border-radius:10px;}
 .full{width:100%;}
+.demo-preview{padding:16px;margin-bottom:20px;border:1px solid #BFDBFE;border-radius:12px;background:#EFF6FF;color:#1E3A8A;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -128,15 +174,16 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 
 <h1>Add Buyer</h1>
 <p class="sub">Register buyer master information</p>
+__DEMO_NOTICE__
 
 <div class="card">
 <h2>Buyer Information</h2>
 
 <form action="/save-buyer" method="post">
-<input type="text" name="name" placeholder="Buyer Name">
-<input type="text" name="address" placeholder="Address">
-<input type="text" name="email" placeholder="Email">
-<input type="text" name="country" placeholder="Country">
+<input type="text" name="name" value="__DEMO_NAME__" placeholder="Buyer Name">
+<input type="text" name="address" value="__DEMO_ADDRESS__" placeholder="Address">
+<input type="text" name="email" value="__DEMO_EMAIL__" placeholder="Email">
+<input type="text" name="country" value="__DEMO_COUNTRY__" placeholder="Country">
 
 <button type="submit" class="full">Save Buyer</button>
 </form>
@@ -147,11 +194,19 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 </html>
 """
 
+    html = (
+        html.replace("__DEMO_NOTICE__", demo_notice)
+        .replace("__DEMO_NAME__", demo_values["name"])
+        .replace("__DEMO_ADDRESS__", demo_values["address"])
+        .replace("__DEMO_EMAIL__", demo_values["email"])
+        .replace("__DEMO_COUNTRY__", demo_values["country"])
+    )
     return HTMLResponse(html)
 
 
 @router.post("/save-buyer")
 def save_buyer(
+    request: Request,
     name: str = Form(""),
     address: str = Form(""),
     email: str = Form(""),
@@ -159,6 +214,7 @@ def save_buyer(
 ):
     name = require_text("Buyer name", name)
     buyer = {
+        "account_id": _account_id(request),
         "name": name,
         "address": address,
         "email": email,
@@ -171,13 +227,8 @@ def save_buyer(
 
 
 @router.get("/edit-buyer/{index}")
-def edit_buyer(index: int):
-    buyers = load_buyers()
-
-    if index >= len(buyers):
-        return HTMLResponse("Buyer not found")
-
-    buyer = buyers[index]
+def edit_buyer(index: int, request: Request):
+    buyer = _owned_buyer(index, _account_id(request))
 
     html = f"""
 <!DOCTYPE html>
@@ -213,10 +264,10 @@ button{{padding:16px;background:#111827;color:white;border:none;border-radius:12
 <h2>Buyer Information</h2>
 
 <form action="/update-buyer/{index}" method="post">
-<input type="text" name="name" value="{buyer.get('name', '')}" placeholder="Buyer Name">
-<input type="text" name="address" value="{buyer.get('address', '')}" placeholder="Address">
-<input type="text" name="email" value="{buyer.get('email', '')}" placeholder="Email">
-<input type="text" name="country" value="{buyer.get('country', '')}" placeholder="Country">
+<input type="text" name="name" value="{html_escape(buyer.get('name', ''), attribute=True)}" placeholder="Buyer Name">
+<input type="text" name="address" value="{html_escape(buyer.get('address', ''), attribute=True)}" placeholder="Address">
+<input type="text" name="email" value="{html_escape(buyer.get('email', ''), attribute=True)}" placeholder="Email">
+<input type="text" name="country" value="{html_escape(buyer.get('country', ''), attribute=True)}" placeholder="Country">
 
 <button type="submit" class="full">Update Buyer</button>
 </form>
@@ -233,16 +284,23 @@ button{{padding:16px;background:#111827;color:white;border:none;border-radius:12
 @router.post("/update-buyer/{index}")
 def update_buyer(
     index: int,
+    request: Request,
     name: str = Form(""),
     address: str = Form(""),
     email: str = Form(""),
     country: str = Form(""),
 ):
     name = require_text("Buyer name", name)
+    account_id = _account_id(request)
     def replace_buyer(buyers):
-        if not 0 <= index < len(buyers):
+        if (
+            not 0 <= index < len(buyers)
+            or not isinstance(buyers[index], dict)
+            or str(buyers[index].get("account_id", "") or "").strip() != account_id
+        ):
             raise HTTPException(status_code=404, detail="Buyer not found")
         buyers[index] = {
+            "account_id": account_id,
             "name": name,
             "address": address,
             "email": email,
@@ -254,9 +312,33 @@ def update_buyer(
 
 
 @router.get("/delete-buyer/{index}")
-def delete_buyer(index: int):
-    return indexed_delete_confirmation("Buyer", "Buyer", index, BUYER_FILE, "name", f"/delete-buyer/{index}", "/buyers")
+def delete_buyer(index: int, request: Request):
+    account_id = _account_id(request)
+    buyer = _owned_buyer(index, account_id)
+    name = str(buyer.get("name", "") or "").strip()
+    return render_delete_page(
+        "Buyer",
+        name,
+        f"/delete-buyer/{index}",
+        "/buyers",
+        warnings=find_soft_warnings("Buyer", name, account_id=account_id),
+        expected_name=name,
+    )
 
 @router.post("/delete-buyer/{index}")
-def confirm_delete_buyer(index: int, expected_name: str = Form("")):
-    return confirmed_indexed_delete("Buyer", "Buyer", index, expected_name, BUYER_FILE, "name", f"/delete-buyer/{index}", "/buyers", "/buyers")
+def confirm_delete_buyer(index: int, request: Request, expected_name: str = Form("")):
+    account_id = _account_id(request)
+    expected = str(expected_name or "").strip()
+
+    def remove(buyers):
+        if (
+            not 0 <= index < len(buyers)
+            or not isinstance(buyers[index], dict)
+            or str(buyers[index].get("account_id", "") or "").strip() != account_id
+            or str(buyers[index].get("name", "") or "").strip().casefold() != expected.casefold()
+        ):
+            raise HTTPException(status_code=404, detail="Buyer not found")
+        buyers.pop(index)
+
+    locked_json_mutation(BUYER_FILE, [], remove, list)
+    return RedirectResponse("/buyers", status_code=303)

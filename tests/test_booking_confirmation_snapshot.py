@@ -65,6 +65,12 @@ def test_booking_snapshot_create_edit_update_pdf_legacy_and_isolation(tmp_path, 
     form = booking.booking_form(_request("A"), shipment_no="SHP-001", si_no="SI-001",
                                 packing_no="PK-001", bl_no="BL-001").body.decode()
     assert all(value in form for value in ("Shipment Exporter", "Exporter Address", "Cargo", "847130", "44"))
+    assert form.count("Imported from previous document") == 2
+    assert '<details class="tp-imported-section" data-imported-section="party">' in form
+    assert '<details class="tp-imported-section" data-imported-section="cargo">' in form
+    assert '<details class="tp-imported-section" data-imported-section="party" open>' not in form
+    assert form.index('data-imported-section="party"') < form.index('name="exporter_name"')
+    assert form.index('data-imported-section="cargo"') < form.index('id="items"')
     payload = _form()
     booking.save_booking(_request("A"), **payload)
     stored = json.loads(booking_file.read_text())[0]
@@ -74,6 +80,8 @@ def test_booking_snapshot_create_edit_update_pdf_legacy_and_isolation(tmp_path, 
     assert {k: v for k, v in stored["items"][0].items() if k != "item_id"} == items[0]
     assert stored["items"][0]["item_id"].startswith("ITEM-")
     edit = booking.edit_booking("BK-001", _request("A")).body.decode()
+    assert '<details class="tp-imported-section" data-imported-section="party">' in edit
+    assert '<details class="tp-imported-section" data-imported-section="cargo">' in edit
     assert all(value in edit for value in ("Exporter Address", "consignee@example.com", "44"))
 
     changed = {**shipment, "shipper_address": "CHANGED", "items": []}

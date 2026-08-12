@@ -108,6 +108,14 @@ def test_bill_snapshot_create_edit_update_and_pdf_precedence(tmp_path, monkeypat
         assert payload[field] == value
     assert payload["shipper_phone"] == "999-9999"
 
+    new_html = bill.bl_form(_request("account-a"), packing_no="PK-001").body.decode()
+    assert new_html.count("Imported from previous document") == 2
+    assert '<details class="tp-imported-section" data-imported-section="party">' in new_html
+    assert '<details class="tp-imported-section" data-imported-section="cargo">' in new_html
+    assert '<details class="tp-imported-section" data-imported-section="party" open>' not in new_html
+    assert new_html.index('data-imported-section="party"') < new_html.index('name="shipper"')
+    assert new_html.index('data-imported-section="cargo"') < new_html.index('id="items_area"')
+
     bill.save_bl(_request("account-a"), **_form(snapshot))
     stored = json.loads(bl_file.read_text(encoding="utf-8"))[0]
     for field, value in snapshot.items():
@@ -127,6 +135,9 @@ def test_bill_snapshot_create_edit_update_and_pdf_precedence(tmp_path, monkeypat
     assert "account_id" not in api
 
     edit_html = bill.edit_bl(stored["bl_no"], _request("account-a")).body.decode()
+    assert edit_html.count("Imported from previous document") == 2
+    assert '<details class="tp-imported-section" data-imported-section="party">' in edit_html
+    assert '<details class="tp-imported-section" data-imported-section="cargo">' in edit_html
     for field, value in snapshot.items():
         assert f'name="{field}" value="{value}"' in edit_html
 

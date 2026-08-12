@@ -6,7 +6,7 @@ import re
 from urllib.parse import parse_qs
 
 from app.export import pdf_export_filename
-from app.release import APP_NAME, APP_VERSION, BUILD_NAME, LAST_UPDATED, RELEASE_STAGE, RELEASE_TYPE
+from app.release import APP_NAME, APP_VERSION, BUILD_NAME, LAST_UPDATED, RELEASE_STAGE
 
 
 DESIGN_TOKENS = {
@@ -125,7 +125,7 @@ def release_footer() -> str:
         f'<span class="tp-release-date"> · Release Date {html_escape(LAST_UPDATED)}</span>'
         '<span class="tp-release-copyright"> · © 2026</span>'
         '<nav class="tp-release-footer-nav" aria-label="Product information">'
-        '<a href="/about">About</a><a href="/release-notes">Release Notes</a>'
+        '<a href="/feedback">Feedback</a><a href="/about">About</a><a href="/release-notes">Release Notes</a>'
         '<a href="/version-history">Version History</a><a href="/contact">Contact</a>'
         '<a href="/demo">Try Demo</a>'
         '<a href="/privacy">Privacy</a><a href="/terms">Terms</a>'
@@ -145,6 +145,25 @@ def inject_release_footer(source: str) -> str:
         '.tp-release-version,.tp-release-build,.tp-release-date{font-size:12px}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}</style>'
     )
     return source.replace("</body>", footer_styles + release_footer() + "</body>", 1)
+
+
+def authenticated_user_control(user) -> str:
+    if not isinstance(user, dict):
+        return ""
+    company = html_escape(user.get("company", ""))
+    email = html_escape(user.get("email", ""))
+    return (
+        '<aside class="tp-auth-user" aria-label="Signed-in user">'
+        f'<span><strong>{company}</strong><small>{email}</small></span>'
+        '<form method="post" action="/logout" data-native-submit="true">'
+        '<button type="submit">Logout</button></form></aside>'
+        '<style>.tp-auth-user{position:relative;z-index:100;display:flex;align-items:center;justify-content:flex-end;gap:12px;'
+        'width:min(1180px,calc(100% - 36px));margin:12px auto 0;padding:9px 12px;border:1px solid #E2E8F0;border-radius:12px;'
+        'background:#fff;color:#334155;font:13px Arial,sans-serif}.tp-auth-user span{display:grid;gap:2px;text-align:right}.tp-auth-user small{color:#64748B}'
+        '.tp-auth-user form{margin:0}.tp-auth-user button{min-height:36px;margin:0;padding:8px 12px;border:0;border-radius:9px;background:#E2E8F0;'
+        'color:#1E293B;font-weight:700;cursor:pointer}.tp-auth-user button:hover{background:#CBD5E1}.tp-auth-user button:focus-visible{outline:3px solid #2563EB;outline-offset:2px}'
+        '@media(max-width:640px){.tp-auth-user{align-items:stretch}.tp-auth-user span{min-width:0;text-align:left}.tp-auth-user strong,.tp-auth-user small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tp-auth-user form{margin-left:auto}}</style>'
+    )
 
 
 EMPTY_STATE_GUIDANCE = {
@@ -346,6 +365,7 @@ def _ux_script(path: str) -> str:
     const loading=document.getElementById('tp-loading-state');if(loading)loading.classList.remove('visible');
   }
   window.tpRestoreSavingButtons=restoreSavingButtons;
+  window.addEventListener('pageshow',restoreSavingButtons);
   function savedFeedback(message){
     return new Promise(function(resolve){
       let notice=document.getElementById('tp-save-feedback');
@@ -644,6 +664,7 @@ def _ux_script(path: str) -> str:
   });
   document.addEventListener('submit',async function(event){
     const form=event.target;if(!(form instanceof HTMLFormElement))return;
+    if(form.hasAttribute('data-native-submit')){formDirty=false;return;}
     const action=(form.getAttribute('action')||'').toLowerCase();
     if(form.method.toLowerCase()==='post'&&action.includes('delete')){
       event.preventDefault();const label=workLabel||document.querySelector('h1')?.textContent?.trim()||'this record';if(await confirmDelete(label))form.submit();return;
@@ -658,7 +679,7 @@ def _ux_script(path: str) -> str:
       const response=await fetch(form.action,{method:'POST',body:payload,redirect:'follow'});
       const type=(response.headers.get('content-type')||'').toLowerCase();
       if(!response.ok){const errorBody=type.includes('text/html')?await response.text():'';restoreSavingButtons();if(errorBody){document.open();document.write(errorBody);document.close();}return;}
-      if(response.redirected){const nextPage=type.includes('text/html')?await response.text():'';markSaved();await savedFeedback();if(nextPage){document.open();document.write(nextPage);document.close();}else window.location.href=response.url;return;}
+      if(response.redirected){const nextPage=type.includes('text/html')?await response.text():'';markSaved();await savedFeedback();if(nextPage){window.history.replaceState(null,'',response.url);document.open();document.write(nextPage);document.close();}else window.location.href=response.url;return;}
       if(type.includes('text/html')){const nextPage=await response.text();markSaved();await savedFeedback();document.open();document.write(nextPage);document.close();return;}
       markSaved();await savedFeedback();restoreSavingButtons();
     }catch(error){restoreSavingButtons();window.alert('Unable to save right now. Please try again.');}
@@ -799,6 +820,7 @@ class ReleaseFooterMiddleware:
         body_parts = []
         request_method = str(scope.get("method", "GET") or "GET").upper()
         request_path = str(scope.get("path", "") or "")
+        authenticated_user = scope.get("trade_paper_user")
         request_headers = {key.lower(): value for key, value in scope.get("headers", [])}
         success_cookie = request_headers.get(b"cookie", b"")
         success_kind = next((kind for kind in SUCCESS_EXPERIENCES if f"tp_success={kind}".encode() in success_cookie), "")
@@ -847,7 +869,11 @@ class ReleaseFooterMiddleware:
                 )
                 fallback_match = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';]+)', disposition, re.I)
                 fallback = fallback_match.group(1) if fallback_match else "document.pdf"
-                filename = pdf_export_filename(request_path, fallback)
+                filename = pdf_export_filename(
+                    request_path,
+                    fallback,
+                    scope.get("trade_paper_pdf_record"),
+                )
                 mode = "inline" if query.get("view", [""])[0] == "1" else "attachment"
                 headers = [(key, value) for key, value in headers if key.lower() != b"content-disposition"]
                 headers.append((b"content-disposition", f'{mode}; filename="{filename}"'.encode("latin-1")))
@@ -857,6 +883,9 @@ class ReleaseFooterMiddleware:
                 effective_kind = success_kind or mutation_kind
                 success_message = _success_experience(effective_kind)[0] if effective_kind and start_message.get("status", 500) < 400 else ""
                 text = inject_user_experience(text, request_path, success_message, demo_mode, empty_search, effective_kind)
+                if authenticated_user and request_path not in {"/login", "/register"} and "<body" in text:
+                    body_end = text.find(">", text.find("<body"))
+                    text = text[:body_end + 1] + authenticated_user_control(authenticated_user) + text[body_end + 1:]
                 body = inject_release_footer(text).encode(charset)
                 headers = [(key, value) for key, value in headers if key.lower() != b"content-length"]
                 headers.append((b"content-length", str(len(body)).encode("ascii")))
@@ -880,6 +909,36 @@ def form_page(title: object, content: str, *, subtitle: object = "", navigation:
 
 def section_card(title: object, content: str) -> str:
     return f'<section class="card"><h2>{html_escape(title)}</h2>{content}</section>'
+
+
+def imported_section_css() -> str:
+    """Presentation-only styles for snapshot review sections."""
+    return """
+.tp-imported-section{border:1px solid #CBD5E1;border-radius:16px;margin-bottom:25px;background:#F8FAFC;overflow:hidden}
+.tp-imported-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 25px;cursor:pointer;font-weight:bold;color:#1E293B;list-style:none}
+.tp-imported-summary::-webkit-details-marker{display:none}
+.tp-imported-summary::after{content:"Show";padding:6px 10px;border-radius:999px;background:#E2E8F0;color:#475569;font-size:13px}
+.tp-imported-section[open]>.tp-imported-summary::after{content:"Hide"}
+.tp-imported-note{display:block;margin-top:4px;color:#64748B;font-size:13px;font-weight:normal}
+.tp-imported-content{padding:0 25px 25px;border-top:1px solid #E2E8F0}
+.tp-imported-content h2{margin-top:22px}
+""".strip()
+
+
+def render_imported_section(section_type: object, content_html: str, heading: object = None) -> str:
+    """Wrap document-owned fields in a native, initially collapsed details element."""
+    kind = str(section_type or "").strip().lower()
+    helper_text = {
+        "party": "Party information · Expand to review or edit",
+        "cargo": "Cargo information · Expand to review or edit",
+    }.get(kind, f"{str(section_type or 'Imported').strip()} information · Expand to review or edit")
+    title = heading if heading is not None else "Imported from previous document"
+    return (
+        f'<details class="tp-imported-section" data-imported-section="{html_escape(kind, attribute=True)}">'
+        f'<summary class="tp-imported-summary"><span>{html_escape(title)}'
+        f'<span class="tp-imported-note">{html_escape(helper_text)}</span></span></summary>'
+        f'<div class="tp-imported-content">{content_html}</div></details>'
+    )
 
 
 def metadata(items: list[tuple[object, str]] | tuple[tuple[object, str], ...]) -> str:

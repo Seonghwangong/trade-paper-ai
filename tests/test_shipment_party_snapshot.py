@@ -6,7 +6,7 @@ from reportlab import rl_config
 from starlette.requests import Request
 
 from app import bill_of_lading as bill
-from app import buyer, invoice, packing, shipment
+from app import buyer, invoice, packing, shipment, shipping_instruction
 
 
 def _request(account_id, path="/shipment-list"):
@@ -24,17 +24,18 @@ def _form(bl_no="BL-001"):
         "shipment_date": "2026-08-05", "shipment_name": "Snapshot Shipment",
         "customer": "", "buyer": "Snapshot Consignee", "status": "Inquiry",
         "remarks": "Snapshot test", "quotation_no": "", "pi_no": "",
-        "invoice_no": "INV-001", "packing_no": "PK-001", "si_no": "",
+        "invoice_no": "INV-001", "packing_no": "PK-001", "si_no": "SI-001",
         "bl_no": bl_no, "co_no": "", "inspection_no": "",
         "insurance_no": "", "weight_no": "",
     }
 
 
-def _datasets(bl_record, packing_record, invoice_record):
+def _datasets(bl_record, packing_record, invoice_record, si_record=None):
     datasets = {descriptor["file"].name: [] for descriptor in [*shipment.DOCUMENTS, *shipment.OPERATIONAL_RECORDS]}
     datasets["bills_of_lading.json"] = [bl_record]
     datasets["packing_lists.json"] = [packing_record]
     datasets["invoices.json"] = [invoice_record]
+    datasets["shipping_instructions.json"] = [si_record] if si_record else []
     return datasets
 
 
@@ -63,20 +64,33 @@ def test_shipment_snapshot_create_edit_update_pdf_and_account_isolation(tmp_path
     }
     packing_record = {"packing_no": "PK-001", "invoice_no": "INV-001", "items": items}
     invoice_record = {"invoice_no": "INV-001", "buyer": snapshot["consignee"], "items": items}
+    si_record = {
+        "si_no": "SI-001", "packing_no": "PK-001", "invoice_no": "INV-001",
+        "shipper": snapshot["shipper"],
+        "exporter_address": snapshot["shipper_address"],
+        "exporter_email": snapshot["shipper_email"],
+        "exporter_phone": snapshot["shipper_phone"],
+        "consignee": snapshot["consignee"],
+        "consignee_address": snapshot["consignee_address"],
+        "consignee_email": snapshot["consignee_email"],
+        "items": items, "total_carton": "2",
+        "total_net_weight": "40", "total_gross_weight": "44",
+    }
 
     monkeypatch.setattr(shipment, "SHIPMENT_FILE", shipment_file)
     monkeypatch.setattr(shipment, "USERS_FILE", users_file)
     monkeypatch.setattr(bill, "load_bills_of_lading", lambda account_id: [bl_record] if account_id == "account-a" else [])
     monkeypatch.setattr(packing, "load_packing_lists", lambda account_id: [packing_record] if account_id == "account-a" else [])
     monkeypatch.setattr(invoice, "load_invoices", lambda account_id: [invoice_record] if account_id == "account-a" else [])
+    monkeypatch.setattr(shipping_instruction, "load_shipping_instructions", lambda account_id: [si_record] if account_id == "account-a" else [])
     monkeypatch.setattr(buyer, "load_buyers", lambda account_id: [{"name": snapshot["consignee"]}] if account_id == "account-a" else [])
     monkeypatch.setattr(shipment, "load_account_company", lambda account_id, path: {
         "name": "Changed Master", "address": "Changed Master Address",
         "email": "changed-master@example.com", "phone": "999-9999",
     })
-    monkeypatch.setattr(shipment, "load_workflow_datasets", lambda account_id=None: _datasets(bl_record, packing_record, invoice_record))
+    monkeypatch.setattr(shipment, "load_workflow_datasets", lambda account_id=None: _datasets(bl_record, packing_record, invoice_record, si_record))
 
-    create_html = shipment.shipment_form(_request("account-a", "/shipment-form"), "BL-001").body.decode()
+    create_html = shipment.shipment_form(_request("account-a", "/shipment-form"), si_no="SI-001").body.decode()
     for field, value in snapshot.items():
         assert f'name="{field}" value="{value}"' in create_html
     assert "Snapshot Product" in create_html and "847130" in create_html

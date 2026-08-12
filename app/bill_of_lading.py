@@ -1,19 +1,18 @@
 from typing import Annotated, List, Optional
-from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
-import json
 
 from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
 
 router = APIRouter()
 
-from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
+from app.storage import atomic_write_json, data_path, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
 from app.referential_integrity import find_dependencies, render_delete_page
 from app.account_bill_of_lading import ensure_legacy_bill_of_lading_ownership, public_bill_of_lading
@@ -25,8 +24,8 @@ from app import packing as packing_module
 from app import invoice as invoice_module
 from app import buyer as buyer_module
 from app.routers.company import ACCOUNT_COMPANIES_FILE
-from app.shipment import shipment_context_redirect_url
-from app.ui import badge, button, form_css, form_footer, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
+from app.shipment import direct_document_shipment_no, shipment_context_redirect_url, shipment_detail_redirect_url
+from app.ui import badge, button, form_css, form_footer, imported_section_css, metadata, navigation_footer, page_shell, render_imported_section, search_toolbar, section_card, table
 
 BL_FILE = data_path("bills_of_lading.json")
 PACKING_FILE = data_path("packing_lists.json")
@@ -84,16 +83,6 @@ def validate_bl_links(packing_no, invoice_no, account_id, shipment_no=""):
         shipment = require_existing_reference("Shipment", shipment_no, shipment_module.load_shipments(account_id), "shipment_no", required=True)
         require_consistent_reference("Packing List", packing_no, shipment.get("packing_no", ""), "selected Shipment")
         require_consistent_reference("Invoice", invoice_no, shipment.get("invoice_no", ""), "selected Shipment")
-
-
-def next_bl_no(records):
-    return next_identifier(records, "bl_no", "BL")
-    numbers = [
-        int(record.get("bl_no", "BL-000").split("-")[1])
-        for record in records
-        if record.get("bl_no", "").startswith("BL-")
-    ]
-    return f"BL-{max(numbers, default=0) + 1:03d}"
 
 
 def html_attr(value):
@@ -379,7 +368,7 @@ calculateTotals();
         "__TOTAL_NET_WEIGHT__": html_attr(record.get("total_net_weight", "")),
         "__TOTAL_GROSS_WEIGHT__": html_attr(record.get("total_gross_weight", "")),
         "__BUTTON_TEXT__": html_attr(button_text),
-        "__FORM_CSS__": form_css(max_width=960),
+        "__FORM_CSS__": form_css(max_width=960) + imported_section_css() + "\n.tp-imported-content .card{margin:0;padding:0;border:0;background:transparent}",
         "__NAVIGATION__": navigation_footer("/bl-list", "B/L List", state="Editing" if show_bl_no else "New"),
         "__DOCUMENT_SECTION__": section_card("Document Information", metadata([
             ("B/L No", bl_no_input),
@@ -387,7 +376,7 @@ calculateTotals();
             ("Invoice No", f'<input type="text" name="invoice_no" value="{html_attr(record.get("invoice_no", ""))}" placeholder="Invoice No">'),
             ("B/L Date", f'<input type="date" name="bl_date" value="{html_attr(record.get("bl_date", ""))}">'),
         ])),
-        "__PARTY_SECTION__": section_card("Party Information", metadata([
+        "__PARTY_SECTION__": render_imported_section("party", section_card("Party Information", metadata([
             ("Shipper", f'<input type="text" name="shipper" value="{html_attr(record.get("shipper", ""))}" placeholder="Shipper">'),
             ("Shipper Address", f'<input type="text" name="shipper_address" value="{html_attr(record.get("shipper_address", ""))}" placeholder="Shipper Address">'),
             ("Shipper Email", f'<input type="email" name="shipper_email" value="{html_attr(record.get("shipper_email", ""))}" placeholder="Shipper Email">'),
@@ -396,9 +385,9 @@ calculateTotals();
             ("Consignee Address", f'<input type="text" name="consignee_address" value="{html_attr(record.get("consignee_address", ""))}" placeholder="Consignee Address">'),
             ("Consignee Email", f'<input type="email" name="consignee_email" value="{html_attr(record.get("consignee_email", ""))}" placeholder="Consignee Email">'),
             ("Notify Party", f'<input type="text" name="notify_party" value="{html_attr(record.get("notify_party", ""))}" placeholder="Notify Party">'),
-        ])),
+        ]))),
         "__TRANSPORT_SECTION__": section_card("Transport Information", f'<input type="text" name="vessel" value="{html_attr(record.get("vessel", ""))}" placeholder="Vessel"><input type="text" name="voyage_no" value="{html_attr(record.get("voyage_no", ""))}" placeholder="Voyage No"><input type="text" name="port_of_loading" value="{html_attr(record.get("port_of_loading", ""))}" placeholder="Port of Loading"><input type="text" name="port_of_discharge" value="{html_attr(record.get("port_of_discharge", ""))}" placeholder="Port of Discharge"><input type="text" name="place_of_delivery" value="{html_attr(record.get("place_of_delivery", ""))}" placeholder="Place of Delivery">'),
-        "__CARGO_SECTION__": section_card("Cargo Information", f'<div id="items_area">{rows}</div><button class="add" type="button" onclick="addItem()">+ Add Cargo Item</button><input id="total_carton" type="hidden" name="total_carton" value="{html_attr(record.get("total_carton", ""))}"><input id="total_net_weight" type="hidden" name="total_net_weight" value="{html_attr(record.get("total_net_weight", ""))}"><input id="total_gross_weight" type="hidden" name="total_gross_weight" value="{html_attr(record.get("total_gross_weight", ""))}"><div class="totals" id="totals_text"></div>'),
+        "__CARGO_SECTION__": render_imported_section("cargo", section_card("Cargo Information", f'<div id="items_area">{rows}</div><button class="add" type="button" onclick="addItem()">+ Add Cargo Item</button><input id="total_carton" type="hidden" name="total_carton" value="{html_attr(record.get("total_carton", ""))}"><input id="total_net_weight" type="hidden" name="total_net_weight" value="{html_attr(record.get("total_net_weight", ""))}"><input id="total_gross_weight" type="hidden" name="total_gross_weight" value="{html_attr(record.get("total_gross_weight", ""))}"><div class="totals" id="totals_text"></div>')),
         "__FORM_FOOTER__": form_footer("/bl-list", button_text),
         "__SHIPMENT_CONTEXT__": f'<input type="hidden" name="shipment_no" value="{html_attr(shipment_no)}">' if shipment_no else "",
     }
@@ -574,7 +563,10 @@ def update_bl(
                 return
         raise HTTPException(status_code=404, detail="Bill of Lading not found")
     locked_json_mutation(BL_FILE, [], replace_bl, list)
-    return RedirectResponse(url="/bl-list", status_code=303)
+    shipment_no = direct_document_shipment_no("bl_no", bl_no, account_id)
+    return RedirectResponse(
+        url=shipment_detail_redirect_url(shipment_no, account_id, "/bl-list"), status_code=303,
+    )
 
 
 @router.get("/delete-bl/{bl_no}")
@@ -637,6 +629,7 @@ def create_bl_pdf(request: Request, payload: dict = Body(...)):
     total_gross_weight = payload.get("total_gross_weight") or format_number(numeric_total(items, "gross_weight"))
 
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     pdf.setTitle(f"Bill of Lading {bl_no}")
@@ -651,27 +644,21 @@ def create_bl_pdf(request: Request, payload: dict = Body(...)):
     summary_h = 95
     summary_gap = 20
 
-    def fit_text(text, max_width, font_name="Helvetica", font_size=8):
-        text = str(text or "")
-        if pdf.stringWidth(text, font_name, font_size) <= max_width:
-            return text
-        suffix = "..."
-        while text and pdf.stringWidth(text + suffix, font_name, font_size) > max_width:
-            text = text[:-1]
-        return text + suffix if text else suffix
+    def fit_text(text, max_width, font_name=TP_UNICODE, font_size=8):
+        return fit_pdf_text(pdf, text, max_width, font_name, font_size)
 
     def draw_header():
         pdf.setFillColor(colors.HexColor("#111827"))
         pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 24)
+        pdf.setFont(TP_UNICODE_BOLD, 24)
         pdf.drawString(45, height - 55, "BILL OF LADING")
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
         pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 10)
+        pdf.setFont(TP_UNICODE_BOLD, 10)
         pdf.drawString(45, height - 118, f"B/L No: {bl_no}")
         pdf.drawString(45, height - 135, f"B/L Date: {bl_date}")
         pdf.drawString(45, height - 152, f"Packing No: {packing_no}")
@@ -684,15 +671,15 @@ def create_bl_pdf(request: Request, payload: dict = Body(...)):
         pdf.roundRect(395, height - 265, 155, 78, 8, fill=1)
 
         pdf.setFillColor(colors.HexColor("#111827"))
-        pdf.setFont("Helvetica-Bold", 9)
+        pdf.setFont(TP_UNICODE_BOLD, 9)
         pdf.drawString(58, height - 205, "SHIPPER")
         pdf.drawString(233, height - 205, "CONSIGNEE")
         pdf.drawString(408, height - 205, "NOTIFY PARTY")
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.drawString(58, height - 224, fit_text(shipper, 130))
         pdf.drawString(233, height - 224, fit_text(consignee, 130))
         pdf.drawString(408, height - 228, fit_text(notify_party, 120))
-        pdf.setFont("Helvetica", 7)
+        pdf.setFont(TP_UNICODE, 7)
         pdf.drawString(58, height - 237, fit_text(shipper_address, 130, font_size=7))
         pdf.drawString(58, height - 248, fit_text(shipper_email, 130, font_size=7))
         pdf.drawString(58, height - 259, fit_text(shipper_phone, 130, font_size=7))
@@ -700,19 +687,19 @@ def create_bl_pdf(request: Request, payload: dict = Body(...)):
         pdf.drawString(233, height - 253, fit_text(consignee_email, 130, font_size=7))
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 8)
-        pdf.drawString(45, height - 292, f"Vessel: {vessel}")
-        pdf.drawString(185, height - 292, f"Voyage No: {voyage_no}")
-        pdf.drawString(325, height - 292, f"Port of Loading: {port_of_loading}")
-        pdf.drawString(45, height - 309, f"Port of Discharge: {port_of_discharge}")
-        pdf.drawString(325, height - 309, f"Place of Delivery: {place_of_delivery}")
+        pdf.setFont(TP_UNICODE_BOLD, 8)
+        pdf.drawString(45, height - 292, fit_text(f"Vessel: {vessel}", 125, TP_UNICODE_BOLD, 8))
+        pdf.drawString(185, height - 292, fit_text(f"Voyage No: {voyage_no}", 125, TP_UNICODE_BOLD, 8))
+        pdf.drawString(325, height - 292, fit_text(f"Port of Loading: {port_of_loading}", 220, TP_UNICODE_BOLD, 8))
+        pdf.drawString(45, height - 309, fit_text(f"Port of Discharge: {port_of_discharge}", 265, TP_UNICODE_BOLD, 8))
+        pdf.drawString(325, height - 309, fit_text(f"Place of Delivery: {place_of_delivery}", 220, TP_UNICODE_BOLD, 8))
 
     def draw_table_header():
         header_y = height - 345
         pdf.setFillColor(colors.HexColor("#E5E7EB"))
         pdf.rect(table_x, header_y, table_w, table_header_h, fill=1, stroke=0)
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 8)
+        pdf.setFont(TP_UNICODE_BOLD, 8)
         pdf.drawString(52, header_y + 10, "No")
         pdf.drawString(80, header_y + 10, "Item")
         pdf.drawRightString(235, header_y + 10, "Quantity")
@@ -720,7 +707,7 @@ def create_bl_pdf(request: Request, payload: dict = Body(...)):
         pdf.drawRightString(370, header_y + 10, "Carton")
         pdf.drawRightString(455, header_y + 10, "Net Weight")
         pdf.drawRightString(540, header_y + 10, "Gross Weight")
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
         return header_y - table_header_h
 
@@ -730,11 +717,11 @@ def create_bl_pdf(request: Request, payload: dict = Body(...)):
 
     def draw_footer():
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica", 10)
+        pdf.setFont(TP_UNICODE, 10)
         pdf.drawString(45, 115, "Authorized Signature:")
         pdf.line(170, 115, 330, 115)
         pdf.setFillColor(colors.HexColor("#6B7280"))
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
         pdf.drawString(45, 45, "For trade documentation automation.")
 
@@ -767,7 +754,7 @@ def create_bl_pdf(request: Request, payload: dict = Body(...)):
     pdf.setFillColor(colors.HexColor("#111827"))
     pdf.roundRect(summary_x, summary_bottom, summary_w, summary_h, 8, fill=1, stroke=0)
     pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFont(TP_UNICODE_BOLD, 10)
     text_x = summary_x + 15
     text_y = summary_top - 28
     line_gap = 18

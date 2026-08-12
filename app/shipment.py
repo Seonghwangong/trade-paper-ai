@@ -4,7 +4,6 @@ from io import BytesIO
 from copy import deepcopy
 from typing import Annotated, Optional
 import html as html_lib
-import json
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -12,13 +11,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
 
 router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
-from app.validation import DataValidationError, require_allowed_value, require_consistent_reference, require_existing_reference, require_text
+from app.validation import require_allowed_value, require_consistent_reference, require_existing_reference, require_text
 from app.referential_integrity import find_dependencies, render_delete_page
 from app.account_shipment import ensure_legacy_shipment_ownership, public_shipment
+from app.snapshot import fill_missing_snapshot_fields, set_submitted_snapshot_fields, snapshot_value
 from app.export import set_pdf_export_record
 from app.auth import USERS_FILE
 from app.account_company import load_account_company
@@ -192,12 +193,6 @@ def save_shipments(records):
 
 def next_shipment_no(records):
     return next_identifier(records, "shipment_no", "SHP")
-    numbers = [
-        int(record.get("shipment_no", "SHP-000").split("-")[1])
-        for record in records
-        if record.get("shipment_no", "").startswith("SHP-")
-    ]
-    return f"SHP-{max(numbers, default=0) + 1:03d}"
 
 
 def blank_shipment():
@@ -239,35 +234,45 @@ def _numeric_total(items, field):
     return f"{total:g}" if total else ""
 
 
-def resolve_shipment_snapshot(record, account_id, bill=None, packing=None, invoice=None):
+def resolve_shipment_snapshot(record, account_id, bill=None, packing=None, invoice=None, instruction=None, preserve_empty=None):
     """Resolve a read-only Shipment snapshot using account-owned sources only."""
     from app import bill_of_lading as bill_module
     from app import packing as packing_module
     from app import invoice as invoice_module
+    from app import shipping_instruction as shipping_instruction_module
     from app import buyer as buyer_module
 
     resolved = deepcopy(record or {})
+    if preserve_empty is None:
+        preserve_empty = bool(resolved.get("shipment_no"))
+    si_no = str(resolved.get("si_no", "") or "").strip()
+    if instruction is None and si_no:
+        instruction = _first_record(
+            shipping_instruction_module.load_shipping_instructions(account_id), "si_no", si_no,
+        )
+    instruction = instruction or {}
     bl_no = str(resolved.get("bl_no", "") or "").strip()
     if bill is None:
         bill = _first_record(bill_module.load_bills_of_lading(account_id), "bl_no", bl_no)
     bill = bill or {}
 
-    packing_no = str(resolved.get("packing_no", "") or bill.get("packing_no", "") or "").strip()
+    packing_no = str(snapshot_value(resolved, "packing_no", (
+        instruction.get("packing_no", ""), bill.get("packing_no", ""),
+    ), preserve_empty=preserve_empty) or "").strip()
     if packing is None:
         packing = _first_record(packing_module.load_packing_lists(account_id), "packing_no", packing_no)
     packing = packing or {}
 
-    invoice_no = str(
-        resolved.get("invoice_no", "") or bill.get("invoice_no", "")
-        or packing.get("invoice_no", "") or ""
-    ).strip()
+    invoice_no = str(snapshot_value(resolved, "invoice_no", (
+        instruction.get("invoice_no", ""), bill.get("invoice_no", ""), packing.get("invoice_no", ""),
+    ), preserve_empty=preserve_empty) or "").strip()
     if invoice is None:
         invoice = _first_record(invoice_module.load_invoices(account_id), "invoice_no", invoice_no)
     invoice = invoice or {}
 
     company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
     consignee_name = (
-        resolved.get("consignee") or bill.get("consignee") or packing.get("buyer")
+        resolved.get("consignee") or instruction.get("consignee") or instruction.get("consignee_name") or bill.get("consignee") or packing.get("buyer")
         or invoice.get("buyer") or resolved.get("buyer") or ""
     )
     buyer = next(
@@ -278,32 +283,30 @@ def resolve_shipment_snapshot(record, account_id, bill=None, packing=None, invoi
     )
 
     fallbacks = {
-        "shipper": (bill.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
-        "shipper_address": (bill.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
-        "shipper_email": (bill.get("shipper_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
-        "shipper_phone": (bill.get("shipper_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
-        "consignee": (bill.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
-        "consignee_address": (bill.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
-        "consignee_email": (bill.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
+        "shipper": (instruction.get("shipper"), instruction.get("exporter_name"), bill.get("shipper"), packing.get("seller"), invoice.get("seller"), company.get("name")),
+        "shipper_address": (instruction.get("exporter_address"), bill.get("shipper_address"), packing.get("seller_address"), invoice.get("seller_address"), company.get("address")),
+        "shipper_email": (instruction.get("exporter_email"), bill.get("shipper_email"), packing.get("seller_email"), invoice.get("seller_email"), company.get("email")),
+        "shipper_phone": (instruction.get("exporter_phone"), bill.get("shipper_phone"), packing.get("seller_phone"), invoice.get("seller_phone"), company.get("phone")),
+        "consignee": (instruction.get("consignee"), instruction.get("consignee_name"), bill.get("consignee"), packing.get("buyer"), invoice.get("buyer"), buyer.get("name")),
+        "consignee_address": (instruction.get("consignee_address"), bill.get("consignee_address"), packing.get("buyer_address"), invoice.get("buyer_address"), buyer.get("address")),
+        "consignee_email": (instruction.get("consignee_email"), bill.get("consignee_email"), packing.get("buyer_email"), invoice.get("buyer_email"), buyer.get("email")),
     }
-    for field, candidates in fallbacks.items():
-        if not resolved.get(field):
-            resolved[field] = next((value for value in candidates if value), "")
+    fill_missing_snapshot_fields(resolved, fallbacks, preserve_empty=preserve_empty)
 
-    if not resolved.get("items"):
+    if "items" not in resolved or (not preserve_empty and not resolved["items"]):
         resolved["items"] = deepcopy(
-            bill.get("items") or packing.get("items") or invoice.get("items") or []
+            instruction.get("items") or bill.get("items") or packing.get("items") or invoice.get("items") or []
         )
     for field in ("total_carton", "total_net_weight", "total_gross_weight"):
-        if not resolved.get(field):
-            resolved[field] = bill.get(field) or packing.get(field) or _numeric_total(
+        if field not in resolved or (not preserve_empty and not resolved[field]):
+            resolved[field] = instruction.get(field) or bill.get(field) or packing.get(field) or _numeric_total(
                 resolved.get("items", []), field.removeprefix("total_")
             )
 
     resolved["bl_no"] = bl_no
     resolved["packing_no"] = packing_no
     resolved["invoice_no"] = invoice_no
-    if not resolved.get("buyer") and buyer.get("name"):
+    if ("buyer" not in resolved or (not preserve_empty and not resolved.get("buyer"))) and buyer.get("name"):
         resolved["buyer"] = buyer.get("name", "")
     return resolved
 
@@ -421,6 +424,27 @@ def shipment_context_redirect_url(shipment_no, field, identifier, fallback_url):
     if link_direct_document(shipment_no, field, identifier):
         return f'/shipment/{quote(str(shipment_no).strip(), safe="")}'
     return fallback_url
+
+
+def shipment_detail_redirect_url(shipment_no, account_id, fallback_url):
+    normalized = str(shipment_no or "").strip()
+    if normalized and find_shipment(normalized, account_id):
+        return f'/shipment/{quote(normalized, safe="")}'
+    return fallback_url
+
+
+def direct_document_shipment_no(field, identifier, account_id):
+    """Resolve one unambiguous account-owned Shipment for a directly linked document."""
+    target = str(identifier or "").strip()
+    if field not in {"packing_no", "bl_no"} or not target:
+        return ""
+    matches = [
+        str(record.get("shipment_no", "") or "").strip()
+        for record in owned_shipment_records(account_id)
+        if str(record.get(field, "") or "").strip() == target
+    ]
+    unique = {value for value in matches if value}
+    return next(iter(unique)) if len(unique) == 1 else ""
 
 
 def resolve_direct_documents(record, datasets=None):
@@ -940,7 +964,7 @@ def select_html(name, selected, options, placeholder):
     return "".join(html)
 
 
-def render_form(record, action, title, button_text, show_shipment_no=False, datasets=None):
+def render_form(record, action, title, button_text, show_shipment_no=False, datasets=None, create_mode=False):
     shipment_no_input = ""
     if show_shipment_no:
         shipment_no_input = f'<input type="text" name="shipment_no" value="{html_attr(record.get("shipment_no", ""))}" placeholder="Shipment No" readonly>'
@@ -950,13 +974,32 @@ def render_form(record, action, title, button_text, show_shipment_no=False, data
         for option in STATUS_OPTIONS
     )
 
+    si_doc = document_by_field("si_no")
+    si_options = document_options(si_doc, datasets)
+    selected_si = str(record.get("si_no", "") or "")
+    if create_mode:
+        si_picker = select_html("si_no", selected_si, si_options, "Select Shipping Instruction").replace(
+            '<select name="si_no">', '<select id="shipment-si" name="si_no" required onchange="if(this.value)location.href=\'/shipment-form?si_no=\'+encodeURIComponent(this.value)">',
+        )
+    else:
+        si_picker = (
+            f'<input type="hidden" name="si_no" value="{html_attr(selected_si)}">'
+            f'<select id="shipment-si" disabled><option selected>{html_text(selected_si or "No Shipping Instruction")}</option></select>'
+        )
+
     document_fields = ""
     for doc in DOCUMENTS:
         value = record.get(doc["field"], "")
+        readonly_select = (
+            f'<input type="hidden" name="{html_attr(doc["field"])}" value="{html_attr(value)}">'
+            f'<select disabled aria-label="{html_attr(doc["label"])}"><option selected>{html_text(value or "Not linked")}</option></select>'
+            if doc["field"] != "si_no" else
+            f'<select disabled aria-label="{html_attr(doc["label"])}"><option selected>{html_text(value or "Not linked")}</option></select>'
+        )
         document_fields += f"""
 <div>
 <label>{html_text(doc["label"])}</label>
-{select_html(doc["field"], value, document_options(doc, datasets), f"Select {doc['label']}")}
+{readonly_select}
 </div>
 """
 
@@ -1004,6 +1047,7 @@ button{padding:15px 18px;background:#111827;color:white;border:none;border-radiu
 <p class="sub">Group trade documents under one shipment project without duplicating document data</p>
 
 <form action="__ACTION__" method="post">
+<div class="card"><h2>Shipping Instruction <span aria-hidden="true">*</span></h2>__SI_PICKER__</div>
 <div class="card">
 <h2>Shipment Information</h2>
 <div class="grid">
@@ -1022,13 +1066,13 @@ __SHIPMENT_NO_INPUT__
 <div class="card">
 <h2>Party Snapshot</h2>
 <div class="grid">
-<div><label>Shipper</label><input type="text" name="shipper" value="__SHIPPER__"></div>
-<div><label>Shipper Address</label><input type="text" name="shipper_address" value="__SHIPPER_ADDRESS__"></div>
-<div><label>Shipper Email</label><input type="email" name="shipper_email" value="__SHIPPER_EMAIL__"></div>
-<div><label>Shipper Phone</label><input type="text" name="shipper_phone" value="__SHIPPER_PHONE__"></div>
-<div><label>Consignee</label><input type="text" name="consignee" value="__CONSIGNEE__"></div>
-<div><label>Consignee Address</label><input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__"></div>
-<div><label>Consignee Email</label><input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__"></div>
+<div><label>Shipper</label><input type="text" name="shipper" value="__SHIPPER__" readonly></div>
+<div><label>Shipper Address</label><input type="text" name="shipper_address" value="__SHIPPER_ADDRESS__" readonly></div>
+<div><label>Shipper Email</label><input type="email" name="shipper_email" value="__SHIPPER_EMAIL__" readonly></div>
+<div><label>Shipper Phone</label><input type="text" name="shipper_phone" value="__SHIPPER_PHONE__" readonly></div>
+<div><label>Consignee</label><input type="text" name="consignee" value="__CONSIGNEE__" readonly></div>
+<div><label>Consignee Address</label><input type="text" name="consignee_address" value="__CONSIGNEE_ADDRESS__" readonly></div>
+<div><label>Consignee Email</label><input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" readonly></div>
 </div>
 </div>
 
@@ -1058,6 +1102,7 @@ __DOCUMENT_FIELDS__
     replacements = {
         "__TITLE__": html_text(title),
         "__ACTION__": html_attr(action),
+        "__SI_PICKER__": si_picker,
         "__SHIPMENT_NO_INPUT__": shipment_no_input,
         "__SHIPMENT_DATE__": html_attr(record.get("shipment_date", "")),
         "__SHIPMENT_NAME__": html_attr(record.get("shipment_name", "")),
@@ -1173,14 +1218,31 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 
 
 @router.get("/shipment-form", response_class=HTMLResponse)
-def shipment_form(request: Request, bl_no: str = ""):
+def shipment_form(request: Request, bl_no: str = "", si_no: str = ""):
     account_id = _account_id(request)
+    datasets = load_workflow_datasets(account_id)
     record = blank_shipment()
     record["shipment_no"] = next_shipment_no(load_shipment_records())
-    if bl_no:
+    instruction = _first_record(datasets.get("shipping_instructions.json", []), "si_no", si_no)
+    if instruction:
+        record["si_no"] = instruction.get("si_no", "")
+        record = resolve_shipment_snapshot(
+            record, account_id, instruction=instruction, preserve_empty=False,
+        )
+    elif bl_no:
         record["bl_no"] = bl_no
-        record = resolve_shipment_snapshot(record, account_id)
-    return render_form(record, "/shipment", "New Shipment", "Save Shipment", show_shipment_no=True, datasets=load_workflow_datasets(account_id))
+        record = resolve_shipment_snapshot(record, account_id, preserve_empty=False)
+    return render_form(
+        record, "/shipment", "New Shipment", "Save Shipment",
+        show_shipment_no=True, datasets=datasets, create_mode=True,
+    )
+
+
+def shipment_success_response(shipment_no, si_no, packing_no):
+    booking_url = workflow_url("/booking-form", [
+        ("shipment_no", shipment_no), ("si_no", si_no), ("packing_no", packing_no),
+    ])
+    return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shipment Saved</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}.card{{width:min(580px,100%);padding:34px;border:1px solid #E5E7EB;border-radius:18px;background:#fff;text-align:center;box-shadow:0 14px 34px rgba(15,23,42,.09)}}h1{{margin:0 0 10px}}p{{color:#475569}}.actions{{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:20px}}a{{display:inline-flex;min-height:46px;align-items:center;padding:11px 16px;border-radius:10px;background:#E5E7EB;color:#111827;text-decoration:none;font-weight:800}}a.primary{{background:#111827;color:#fff}}</style></head><body><main><section class="card"><h1>Shipment Saved</h1><p>✓ {html_text(shipment_no)} was created successfully.</p><div class="actions"><a class="primary" href="{html_attr(booking_url)}">Continue to Booking →</a><a href="/shipment/{html_attr(shipment_no)}">View Shipment</a></div></section></main></body></html>""")
 
 
 @router.post("/shipment")
@@ -1212,27 +1274,30 @@ def save_shipment(
 ):
     account_id = _account_id(request)
     datasets = load_workflow_datasets(account_id)
+    require_existing_reference(
+        "Shipping Instruction", si_no,
+        document_records(document_by_field("si_no"), datasets), "si_no", required=True,
+    )
+    saved = {}
     def add_shipment(shipments):
         record = build_record(
         next_identifier(shipments, "shipment_no", "SHP"), shipment_date, shipment_name, customer, buyer,
         status, remarks, quotation_no, pi_no, invoice_no, packing_no, si_no,
         bl_no, co_no, inspection_no, insurance_no, weight_no,
         )
-        record.update({
-            "shipper": shipper or "",
-            "shipper_address": shipper_address or "",
-            "shipper_email": shipper_email or "",
-            "shipper_phone": shipper_phone or "",
-            "consignee": consignee or "",
-            "consignee_address": consignee_address or "",
-            "consignee_email": consignee_email or "",
+        set_submitted_snapshot_fields(record, {
+            "shipper": shipper, "shipper_address": shipper_address,
+            "shipper_email": shipper_email, "shipper_phone": shipper_phone,
+            "consignee": consignee, "consignee_address": consignee_address,
+            "consignee_email": consignee_email,
         })
         record = resolve_shipment_snapshot(record, account_id)
         validate_shipment_values(record, account_id, datasets)
         record["account_id"] = account_id
         shipments.append(record)
+        saved.update({"shipment_no": record["shipment_no"], "si_no": si_no, "packing_no": packing_no})
     locked_json_mutation(SHIPMENT_FILE, [], add_shipment, list)
-    return RedirectResponse("/shipment-list", status_code=303)
+    return shipment_success_response(saved["shipment_no"], saved["si_no"], saved["packing_no"])
 
 
 @router.get("/shipment/{shipment_no}", response_class=HTMLResponse)
@@ -1485,16 +1550,20 @@ button,.btn{{display:inline-block;padding:13px 18px;background:#111827;color:whi
     return HTMLResponse(html)
 
 
-def draw_pdf_text(pdf, text, x, y, max_width=88):
+def draw_pdf_text(pdf, text, x, y, max_width=390, font=TP_UNICODE, size=10):
     value = str(text or "")
     lines = []
-    while len(value) > max_width:
-        split_at = value.rfind(" ", 0, max_width + 1)
-        if split_at <= 0:
-            split_at = max_width
+    while value and pdf.stringWidth(value, font, size) > max_width:
+        split_at = len(value)
+        while split_at > 1 and pdf.stringWidth(value[:split_at], font, size) > max_width:
+            split_at -= 1
+        whitespace = value.rfind(" ", 0, split_at + 1)
+        if whitespace > 0:
+            split_at = whitespace
         lines.append(value[:split_at])
         value = value[split_at:].lstrip()
     lines.append(value)
+    pdf.setFont(font, size)
     for line in lines:
         pdf.drawString(x, y, line)
         y -= 14
@@ -1512,6 +1581,7 @@ def shipment_pdf(shipment_no: str, request: Request):
     set_pdf_export_record(request, shipment)
 
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     navy = colors.HexColor("#111827")
@@ -1521,7 +1591,7 @@ def shipment_pdf(shipment_no: str, request: Request):
         pdf.setFillColor(navy)
         pdf.rect(0, height - 82, width, 82, fill=1, stroke=0)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 22)
+        pdf.setFont(TP_UNICODE_BOLD, 22)
         pdf.drawString(42, height - 50, "SHIPMENT SUMMARY")
         return height - 112
 
@@ -1543,15 +1613,15 @@ def shipment_pdf(shipment_no: str, request: Request):
         ("Remarks", shipment.get("remarks", "")),
     ]:
         y = ensure_space(y)
-        pdf.setFont("Helvetica-Bold", 10)
+        pdf.setFont(TP_UNICODE_BOLD, 10)
         pdf.drawString(42, y, f"{label}:")
-        pdf.setFont("Helvetica", 10)
-        y = draw_pdf_text(pdf, value, 145, y)
+        pdf.setFont(TP_UNICODE, 10)
+        y = draw_pdf_text(pdf, value, 145, y, font=TP_UNICODE, size=10)
         y -= 3
 
     y -= 10
     y = ensure_space(y, 120)
-    pdf.setFont("Helvetica-Bold", 14)
+    pdf.setFont(TP_UNICODE_BOLD, 14)
     pdf.drawString(42, y, "Party Snapshot")
     y -= 24
     for label, value in [
@@ -1564,18 +1634,18 @@ def shipment_pdf(shipment_no: str, request: Request):
         ("Consignee Email", shipment.get("consignee_email", "")),
     ]:
         y = ensure_space(y)
-        pdf.setFont("Helvetica-Bold", 9)
+        pdf.setFont(TP_UNICODE_BOLD, 9)
         pdf.drawString(42, y, f"{label}:")
-        pdf.setFont("Helvetica", 9)
-        y = draw_pdf_text(pdf, value, 165, y)
+        pdf.setFont(TP_UNICODE, 9)
+        y = draw_pdf_text(pdf, value, 165, y, font=TP_UNICODE, size=9)
         y -= 2
 
     y -= 10
     y = ensure_space(y, 90)
-    pdf.setFont("Helvetica-Bold", 14)
+    pdf.setFont(TP_UNICODE_BOLD, 14)
     pdf.drawString(42, y, "Cargo Snapshot")
     y -= 22
-    pdf.setFont("Helvetica-Bold", 8)
+    pdf.setFont(TP_UNICODE_BOLD, 8)
     pdf.drawString(42, y, "Item")
     pdf.drawString(220, y, "Qty")
     pdf.drawString(270, y, "HS Code")
@@ -1587,8 +1657,8 @@ def shipment_pdf(shipment_no: str, request: Request):
         if not isinstance(item, dict):
             continue
         y = ensure_space(y)
-        pdf.setFont("Helvetica", 8)
-        pdf.drawString(42, y, str(item.get("name", ""))[:28])
+        pdf.setFont(TP_UNICODE, 8)
+        pdf.drawString(42, y, fit_pdf_text(pdf, item.get("name", ""), 165, TP_UNICODE, 8))
         pdf.drawString(220, y, str(item.get("quantity", "")))
         pdf.drawString(270, y, str(item.get("hs_code", "")))
         pdf.drawString(350, y, str(item.get("carton", "")))
@@ -1596,16 +1666,16 @@ def shipment_pdf(shipment_no: str, request: Request):
         pdf.drawString(480, y, str(item.get("gross_weight", "")))
         y -= 15
     y = ensure_space(y)
-    pdf.setFont("Helvetica-Bold", 8)
+    pdf.setFont(TP_UNICODE_BOLD, 8)
     pdf.drawString(350, y, f"Totals: {shipment.get('total_carton', '')} cartons")
     pdf.drawString(430, y, f"N {shipment.get('total_net_weight', '')} / G {shipment.get('total_gross_weight', '')}")
 
     y -= 28
     y = ensure_space(y, 80)
-    pdf.setFont("Helvetica-Bold", 14)
+    pdf.setFont(TP_UNICODE_BOLD, 14)
     pdf.drawString(42, y, "Direct Document Status")
     y -= 24
-    pdf.setFont("Helvetica-Bold", 9)
+    pdf.setFont(TP_UNICODE_BOLD, 9)
     pdf.drawString(42, y, "Document")
     pdf.drawString(245, y, "Record No")
     pdf.drawString(430, y, "Status")
@@ -1613,7 +1683,7 @@ def shipment_pdf(shipment_no: str, request: Request):
     workflow_datasets = load_workflow_datasets(account_id)
     for resolved in resolve_direct_documents(shipment, workflow_datasets):
         y = ensure_space(y)
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         pdf.drawString(42, y, resolved["document"]["label"])
         pdf.drawString(245, y, resolved["value"] or "-")
         pdf.drawString(430, y, "Linked" if resolved["exists"] else "Missing")
@@ -1621,10 +1691,10 @@ def shipment_pdf(shipment_no: str, request: Request):
 
     y -= 12
     y = ensure_space(y, 80)
-    pdf.setFont("Helvetica-Bold", 14)
+    pdf.setFont(TP_UNICODE_BOLD, 14)
     pdf.drawString(42, y, "Operational Records")
     y -= 24
-    pdf.setFont("Helvetica-Bold", 9)
+    pdf.setFont(TP_UNICODE_BOLD, 9)
     pdf.drawString(42, y, "Record Type")
     pdf.drawString(245, y, "Record No")
     pdf.drawString(430, y, "Status")
@@ -1633,14 +1703,14 @@ def shipment_pdf(shipment_no: str, request: Request):
         matches = group["matches"] or [{"value": "-"}]
         for match in matches:
             y = ensure_space(y)
-            pdf.setFont("Helvetica", 9)
+            pdf.setFont(TP_UNICODE, 9)
             pdf.drawString(42, y, group["operational"]["label"])
             pdf.drawString(245, y, match["value"])
             pdf.drawString(430, y, "Linked" if group["matches"] else "Missing")
             y -= 16
 
     pdf.setFillColor(muted)
-    pdf.setFont("Helvetica", 8)
+    pdf.setFont(TP_UNICODE, 8)
     pdf.drawCentredString(width / 2, 24, "Generated by Trade Paper AI")
     pdf.save()
     buffer.seek(0)
@@ -1664,6 +1734,7 @@ def edit_shipment(shipment_no: str, request: Request):
                 "Update Shipment",
                 show_shipment_no=True,
                 datasets=load_workflow_datasets(account_id),
+                create_mode=False,
             )
     raise HTTPException(status_code=404, detail="Shipment not found")
 
@@ -1769,7 +1840,8 @@ def confirm_delete_shipment(shipment_no: str, request: Request):
 
 @router.get("/shipment-data/{shipment_no}")
 def shipment_data(shipment_no: str, request: Request):
-    record = find_shipment(shipment_no, _account_id(request))
+    account_id = _account_id(request)
+    record = find_shipment(shipment_no, account_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Shipment not found")
-    return public_shipment(record)
+    return public_shipment(resolve_shipment_snapshot(record, account_id))

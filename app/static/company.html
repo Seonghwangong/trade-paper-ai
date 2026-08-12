@@ -66,6 +66,7 @@ button{
     color:#059669;
     font-weight:bold;
 }
+.demo-preview{display:none;padding:16px;margin-bottom:20px;border:1px solid #BFDBFE;border-radius:12px;background:#EFF6FF;color:#1E3A8A;line-height:1.5;}
 </style>
 </head>
 
@@ -76,8 +77,9 @@ button{
 <button class="small">← Dashboard</button>
 </a>
 
-<h1>Company Information</h1>
-<p class="sub">Manage company information for trade documents</p>
+<h1 id="page-title">Company Information</h1>
+<p class="sub" id="page-subtitle">Manage company information for trade documents</p>
+<div class="demo-preview" id="demo-preview"><b>Demo Preview</b><br>Temporary values — nothing is saved until you press Save.</div>
 
 <div class="card">
 <h2>Company Master</h2>
@@ -104,6 +106,7 @@ async function loadCompany(){
         document.getElementById("address").value = data.address || "";
         document.getElementById("email").value = data.email || "";
         document.getElementById("phone").value = data.phone || "";
+        applyDemoPrefill();
     }catch(e){
         document.getElementById("result").innerHTML =
             "Failed to load company information.";
@@ -111,12 +114,24 @@ async function loadCompany(){
     }
 }
 
+function applyDemoPrefill(){
+    const params = new URLSearchParams(window.location.search);
+    if(params.get("demo") !== "1") return;
+    document.getElementById("demo-preview").style.display = "block";
+    document.getElementById("name").value = "Busan Comfort Trading";
+    document.getElementById("address").value = "Busan, Korea";
+    document.getElementById("email").value = "trade@example.com";
+    document.getElementById("phone").value = "+82-51-000-0000";
+}
+
 async function saveCompany(){
+    const params = new URLSearchParams(window.location.search);
     const data = {
         name: document.getElementById("name").value,
         address: document.getElementById("address").value,
         email: document.getElementById("email").value,
-        phone: document.getElementById("phone").value
+        phone: document.getElementById("phone").value,
+        next: params.get("next") || "/"
     };
 
     try{
@@ -132,17 +147,29 @@ async function saveCompany(){
             throw new Error("Save failed");
         }
 
+        const saved = await response.json();
         document.getElementById("result").innerHTML =
             "✓ Company saved successfully.";
         document.getElementById("result").style.color = "#059669";
         if(window.tpMarkSaved) window.tpMarkSaved();
+        if(params.get("setup") === "1"){
+            window.location.assign(saved.redirect_to || "/");
+        }
     }catch(e){
         document.getElementById("result").innerHTML =
             "Failed to save company information.";
         document.getElementById("result").style.color = "#DC2626";
+    }finally{
+        if(window.tpRestoreSavingButtons) window.tpRestoreSavingButtons();
     }
 }
 
+const setupParams = new URLSearchParams(window.location.search);
+if(setupParams.get("setup") === "1"){
+    document.getElementById("page-title").textContent = "Company Setup";
+    document.getElementById("page-subtitle").textContent =
+        "Complete your company information to continue to Trade Paper AI";
+}
 loadCompany();
 </script>
 

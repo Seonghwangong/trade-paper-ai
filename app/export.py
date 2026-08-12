@@ -8,7 +8,6 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from app.documents import DOCUMENT_DEFINITIONS
-from app.storage import StorageError, data_path, load_json_strict
 
 
 _UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
@@ -40,24 +39,18 @@ def _pdf_identifier(definition, request_path: str) -> str:
     return unquote(request_path[len(prefix):end]).strip()
 
 
-def pdf_export_filename(request_path: str, fallback: str = "document.pdf") -> str:
-    """Build a safe filename from an existing document identifier and party metadata."""
+def set_pdf_export_record(request, record) -> None:
+    """Attach an already-authorized public record to the current request only."""
+    request.scope["trade_paper_pdf_record"] = record if isinstance(record, dict) else {}
+
+
+def pdf_export_filename(request_path: str, fallback: str = "document.pdf", record=None) -> str:
+    """Build a safe filename from an already-authorized record and route identifier."""
+    record = record if isinstance(record, dict) else {}
     for definition in DOCUMENT_DEFINITIONS:
         identifier = _pdf_identifier(definition, request_path)
         if not identifier:
             continue
-        try:
-            records = load_json_strict(data_path(definition.storage_filename), [], list)
-        except StorageError:
-            records = []
-        record = next(
-            (
-                item for item in records
-                if isinstance(item, dict)
-                and str(item.get(definition.identifier_field, "") or "").strip() == identifier
-            ),
-            {},
-        )
         buyer = next(
             (record.get(field) for field in ("buyer", "buyer_name", "consignee") if record.get(field)),
             "",

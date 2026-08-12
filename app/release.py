@@ -1,13 +1,16 @@
 """Single source of truth for public release metadata."""
 
+import os
+from urllib.parse import urlsplit
+
 APP_NAME = "Trade Paper AI"
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.5.0"
 VERSION = APP_VERSION
-BUILD_NAME = "First User Success"
-RELEASE_TYPE = "First User Success"
-RELEASE_STAGE = "General Availability"
+BUILD_NAME = "Founding Beta"
+RELEASE_TYPE = "Founding Beta"
+RELEASE_STAGE = "Founding Beta"
 LAST_UPDATED = "2026-07-22"
-EXPECTED_ROUTE_COUNT = 198
+EXPECTED_ROUTE_COUNT = 219
 
 RELEASE_NOTES = (
     "Complete shipment-centered trade document workflow.",
@@ -33,7 +36,42 @@ RELEASE_NOTES = (
     "First-user onboarding with guided empty states and Dashboard setup progress.",
     "RC1 consistency, navigation, responsive-layout, and visible-copy review.",
     "Guided post-save success, recommended actions, completion celebration, and consistent delete confirmation.",
+    "Login and registration MVP with duplicate-email validation and secure password hashing.",
+    "Authenticated route protection, safe post-login redirects, logout, and visible user identity.",
 )
+
+
+def contact_email(source=None):
+    """Return a configured customer contact without inventing a public address."""
+    settings = os.environ if source is None else source
+    return next((
+        str(settings.get(name, "") or "").strip()
+        for name in (
+            "TRADE_PAPER_CONTACT_EMAIL",
+            "TRADE_PAPER_EMAIL_REPLY_TO",
+            "TRADE_PAPER_EMAIL_FROM_ADDRESS",
+        )
+        if str(settings.get(name, "") or "").strip()
+    ), "")
+
+
+def contact_url(source=None):
+    """Return an explicit contact URL or the configured deployment origin."""
+    settings = os.environ if source is None else source
+    configured = next((
+        str(settings.get(name, "") or "").strip()
+        for name in ("TRADE_PAPER_CONTACT_URL", "TRADE_PAPER_PUBLIC_BASE_URL")
+        if str(settings.get(name, "") or "").strip()
+    ), "")
+    parsed = urlsplit(configured)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return ""
+    return configured
 
 
 def build_release_summary(checklist):

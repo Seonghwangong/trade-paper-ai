@@ -248,10 +248,32 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             item_card.locator(".net_weight").fill("40")
             item_card.locator(".gross_weight").fill("44")
             page.get_by_role("button", name="Save Packing List").click()
-            page.wait_for_url(f"{base_url}/packing-list")
+            page.locator("#packing-next-actions").wait_for(state="visible")
+            create_si = page.get_by_role("link", name="Create Shipping Instruction")
+            create_si_href = create_si.get_attribute("href")
+            assert create_si_href and create_si_href.startswith("/si-form?packing_no=PK-")
+            packing_no = create_si_href.split("=", 1)[1]
+            create_si.click()
+            page.wait_for_url(f"{base_url}/si-form?packing_no={packing_no}")
+            assert page.locator('select[name="packing_no"]').input_value() == packing_no
+            assert page.locator('input[name="invoice_no"]').input_value() == invoice_no
+            assert page.locator('input[name="shipper"]').input_value() == company_name
+            assert page.locator('input[name="consignee"]').input_value() == buyer_name
+            assert page.locator('input[name="item_name"]').input_value() == product_name
+            assert page.locator('input[name="quantity"]').input_value() == "4"
+            assert page.locator('input[name="hs_code"]').input_value() == "847130"
+            page.goto(f"{base_url}/si-form")
+            page.locator('select[name="packing_no"]').select_option(packing_no)
+            assert page.locator('input[name="invoice_no"]').input_value() == invoice_no
+            assert page.locator('input[name="shipper"]').input_value() == company_name
+            assert page.locator('input[name="consignee"]').input_value() == buyer_name
+            assert page.locator('input[name="item_name"]').input_value() == product_name
+            assert page.locator('input[name="quantity"]').input_value() == "4"
+            assert page.locator('input[name="hs_code"]').input_value() == "847130"
+            page.goto(f"{base_url}/packing-list")
             packing_edit_path = page.locator(f'tr:has-text("{invoice_no}") a', has_text="Edit").get_attribute("href")
             assert packing_edit_path
-            packing_no = packing_edit_path.rsplit("/", 1)[-1]
+            assert packing_edit_path.rsplit("/", 1)[-1] == packing_no
 
             # Steps 13-14: refresh, edit, save again, refresh again; no item value is lost.
             page.reload()
@@ -335,18 +357,26 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
                 assert stored_bill[field] == expected
             assert stored_bill["items"][0]["item_id"] == stored_packing["items"][0]["item_id"]
 
-            # B/L -> Shipment copies and preserves party and cargo snapshots.
-            page.goto(f"{base_url}/shipment-form?bl_no={bl_no}")
+            page.goto(f"{base_url}/si-form?packing_no={packing_no}")
+            page.get_by_role("button", name="Save Shipping Instruction").click()
+            page.wait_for_url(f"{base_url}/si-list")
+            si_edit_path = page.locator('a', has_text="Edit").first.get_attribute("href")
+            assert si_edit_path
+            si_no = si_edit_path.rsplit("/", 1)[-1]
+
+            # Shipping Instruction -> Shipment copies and preserves references, party, and cargo snapshots.
+            page.goto(f"{base_url}/shipment-form?si_no={si_no}")
             for field, expected in expected_bl_party.items():
                 assert page.locator(f'input[name="{field}"]').input_value() == expected
-            assert page.locator('select[name="bl_no"]').input_value() == bl_no
-            assert page.locator('select[name="packing_no"]').input_value() == packing_no
-            assert page.locator('select[name="invoice_no"]').input_value() == invoice_no
+            assert page.locator('#shipment-si').input_value() == si_no
+            assert page.locator('input[name="packing_no"]').input_value() == packing_no
+            assert page.locator('input[name="invoice_no"]').input_value() == invoice_no
             assert product_name in page.locator("text=Cargo Snapshot").locator("xpath=following::table[1]").inner_text()
             shipment_name = f"CODEX-LINK-A-SHIPMENT-{browser_name}"
             page.locator('input[name="shipment_name"]').fill(shipment_name)
             page.get_by_role("button", name="Save Shipment").click()
-            page.wait_for_url(f"{base_url}/shipment-list")
+            page.get_by_role("link", name="Continue to Booking →").wait_for(state="visible")
+            page.goto(f"{base_url}/shipment-list")
             shipment_edit_path = page.locator(f'tr:has-text("{shipment_name}") a', has_text="Edit").get_attribute("href")
             assert shipment_edit_path
             shipment_no = shipment_edit_path.rsplit("/", 1)[-1]
@@ -391,7 +421,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             for field, expected in co_party.items():
                 assert page.locator(f'input[name="{field}"]').input_value() == expected
             page.get_by_role("button", name="Update Certificate of Origin").click()
-            page.wait_for_url(f"{base_url}/co-list")
+            page.wait_for_url(f"{base_url}/shipment/{shipment_no}")
             co_api = page.evaluate(f"fetch('/co-data/{co_no}').then(response => response.json())")
             assert "account_id" not in co_api and co_api["shipment_no"] == shipment_no
             assert co_api["items"][0]["gross_weight"] == "44"

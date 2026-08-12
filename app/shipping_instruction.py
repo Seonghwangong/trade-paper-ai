@@ -1,6 +1,5 @@
 from typing import Annotated, List, Optional
 from copy import deepcopy
-from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
@@ -12,13 +11,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
 
 router = APIRouter()
 
 from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
 from app.validation import require_consistent_reference, require_existing_reference, require_text
 from app.referential_integrity import find_dependencies, render_delete_page
-from app.shipment import link_direct_document
+from app.shipment import link_direct_document, shipment_context_redirect_url, shipment_detail_redirect_url
 from app.account_shipping_instruction import ensure_legacy_shipping_instruction_ownership, public_shipping_instruction
 from app.snapshot import assign_item_ids, fill_missing_snapshot_fields, set_submitted_snapshot_fields, snapshot_value
 from app.export import set_pdf_export_record
@@ -29,6 +29,7 @@ from app import shipment as shipment_module
 from app import buyer as buyer_module
 from app.account_company import load_account_company
 from app.routers.company import ACCOUNT_COMPANIES_FILE
+from app.ui import imported_section_css, render_imported_section
 
 SI_FILE = data_path("shipping_instructions.json")
 PACKING_FILE = data_path("packing_lists.json")
@@ -86,19 +87,14 @@ def load_shipments(account_id):
     return shipment_module.load_shipments(account_id)
 
 
-def validate_si_links(packing_no, invoice_no, account_id):
+def validate_si_links(packing_no, invoice_no, account_id, shipment_no=""):
     packing = require_existing_reference("Packing List", packing_no, load_packing_lists(account_id), "packing_no", required=True)
     require_consistent_reference("Invoice", invoice_no, packing.get("invoice_no", ""), "selected Packing List")
+    require_existing_reference("Shipment", shipment_no, load_shipments(account_id), "shipment_no")
 
 
 def next_si_no(records):
     return next_identifier(records, "si_no", "SI")
-    numbers = [
-        int(record.get("si_no", "SI-000").split("-")[1])
-        for record in records
-        if record.get("si_no", "").startswith("SI-")
-    ]
-    return f"SI-{max(numbers, default=0) + 1:03d}"
 
 
 def html_attr(value):
@@ -127,13 +123,13 @@ def format_number(value):
         return str(value or "")
 
 
-def draw_text_fit(pdf, text, x, y, max_width, font="Helvetica", size=8, min_size=6):
+def draw_text_fit(pdf, text, x, y, max_width, font=TP_UNICODE, size=8, min_size=6):
     text = str(text or "")
     current_size = size
     while current_size > min_size and pdf.stringWidth(text, font, current_size) > max_width:
         current_size -= 0.5
     pdf.setFont(font, current_size)
-    pdf.drawString(x, y, text)
+    pdf.drawString(x, y, fit_pdf_text(pdf, text, max_width, font, current_size))
 
 
 def build_items(item_name, hs_code, quantity, carton, net_weight, gross_weight):
@@ -298,25 +294,14 @@ def resolve_si_snapshot(record, account_id, shipment=None, packing=None, invoice
 
 
 def payload_from_packing(packing_no, account_id):
+    packing = _first_record(load_packing_lists(account_id), "packing_no", packing_no)
+    if not packing:
+        return blank_payload()
     payload = blank_payload()
-    if not packing_no:
-        return payload
-
-    for packing in load_packing_lists(account_id):
-        if packing.get("packing_no") == packing_no:
-            items = packing.get("items", [])
-            payload.update({
-                "packing_no": packing.get("packing_no", ""),
-                "invoice_no": packing.get("invoice_no", ""),
-                "shipper": packing.get("seller", ""),
-                "consignee": packing.get("buyer", ""),
-                "items": items,
-                "total_carton": format_number(numeric_total(items, "carton")),
-                "total_net_weight": format_number(numeric_total(items, "net_weight")),
-                "total_gross_weight": format_number(numeric_total(items, "gross_weight")),
-            })
-            break
-    return payload
+    payload["packing_no"] = str(packing.get("packing_no", "") or "")
+    return resolve_si_snapshot(
+        payload, account_id, packing=packing, preserve_empty=False,
+    )
 
 
 def build_record(
@@ -372,11 +357,34 @@ def shipment_return_response(shipment_no, si_no):
     return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shipping Instruction Saved</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}.card{{width:min(560px,100%);background:white;border:1px solid #E5E7EB;border-radius:18px;padding:34px;text-align:center;box-shadow:0 14px 34px rgba(15,23,42,.09)}}h1{{margin:0 0 10px}}p{{color:#475569}}a{{display:inline-block;margin-top:14px;padding:12px 18px;background:#111827;color:white;text-decoration:none;border-radius:10px;font-weight:800}}a:focus-visible{{outline:3px solid #2563EB;outline-offset:3px}}</style></head><body><main><section class="card"><h1>Shipping Instruction Saved</h1><p>✓ Shipping Instruction saved successfully.</p><p>{html_text(si_no)}</p><a href="{html_attr(url)}">Return to Shipment</a></section></main></body></html>""")
 
 
-def render_form(record, action, title, button_text, show_si_no=False, shipment_no=""):
+def _safe_json_for_html(value):
+    return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
+def render_form(record, action, title, button_text, show_si_no=False, shipment_no="", account_id=""):
     rows = build_item_rows(record.get("items", []))
     si_no_input = ""
     if show_si_no:
         si_no_input = f'<input type="text" name="si_no" value="{html_attr(record.get("si_no", ""))}" placeholder="S/I No" readonly>'
+    packings = load_packing_lists(account_id)
+    selected_packing = str(record.get("packing_no", "") or "")
+    packing_options = '<option value="">Select Packing List</option>' + "".join(
+        f'<option value="{html_attr(packing.get("packing_no", ""))}"'
+        f'{" selected" if str(packing.get("packing_no", "") or "") == selected_packing else ""}>'
+        f'{html_text(packing.get("packing_no", ""))}</option>'
+        for packing in packings
+        if str(packing.get("packing_no", "") or "").strip()
+    )
+    packing_sources = {
+        str(packing.get("packing_no", "") or ""): resolve_si_snapshot(
+            {"packing_no": packing.get("packing_no", "")},
+            account_id,
+            packing=packing,
+            preserve_empty=False,
+        )
+        for packing in packings
+        if str(packing.get("packing_no", "") or "").strip()
+    }
 
     html = """
 <!DOCTYPE html>
@@ -393,7 +401,7 @@ h1{text-align:center;font-size:46px;margin:8px 0 10px;}
 .card{border:1px solid #E5E7EB;border-radius:16px;padding:25px;margin-bottom:25px;background:#fff;}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
 .item-row{display:grid;grid-template-columns:1.35fr 1fr .8fr .8fr .9fr .9fr;gap:12px;border:1px solid #E5E7EB;border-radius:14px;padding:18px;margin-bottom:16px;background:#F9FAFB;}
-input,textarea{width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;}
+input,select,textarea{width:100%;padding:14px;border:1px solid #D1D5DB;border-radius:10px;font-size:16px;box-sizing:border-box;background:white;}
 textarea{min-height:90px;resize:vertical;}
 button{padding:15px 18px;background:#111827;color:white;border:none;border-radius:12px;font-size:16px;cursor:pointer;}
 .small{min-width:170px;}
@@ -401,6 +409,7 @@ button{padding:15px 18px;background:#111827;color:white;border:none;border-radiu
 .add{width:100%;background:#374151;margin-bottom:20px;}
 .remove{grid-column:1/-1;width:100%;background:#991B1B;}
 .totals{display:flex;gap:18px;flex-wrap:wrap;font-size:17px;font-weight:bold;color:#111827;margin:8px 0 20px;}
+__IMPORTED_CSS__
 @media(max-width:860px){body{padding:18px}.grid,.item-row{grid-template-columns:1fr}h1{font-size:34px}}
 </style>
 </head>
@@ -420,15 +429,14 @@ __SHIPMENT_CONTEXT__
 <div class="grid">
 __SI_NO_INPUT__
 <input type="date" name="si_date" value="__SI_DATE__">
-<input type="text" name="packing_no" value="__PACKING_NO__" placeholder="Packing No">
+<select id="packing_no" name="packing_no" aria-label="Packing No">__PACKING_OPTIONS__</select>
 <input type="text" name="invoice_no" value="__INVOICE_NO__" placeholder="Invoice No">
 <input type="text" name="booking_no" value="__BOOKING_NO__" placeholder="Booking No">
 </div>
 </div>
 
-<div class="card">
-<h2>Party Information</h2>
-<div class="grid">
+__IMPORTED_PARTY_START__
+<h2>Party Information</h2><div class="grid">
 <input type="text" name="shipper" value="__SHIPPER__" placeholder="Shipper">
 <input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address">
 <input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email">
@@ -438,7 +446,7 @@ __SI_NO_INPUT__
 <input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email">
 <input type="text" name="notify_party" value="__NOTIFY_PARTY__" placeholder="Notify Party">
 </div>
-</div>
+__IMPORTED_PARTY_END__
 
 <div class="card">
 <h2>Transport Information</h2>
@@ -464,7 +472,7 @@ __SI_NO_INPUT__
 <textarea name="special_instructions" placeholder="Special Instructions">__SPECIAL_INSTRUCTIONS__</textarea>
 </div>
 
-<div class="card">
+__IMPORTED_CARGO_START__
 <h2>Cargo Information</h2>
 <div id="items">__ITEM_ROWS__</div>
 <button class="add" type="button" onclick="addItem()">+ Add Item</button>
@@ -476,7 +484,7 @@ __SI_NO_INPUT__
 <span>Total Net Weight: <span id="netText">__TOTAL_NET_WEIGHT__</span></span>
 <span>Total Gross Weight: <span id="grossText">__TOTAL_GROSS_WEIGHT__</span></span>
 </div>
-</div>
+__IMPORTED_CARGO_END__
 
 <button class="full" type="submit">__BUTTON_TEXT__</button>
 </form>
@@ -518,17 +526,46 @@ function calculateTotals(){
   document.getElementById("grossText").textContent = formatNumber(gross);
 }
 calculateTotals();
+const packingSources=__PACKING_SOURCES__;
+function replaceCargoItems(items){
+  const container=document.getElementById("items");container.replaceChildren();
+  (items&&items.length?items:[{}]).forEach(function(item){
+    const row=document.createElement("div");row.className="item-row";
+    [["item_id","hidden"],["item_name","text"],["hs_code","text"],["quantity","text"],["carton","text"],["net_weight","text"],["gross_weight","text"]].forEach(function(definition){
+      const input=document.createElement("input");input.name=definition[0];input.type=definition[1];
+      const field=definition[0]==="item_name"?"name":definition[0];input.value=String(item[field]||"");
+      if(definition[1]!=="hidden")input.placeholder={item_name:"Item Name",hs_code:"HS Code",quantity:"Quantity",carton:"Carton",net_weight:"Net Weight",gross_weight:"Gross Weight"}[definition[0]]||definition[0];
+      if(["carton","net_weight","gross_weight"].includes(definition[0]))input.addEventListener("input",calculateTotals);
+      row.appendChild(input);
+    });
+    const remove=document.createElement("button");remove.className="remove";remove.type="button";remove.textContent="Remove Item";remove.addEventListener("click",function(){removeItem(remove);});row.appendChild(remove);container.appendChild(row);
+  });calculateTotals();
+}
+document.getElementById("packing_no").addEventListener("change",function(event){
+  const source=packingSources[event.target.value];if(!source)return;
+  [["invoice_no","invoice_no"],["shipper","shipper"],["consignee","consignee"],["exporter_address","exporter_address"],["exporter_email","exporter_email"],["exporter_phone","exporter_phone"],["consignee_address","consignee_address"],["consignee_email","consignee_email"],["country_of_origin","country_of_origin"],["destination_country","destination_country"]].forEach(function(fields){const input=document.querySelector('[name="'+fields[0]+'"]');if(input)input.value=String(source[fields[1]]||"");});
+  replaceCargoItems(source.items||[]);
+});
 </script>
 </body>
 </html>
 """
+    for section_type in ("party", "cargo"):
+        start_marker = f"__IMPORTED_{section_type.upper()}_START__"
+        end_marker = f"__IMPORTED_{section_type.upper()}_END__"
+        before, marker, remainder = html.partition(start_marker)
+        content, closing_marker, after = remainder.partition(end_marker)
+        if marker and closing_marker:
+            html = before + render_imported_section(section_type, content) + after
     replacements = {
+        "__IMPORTED_CSS__": imported_section_css(),
         "__TITLE__": html_text(title),
         "__ACTION__": html_attr(action),
         "__SI_NO_INPUT__": si_no_input,
         "__SHIPMENT_CONTEXT__": f'<input type="hidden" name="shipment_no" value="{html_attr(shipment_no)}">' if shipment_no else "",
         "__SI_DATE__": html_attr(record.get("si_date", "")),
-        "__PACKING_NO__": html_attr(record.get("packing_no", "")),
+        "__PACKING_OPTIONS__": packing_options,
+        "__PACKING_SOURCES__": _safe_json_for_html(packing_sources),
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
         "__BOOKING_NO__": html_attr(record.get("booking_no", "")),
         "__SHIPPER__": html_attr(record.get("shipper", "")),
@@ -660,7 +697,7 @@ def si_form(request: Request, packing_no: str = "", shipment_no: str = ""):
     shipment_context = valid_shipment_context(shipment_no)
     record["shipment_no"] = shipment_context
     record = resolve_si_snapshot(record, account_id, preserve_empty=False)
-    return render_form(record, "/si", "New Shipping Instruction", "Save Shipping Instruction", show_si_no=True, shipment_no=shipment_context)
+    return render_form(record, "/si", "New Shipping Instruction", "Save Shipping Instruction", show_si_no=True, shipment_no=shipment_context, account_id=account_id)
 
 
 @router.post("/si")
@@ -702,7 +739,7 @@ def save_si(
     consignee_email: Annotated[Optional[str], Form()] = None,
 ):
     account_id = _account_id(request)
-    validate_si_links(packing_no, invoice_no, account_id)
+    validate_si_links(packing_no, invoice_no, account_id, shipment_no)
     shipper = require_text("Shipper", shipper)
     consignee = require_text("Consignee", consignee)
     saved = {}
@@ -738,8 +775,9 @@ def save_si(
     locked_json_mutation(SI_FILE, [], add_si, list)
     shipment_context = valid_shipment_context(shipment_no)
     if shipment_context:
-        link_direct_document(shipment_context, "si_no", saved["si_no"])
-        return shipment_return_response(shipment_context, saved["si_no"])
+        return RedirectResponse(
+            shipment_context_redirect_url(shipment_context, "si_no", saved["si_no"], "/si-list"), status_code=303,
+        )
     return RedirectResponse("/si-list", status_code=303)
 
 
@@ -752,7 +790,7 @@ def edit_si(si_no: str, request: Request):
     return render_form(
         record, f"/update-si/{html_attr(si_no)}", "Edit Shipping Instruction",
         "Update Shipping Instruction", show_si_no=True,
-        shipment_no=record.get("shipment_no", ""),
+        shipment_no=record.get("shipment_no", ""), account_id=account_id,
     )
 
 
@@ -797,7 +835,8 @@ def update_si(
 ):
     account_id = _account_id(request)
     current = public_shipping_instruction(_owned_shipping_instruction(si_no, account_id))
-    validate_si_links(packing_no, invoice_no, account_id)
+    effective_shipment_no = current.get("shipment_no", "") if shipment_no is None else shipment_no
+    validate_si_links(packing_no, invoice_no, account_id, effective_shipment_no)
     shipper = require_text("Shipper", shipper)
     consignee = require_text("Consignee", consignee)
     current_items = current.get("items", [])
@@ -853,7 +892,9 @@ def update_si(
             return
         raise HTTPException(status_code=404, detail="Shipping instruction not found")
     locked_json_mutation(SI_FILE, [], replace_si, list)
-    return RedirectResponse("/si-list", status_code=303)
+    return RedirectResponse(
+        shipment_detail_redirect_url(effective_shipment_no, account_id, "/si-list"), status_code=303,
+    )
 
 
 @router.get("/delete-si/{si_no}")
@@ -891,6 +932,7 @@ def si_data(si_no: str, request: Request):
 def create_shipping_instruction_pdf(payload):
     payload = public_shipping_instruction(payload)
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     navy = colors.HexColor("#111827")
@@ -900,7 +942,7 @@ def create_shipping_instruction_pdf(payload):
     items = payload.get("items", [])
 
     def footer():
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.setFillColor(muted)
         pdf.drawCentredString(width / 2, 30, "Generated by Trade Paper AI")
         pdf.setFillColor(colors.black)
@@ -909,13 +951,13 @@ def create_shipping_instruction_pdf(payload):
         pdf.setFillColor(navy)
         pdf.roundRect(40, height - 92, width - 80, 56, 8, stroke=0, fill=1)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 22)
+        pdf.setFont(TP_UNICODE_BOLD, 22)
         pdf.drawCentredString(width / 2, height - 70, "SHIPPING INSTRUCTION")
         pdf.setFillColor(colors.black)
 
-        pdf.setFont("Helvetica-Bold", 10)
+        pdf.setFont(TP_UNICODE_BOLD, 10)
         pdf.drawString(40, height - 122, "Document Information")
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         left = [
             ("S/I No", payload.get("si_no", "")),
             ("S/I Date", payload.get("si_date", "")),
@@ -940,12 +982,12 @@ def create_shipping_instruction_pdf(payload):
         pdf.roundRect(218, height - 270, 160, 82, 6, stroke=0, fill=1)
         pdf.roundRect(396, height - 270, 160, 82, 6, stroke=0, fill=1)
         pdf.setFillColor(navy)
-        pdf.setFont("Helvetica-Bold", 9)
+        pdf.setFont(TP_UNICODE_BOLD, 9)
         pdf.drawString(52, height - 207, "SHIPPER")
         pdf.drawString(230, height - 207, "CONSIGNEE")
         pdf.drawString(408, height - 207, "NOTIFY PARTY")
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         draw_text_fit(pdf, payload.get("shipper", ""), 52, height - 228, 130, size=8)
         draw_text_fit(pdf, payload.get("consignee", ""), 230, height - 228, 130, size=8)
         draw_text_fit(pdf, payload.get("notify_party", ""), 408, height - 228, 130, size=8)
@@ -956,9 +998,9 @@ def create_shipping_instruction_pdf(payload):
         draw_text_fit(pdf, payload.get("consignee_address", ""), 230, height - 241, 130, size=7)
         draw_text_fit(pdf, payload.get("consignee_email", ""), 230, height - 253, 130, size=7)
 
-        pdf.setFont("Helvetica-Bold", 10)
+        pdf.setFont(TP_UNICODE_BOLD, 10)
         pdf.drawString(40, height - 300, "Transport Information")
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         info = [
             ("Carrier", payload.get("carrier", "")),
             ("Vessel", payload.get("vessel", "")),
@@ -979,7 +1021,7 @@ def create_shipping_instruction_pdf(payload):
         pdf.setFillColor(navy)
         pdf.rect(40, y, width - 80, 24, stroke=0, fill=1)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 8)
+        pdf.setFont(TP_UNICODE_BOLD, 8)
         columns = [
             (48, "No"), (74, "Item"), (218, "HS Code"), (300, "Qty"),
             (354, "Carton"), (412, "Net Weight"), (492, "Gross Weight"),
@@ -1025,11 +1067,11 @@ def create_shipping_instruction_pdf(payload):
         y = table_start_y
 
     y -= 15
-    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFont(TP_UNICODE_BOLD, 10)
     pdf.drawString(40, y, "Shipping Marks")
     pdf.drawString(225, y, "Freight Terms")
     pdf.drawString(410, y, "Special Instructions")
-    pdf.setFont("Helvetica", 8)
+    pdf.setFont(TP_UNICODE, 8)
     draw_text_fit(pdf, payload.get("shipping_marks", ""), 40, y - 16, 160, size=8)
     draw_text_fit(pdf, payload.get("freight_terms", ""), 225, y - 16, 160, size=8)
     draw_text_fit(pdf, payload.get("special_instructions", ""), 410, y - 16, 140, size=8)
@@ -1038,7 +1080,7 @@ def create_shipping_instruction_pdf(payload):
     pdf.setFillColor(navy)
     pdf.roundRect(335, summary_y, 220, summary_height, 8, stroke=0, fill=1)
     pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFont(TP_UNICODE_BOLD, 10)
     pdf.drawString(350, summary_y + 52, f"Total Cartons: {payload.get('total_carton', '')}")
     pdf.drawString(350, summary_y + 32, f"Total Net Weight: {payload.get('total_net_weight', '')}")
     pdf.drawString(350, summary_y + 12, f"Total Gross Weight: {payload.get('total_gross_weight', '')}")
@@ -1047,7 +1089,7 @@ def create_shipping_instruction_pdf(payload):
     signature_y = max(90, summary_y - 42)
     pdf.setStrokeColor(colors.black)
     pdf.line(380, signature_y, 555, signature_y)
-    pdf.setFont("Helvetica", 9)
+    pdf.setFont(TP_UNICODE, 9)
     pdf.drawString(415, signature_y - 15, "Authorized Signature")
 
     footer()

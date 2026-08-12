@@ -1,12 +1,13 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import html as html_lib
-import json
 import logging
+import os
 from pathlib import Path
 import re
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from app.storage import (
     DATA_DIR,
     DuplicateIdentifierError,
@@ -14,34 +15,187 @@ from app.storage import (
     StorageCorruptionError,
     StorageError,
     StorageValidationError,
-    atomic_write_json,
+    data_path,
     load_json_strict,
     locked_json_mutation,
     next_identifier,
 )
-from app.validation import DataValidationError, require_items, require_text
+from app.validation import DataValidationError, require_existing_reference, require_items, require_text
 from app.documents import DOCUMENT_DEFINITIONS, get_document_definition
-from app.release import APP_NAME, APP_VERSION, BUILD_NAME, EXPECTED_ROUTE_COUNT, LAST_UPDATED, RELEASE_STAGE, RELEASE_TYPE, build_release_summary
+from app.release import (
+    APP_NAME, APP_VERSION, EXPECTED_ROUTE_COUNT, LAST_UPDATED, RELEASE_STAGE,
+    RELEASE_TYPE, build_release_summary, contact_email, contact_url,
+)
 from app.ui import ReleaseFooterMiddleware, release_footer
 from app.routers.company import router as company_router
 from app.product import router as product_router
 from app.buyer import router as buyer_router
 from app.customer import router as customer_router
+from app import customer as customer_module
 from app.release_pages import router as release_pages_router
+from app.founding_beta import router as founding_beta_router
+from app.feedback import router as feedback_router
+from app import founding_beta as founding_beta_module
+from app import feedback as feedback_module
+from app.auth import AuthenticationMiddleware, router as auth_router
+from app import email_delivery
+from app.account_company import load_account_company
+from app.routers import company as company_module
+from app import buyer as buyer_module
+from app import product as product_module
+from app import invoice as invoice_module
+from app import packing as packing_module
+from app import shipping_instruction as shipping_instruction_module
+from app import booking_confirmation as booking_module
+from app import bill_of_lading as bill_of_lading_module
+from app import customs_declaration as customs_module
+from app import certificate_of_origin as certificate_of_origin_module
+from app import inspection_certificate as inspection_module
+from app import insurance_certificate as insurance_module
+from app import weight_certificate as weight_module
+from app import quotation as quotation_module
+from app import proforma as proforma_module
+
+_PRODUCTION_ENVIRONMENTS = frozenset({"production", "prod", "staging", "stage"})
+_LOCAL_CORS_ORIGIN_REGEX = r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$"
+
+
+def _normalized_cors_origin(value):
+    candidate = str(value or "").strip()
+    if not candidate or candidate == "*" or any(character.isspace() or ord(character) < 32 for character in candidate):
+        raise ValueError("CORS origins must be explicit HTTP or HTTPS origins.")
+    try:
+        parsed = urlsplit(candidate)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("CORS origin is invalid.") from exc
+    if (
+        parsed.scheme.casefold() not in {"http", "https"}
+        or not parsed.hostname
+        or "*" in parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("CORS origin is invalid.")
+    scheme = parsed.scheme.casefold()
+    host = parsed.hostname.casefold()
+    if ":" in host:
+        host = f"[{host}]"
+    if port is not None and not (
+        (scheme == "http" and port == 80)
+        or (scheme == "https" and port == 443)
+    ):
+        host = f"{host}:{port}"
+    return f"{scheme}://{host}"
+
+
+def cors_configuration(environment=None):
+    source = os.environ if environment is None else environment
+    deployment = str(source.get("TRADE_PAPER_ENV", "") or "").strip().casefold()
+    raw_origins = str(source.get("TRADE_PAPER_CORS_ORIGINS", "") or "")
+    origins = []
+    seen = set()
+    for raw_origin in raw_origins.split(","):
+        if not raw_origin.strip():
+            continue
+        try:
+            origin = _normalized_cors_origin(raw_origin)
+        except ValueError as exc:
+            raise RuntimeError("TRADE_PAPER_CORS_ORIGINS contains an invalid origin.") from exc
+        if origin not in seen:
+            origins.append(origin)
+            seen.add(origin)
+    return {
+        "allow_origins": origins,
+        "allow_origin_regex": None if deployment in _PRODUCTION_ENVIRONMENTS else _LOCAL_CORS_ORIGIN_REGEX,
+    }
+
+
+_CORS_CONFIGURATION = cors_configuration()
 app = FastAPI()
 BASE_DIR = Path(__file__).resolve().parent
-DATA_FILE = BASE_DIR.parent / "data" / "invoices.json"
-PACKING_FILE = BASE_DIR.parent / "data" / "packing_lists.json"
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+DATA_FILE = data_path("invoices.json")
+PACKING_FILE = data_path("packing_lists.json")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_CONFIGURATION["allow_origins"],
+    allow_origin_regex=_CORS_CONFIGURATION["allow_origin_regex"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 app.add_middleware(ReleaseFooterMiddleware)
+app.add_middleware(AuthenticationMiddleware)
 
 logger = logging.getLogger("trade-paper-ai")
+
+
+def deployment_readiness(environment=None, data_dir=None):
+    source = os.environ if environment is None else environment
+    deployment = str(source.get("TRADE_PAPER_ENV", "") or "").strip().casefold()
+    backend = email_delivery.validate_email_configuration(source)
+    report = {
+        "environment": deployment or "development",
+        "email_backend": backend,
+        "warnings": [],
+    }
+    if backend == "disabled":
+        report["warnings"].append(
+            "SMTP/email delivery is disabled; password reset email delivery is unavailable."
+        )
+    if deployment not in _PRODUCTION_ENVIRONMENTS:
+        return report
+
+    configured_data_dir = str(source.get("TRADE_PAPER_DATA_DIR", "") or "").strip()
+    if not configured_data_dir:
+        raise RuntimeError("TRADE_PAPER_DATA_DIR is required in production and staging.")
+    resolved_data_dir = Path(data_dir or configured_data_dir).expanduser().resolve()
+    if not resolved_data_dir.is_dir():
+        raise RuntimeError("TRADE_PAPER_DATA_DIR must exist and be a directory.")
+    if not os.access(resolved_data_dir, os.W_OK):
+        raise RuntimeError("TRADE_PAPER_DATA_DIR must be writable by the application process.")
+
+    session_secret = str(source.get("TRADE_PAPER_SESSION_SECRET", "") or "")
+    if len(session_secret) < 32:
+        raise RuntimeError(
+            "TRADE_PAPER_SESSION_SECRET is required and must contain at least 32 characters in production and staging."
+        )
+    try:
+        email_delivery.public_base_url(source)
+    except email_delivery.EmailConfigurationError as exc:
+        raise RuntimeError(
+            "TRADE_PAPER_PUBLIC_BASE_URL must be a valid HTTPS origin in production and staging."
+        ) from exc
+
+    configured_contact_email = contact_email(source)
+    configured_contact_url = contact_url(source)
+    if not configured_contact_email and not configured_contact_url:
+        raise RuntimeError(
+            "Configure TRADE_PAPER_CONTACT_EMAIL or TRADE_PAPER_CONTACT_URL for production and staging."
+        )
+    if configured_contact_email and (
+        "@" not in configured_contact_email
+        or "\r" in configured_contact_email
+        or "\n" in configured_contact_email
+    ):
+        raise RuntimeError("The configured customer contact email is invalid.")
+
+    raw_workers = str(source.get("WEB_CONCURRENCY", "1") or "1").strip()
+    try:
+        workers = int(raw_workers)
+    except ValueError as exc:
+        raise RuntimeError("WEB_CONCURRENCY must be 1 for JSON storage.") from exc
+    if workers != 1:
+        raise RuntimeError("WEB_CONCURRENCY must be 1 for JSON storage.")
+    return report
+
+
+def validate_production_configuration(environment=None, data_dir=None):
+    deployment_readiness(environment, data_dir)
 
 
 def _request_expects_json(request):
@@ -203,18 +357,21 @@ def audit_route_registrations(application):
 
 @app.on_event("startup")
 def startup_stability_audit():
-    expected_data_dir = (PROJECT_ROOT / "data").resolve()
+    readiness = deployment_readiness(data_dir=DATA_DIR)
+    expected_data_dir = Path(os.environ.get("TRADE_PAPER_DATA_DIR", PROJECT_ROOT / "data")).expanduser().resolve()
     if DATA_DIR.resolve() != expected_data_dir:
         raise RuntimeError("Storage data directory does not resolve from the project root.")
 
     report = audit_route_registrations(app)
     logger.info("%s", APP_NAME)
     logger.info("Version %s", APP_VERSION)
-    logger.info("%s", RELEASE_TYPE)
-    logger.info("Build Ready")
-    print(f"{APP_NAME}\nVersion {APP_VERSION}\n{RELEASE_TYPE}\nBuild Ready", flush=True)
+    logger.info("%s", RELEASE_STAGE)
+    logger.info("Startup Complete")
+    print(f"{APP_NAME}\nVersion {APP_VERSION}\n{RELEASE_STAGE}\nStartup Complete", flush=True)
     logger.info("JSON data directory resolved to %s", DATA_DIR.resolve())
     logger.warning("JSON storage requires exactly one application worker.")
+    for warning in readiness["warnings"]:
+        logger.warning("Readiness: %s", warning)
     for category in ["exact", "structural"]:
         conflicts = report[f"{category}_conflicts"]
         known = KNOWN_ROUTE_CONFLICT_COUNTS[category]
@@ -269,6 +426,19 @@ function showInvoiceNextActions(invoiceNo){
   ];links.forEach(function(item){const link=document.createElement("a");link.className="invoice-next-action"+(item[2]?" "+item[2]:"");link.href=item[1];link.textContent=item[0];if(item[3])link.setAttribute("download",invoiceNo+".pdf");actions.appendChild(link);});card.appendChild(actions);document.body.appendChild(card);
   let timer=window.setTimeout(function(){card.remove();},15000);close.addEventListener("click",function(){window.clearTimeout(timer);card.remove();});
 }
+function showPackingNextActions(packingNo){
+  if(window.tpMarkSaved)window.tpMarkSaved();if(window.tpRestoreSavingButtons)window.tpRestoreSavingButtons();
+  const existing=document.getElementById("packing-next-actions");if(existing)existing.remove();
+  const card=document.createElement("aside");card.id="packing-next-actions";card.className="invoice-next-actions";card.setAttribute("role","status");card.setAttribute("aria-live","polite");
+  const heading=document.createElement("div");heading.className="invoice-next-heading";const copy=document.createElement("div");const saved=document.createElement("strong");saved.textContent="✓ Packing List Saved";const number=document.createElement("p");number.textContent="Packing "+packingNo;copy.appendChild(saved);copy.appendChild(number);const close=document.createElement("button");close.type="button";close.className="invoice-next-close";close.textContent="✕";close.setAttribute("aria-label","Close Next Actions");heading.appendChild(copy);heading.appendChild(close);card.appendChild(heading);
+  const actions=document.createElement("div");actions.className="invoice-next-grid";const links=[
+    ["Create Shipping Instruction","/si-form?packing_no="+encodeURIComponent(packingNo),"primary",false],
+    ["Create Another Packing List","/packing-page","",false],
+    ["Download PDF","/packing-list-pdf/"+encodeURIComponent(packingNo),"",true],
+    ["Back to Packing List","/packing-list","",false]
+  ];links.forEach(function(item){const link=document.createElement("a");link.className="invoice-next-action"+(item[2]?" "+item[2]:"");link.href=item[1];link.textContent=item[0];if(item[3])link.setAttribute("download",packingNo+".pdf");actions.appendChild(link);});card.appendChild(actions);document.body.appendChild(card);
+  let timer=window.setTimeout(function(){card.remove();},15000);close.addEventListener("click",function(){window.clearTimeout(timer);card.remove();});
+}
 </script>
 """
     if kind == "invoice":
@@ -301,8 +471,8 @@ window.savePacking=async function(){
   const type=(response.headers.get("content-type")||"").toLowerCase();let result;
   try{result=type.includes("application/json")?await response.json():null;}catch(error){showWorkflowError("The Packing List was not confirmed by the server.");return;}
   if(!result||!result.packing_no){showWorkflowError("The Packing List was not confirmed by the server.");return;}
-  if(shipmentNo){showShipmentReturn(shipmentNo,"Packing List",result.packing_no);return;}
-  await window.tpSavedThenRedirect("/packing-list");
+  if(shipmentNo){await window.tpSavedThenRedirect("/shipment/"+encodeURIComponent(shipmentNo));return;}
+  showPackingNextActions(result.packing_no);
 };
 </script>
 """
@@ -334,6 +504,15 @@ def status():
         "version": APP_VERSION,
         "status": "ok",
     }
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "version": APP_VERSION,
+        "release": RELEASE_STAGE,
+    }
 from app.invoice import router as invoice_router
 from app.packing import router as packing_router
 from app.quotation import router as quotation_router
@@ -355,7 +534,9 @@ from app.shipment import (
     shipment_pdf,
     shipment_detail,
 )
+from app import shipment as shipment_module
 from app.container_management import router as container_router
+from app import container_management as container_module
 from app.booking_confirmation import router as booking_router
 from app.customs_declaration import router as customs_router
 app.include_router(invoice_router)
@@ -377,44 +558,64 @@ app.include_router(product_router)
 app.include_router(buyer_router)
 app.include_router(customer_router)
 app.include_router(release_pages_router)
+app.include_router(founding_beta_router)
+app.include_router(feedback_router)
+app.include_router(auth_router)
 def load_packing_lists():
     return load_json_strict(PACKING_FILE, [], list)
 def load_invoices():
     return load_json_strict(DATA_FILE, [], list)
 
 
-def save_invoice(invoice_data):
+def save_invoice(invoice_data, account_id):
     record = dict(invoice_data)
+    record.pop("account_id", None)
+    account_id = str(account_id or "").strip()
+    record["account_id"] = account_id
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
     require_items(record.get("items", []))
+    require_existing_reference(
+        "Proforma Invoice", record.get("pi_no", ""),
+        proforma_module.load_proformas(account_id), "pi_no",
+    )
+    require_existing_reference(
+        "Shipment", record.get("shipment_no", ""),
+        shipment_module.load_shipments(account_id), "shipment_no",
+    )
     def add_invoice(invoices):
         record["invoice_no"] = next_identifier(invoices, "invoice_no", "INV")
         invoices.append(record)
     locked_json_mutation(DATA_FILE, [], add_invoice, list)
     return record
 @app.post("/save-invoice")
-def create_invoice(invoice: dict):
-    save_invoice(invoice)
+def create_invoice(request: Request, invoice: dict):
+    user = request.scope.get("trade_paper_user") or {}
+    save_invoice(invoice, user.get("account_id", ""))
     return {"message": "✓ Invoice saved successfully."}
 @app.get("/invoices")
-def get_invoices():
-    return load_invoices()
+def get_invoices(request: Request):
+    user = request.scope.get("trade_paper_user") or {}
+    return invoice_module.load_invoices(user.get("account_id", ""))
 @app.get("/invoice/pdf/{index}")
-def invoice_pdf(index: int):
-    invoices = load_invoices()
+def invoice_pdf(index: int, request: Request):
+    invoices = invoice_module.load_invoice_records()
 
-    if index >= len(invoices):
-        return {"error": "Invoice not found"}
+    user = request.scope.get("trade_paper_user") or {}
+    account_id = str(user.get("account_id", "") or "").strip()
+    if (
+        index < 0
+        or index >= len(invoices)
+        or not isinstance(invoices[index], dict)
+        or str(invoices[index].get("account_id", "") or "").strip() != account_id
+    ):
+        raise HTTPException(status_code=404, detail="Invoice not found")
 
-    invoice = invoices[index]
-
-    from app.invoice import create_invoice_pdf
-
-    return create_invoice_pdf(invoice)
+    company = load_account_company(account_id, company_module.ACCOUNT_COMPANIES_FILE)
+    return invoice_module.create_invoice_pdf(invoice_module.public_invoice(invoices[index]), company)
 
 def load_dashboard_json(filename, default):
-    path = BASE_DIR.parent / "data" / filename
+    path = data_path(filename)
     return load_json_strict(path, default, type(default) if isinstance(default, (list, dict)) else None)
 
 
@@ -425,6 +626,27 @@ def dashboard_list(filename):
 
 def dashboard_text(value):
     return html_lib.escape(str(value or ""))
+
+
+def operations_dashboard_summary(applications, feedback_records, limit=5):
+    applications = [record for record in applications if isinstance(record, dict)]
+    feedback_records = [record for record in feedback_records if isinstance(record, dict)]
+    beta_counts = {status: 0 for status in ("New", "Contacted", "Demo Scheduled", "Beta Customer")}
+    for record in applications:
+        status = str(record.get("status", "") or "").strip() or "New"
+        if status in beta_counts:
+            beta_counts[status] += 1
+    return {
+        "beta_counts": beta_counts,
+        "feedback_counts": {
+            "Total": len(feedback_records),
+            "Bug": sum(record.get("category") == "Bug" for record in feedback_records),
+            "Feature": sum(record.get("category") == "Feature Request" for record in feedback_records),
+            "UI/UX": sum(record.get("category") == "UI/UX" for record in feedback_records),
+        },
+        "recent_applications": list(reversed(applications))[:limit],
+        "recent_feedback": list(reversed(feedback_records))[:limit],
+    }
 
 
 def dashboard_card(label, count, create_route, list_route):
@@ -634,6 +856,17 @@ def dashboard_workflow_guidance(buyers, products, invoices, packing_lists):
     }
 
 
+def dashboard_first_action(company_ready, buyers, products):
+    """Return the first actionable setup step using account-owned dashboard data."""
+    if not company_ready:
+        return {"label": "Complete Company Setup", "url": "/company"}
+    if not buyers:
+        return {"label": "Create First Buyer", "url": "/buyer-form"}
+    if not products:
+        return {"label": "Create First Product", "url": "/product-form"}
+    return {"label": "Create First Invoice", "url": "/invoice"}
+
+
 def dashboard_notifications(shipment_summaries, shipments_by_recency, limit=5):
     recency_order = {id(shipment): index for index, shipment in enumerate(shipments_by_recency)}
     candidates = []
@@ -706,12 +939,50 @@ def search_match_rank(query, identifier, title, other_values):
     return None
 
 
-def global_search_results(query):
+def global_search_results(query, company=None, customers=None, buyers=None, products=None, invoices=None, packing_lists=None, shipping_instructions=None, bookings=None, shipments=None, containers=None, bills_of_lading=None, customs=None, certificates_of_origin=None, inspections=None, insurances=None, weights=None, quotations=None, proformas=None):
     normalized = str(query or "").strip().casefold()
 
     results = []
     for module_order, source in enumerate(SEARCH_SOURCES):
-        loaded = load_dashboard_json(source["file"], {} if source.get("single") else [])
+        loaded = (
+            company
+            if source.get("single") and source["module"] == "Company"
+            else customers
+            if source["module"] == "Customers" and customers is not None
+            else quotations
+            if source["module"] == "Quotation" and quotations is not None
+            else proformas
+            if source["module"] == "Proforma Invoice" and proformas is not None
+            else buyers
+            if source["module"] == "Buyers" and buyers is not None
+            else products
+            if source["module"] == "Products" and products is not None
+            else invoices
+            if source["module"] == "Commercial Invoice" and invoices is not None
+            else packing_lists
+            if source["module"] == "Packing List" and packing_lists is not None
+            else shipping_instructions
+            if source["module"] == "Shipping Instruction" and shipping_instructions is not None
+            else bookings
+            if source["module"] == "Booking Confirmation" and bookings is not None
+            else shipments
+            if source["module"] == "Shipment" and shipments is not None
+            else containers
+            if source["module"] == "Container Management" and containers is not None
+            else bills_of_lading
+            if source["module"] == "Bill of Lading" and bills_of_lading is not None
+            else customs
+            if source["module"] == "Customs Declaration" and customs is not None
+            else certificates_of_origin
+            if source["module"] == "Certificate of Origin" and certificates_of_origin is not None
+            else inspections
+            if source["module"] == "Inspection Certificate" and inspections is not None
+            else insurances
+            if source["module"] == "Insurance Certificate" and insurances is not None
+            else weights
+            if source["module"] == "Weight Certificate" and weights is not None
+            else None
+        )
         records = [loaded] if source.get("single") and isinstance(loaded, dict) else loaded
         if not isinstance(records, list):
             continue
@@ -753,10 +1024,29 @@ def global_search_results(query):
 
 
 @app.get("/search", response_class=HTMLResponse)
-def global_search(q: str = ""):
+def global_search(request: Request, q: str = ""):
     query = str(q or "").strip()
-    all_results = global_search_results("")
-    matched_results = global_search_results(query) if query else all_results
+    user = request.scope.get("trade_paper_user") or {}
+    company = load_account_company(user.get("account_id", ""), company_module.ACCOUNT_COMPANIES_FILE)
+    customers = customer_module.load_customers(user.get("account_id", ""))
+    buyers = buyer_module.load_buyers(user.get("account_id", ""))
+    products = product_module.load_products(user.get("account_id", ""))
+    invoices = invoice_module.load_invoices(user.get("account_id", ""))
+    packing_lists = packing_module.load_packing_lists(user.get("account_id", ""))
+    shipping_instructions = shipping_instruction_module.load_shipping_instructions(user.get("account_id", ""))
+    bookings = booking_module.load_bookings(user.get("account_id", ""))
+    shipments = shipment_module.load_shipments(user.get("account_id", ""))
+    containers = container_module.load_containers(user.get("account_id", ""))
+    bills_of_lading = bill_of_lading_module.load_bills_of_lading(user.get("account_id", ""))
+    customs = customs_module.load_customs(user.get("account_id", ""))
+    certificates_of_origin = certificate_of_origin_module.load_certificates(user.get("account_id", ""))
+    inspections = inspection_module.load_inspections(user.get("account_id", ""))
+    insurances = insurance_module.load_insurances(user.get("account_id", ""))
+    weights = weight_module.load_weights(user.get("account_id", ""))
+    quotations = quotation_module.load_quotations(user.get("account_id", ""))
+    proformas = proforma_module.load_proformas(user.get("account_id", ""))
+    all_results = global_search_results("", company, customers, buyers, products, invoices, packing_lists, shipping_instructions, bookings, shipments, containers, bills_of_lading, customs, certificates_of_origin, inspections, insurances, weights, quotations, proformas)
+    matched_results = global_search_results(query, company, customers, buyers, products, invoices, packing_lists, shipping_instructions, bookings, shipments, containers, bills_of_lading, customs, certificates_of_origin, inspections, insurances, weights, quotations, proformas) if query else all_results
     matched_keys = {(result["module"], result["identifier"], result["url"]) for result in matched_results}
     if not all_results:
         content = '<div id="search-empty" class="empty">No documents yet. Create your first document to start searching.</div>'
@@ -802,29 +1092,55 @@ def global_search(q: str = ""):
 
 
 @app.get("/")
-def home():
-    company = load_dashboard_json("company.json", {})
+def home(request: Request):
+    user = request.scope.get("trade_paper_user") or {}
+    company = load_account_company(user.get("account_id", ""), company_module.ACCOUNT_COMPANIES_FILE)
     company_count = 1 if isinstance(company, dict) and str(company.get("name", "")).strip() else 0
-    customers = dashboard_list("customers.json")
-    buyers = dashboard_list("buyers.json")
-    products = dashboard_list("products.json")
+    customers = customer_module.load_customers(user.get("account_id", ""))
+    buyers = buyer_module.load_buyers(user.get("account_id", ""))
+    products = product_module.load_products(user.get("account_id", ""))
+    operations_summary = operations_dashboard_summary(
+        load_json_strict(founding_beta_module.BETA_APPLICATION_FILE, [], list),
+        load_json_strict(feedback_module.FEEDBACK_FILE, [], list),
+    )
+    beta_cards = "".join(
+        f'<a class="operations-stat-card" href="/admin/founding-beta"><span>{dashboard_text(label)}</span><strong>{count}</strong></a>'
+        for label, count in operations_summary["beta_counts"].items()
+    )
+    feedback_cards = "".join(
+        f'<a class="operations-stat-card" href="/admin/feedback"><span>{dashboard_text(label)}</span><strong>{count}</strong></a>'
+        for label, count in operations_summary["feedback_counts"].items()
+    )
+    recent_beta_rows = "".join(
+        '<article class="operations-row"><div><strong>'
+        f'{dashboard_text(record.get("company_name", "") or "—")}</strong><span>'
+        f'{dashboard_text(record.get("contact_name", "") or "—")} · {dashboard_text(record.get("email", "") or "—")}</span></div>'
+        f'<span class="status-pill">{dashboard_text(record.get("status", "") or "New")}</span></article>'
+        for record in operations_summary["recent_applications"]
+    ) or '<div class="activity-empty">아직 Founding Beta 신청이 없습니다.</div>'
+    recent_feedback_rows = "".join(
+        '<article class="operations-row"><div><strong>'
+        f'{dashboard_text(record.get("category", "") or "Other")}</strong><span>{dashboard_text(record.get("feedback", ""))}</span></div>'
+        f'<span class="operations-meta">{dashboard_text(record.get("rating", "") or "—")} / 5</span></article>'
+        for record in operations_summary["recent_feedback"]
+    ) or '<div class="activity-empty">아직 Feedback이 없습니다.</div>'
 
-    quotations = dashboard_list("quotations.json")
-    proformas = dashboard_list("proformas.json")
-    invoices = dashboard_list("invoices.json")
-    packing_lists = dashboard_list("packing_lists.json")
+    quotations = quotation_module.load_quotations(user.get("account_id", ""))
+    proformas = proforma_module.load_proformas(user.get("account_id", ""))
+    invoices = invoice_module.load_invoices(user.get("account_id", ""))
+    packing_lists = packing_module.load_packing_lists(user.get("account_id", ""))
 
-    shipments = dashboard_list("shipments.json")
-    shipping_instructions = dashboard_list("shipping_instructions.json")
-    bookings = dashboard_list("booking_confirmations.json")
-    containers = dashboard_list("containers.json")
-    bills_of_lading = dashboard_list("bills_of_lading.json")
+    shipments = shipment_module.load_shipments(user.get("account_id", ""))
+    shipping_instructions = shipping_instruction_module.load_shipping_instructions(user.get("account_id", ""))
+    bookings = booking_module.load_bookings(user.get("account_id", ""))
+    containers = container_module.load_containers(user.get("account_id", ""))
+    bills_of_lading = bill_of_lading_module.load_bills_of_lading(user.get("account_id", ""))
 
-    certificates_of_origin = dashboard_list("certificates_of_origin.json")
-    inspections = dashboard_list("inspection_certificates.json")
-    insurances = dashboard_list("insurance_certificates.json")
-    weights = dashboard_list("weight_certificates.json")
-    customs = dashboard_list("customs_declarations.json")
+    certificates_of_origin = certificate_of_origin_module.load_certificates(user.get("account_id", ""))
+    inspections = inspection_module.load_inspections(user.get("account_id", ""))
+    insurances = insurance_module.load_insurances(user.get("account_id", ""))
+    weights = weight_module.load_weights(user.get("account_id", ""))
+    customs = customs_module.load_customs(user.get("account_id", ""))
 
     workflow_datasets = {
         "quotations.json": quotations,
@@ -974,11 +1290,12 @@ def home():
         f'<small>{"Complete" if complete else "Start"}</small></a>'
         for index, (label, complete, url) in enumerate(setup_steps, 1)
     )
+    first_action = dashboard_first_action(bool(company_count), buyers, products)
     welcome_html = "" if invoices else (
         '<section class="section" id="welcome-banner"><div class="welcome-card"><div>'
         '<h2>Welcome to Trade Paper AI.</h2><p>Let\'s create your first export document.</p>'
         '<div id="tp-continue-work" class="continue-work" hidden></div></div>'
-        '<div class="quick-start"><small>QUICK START</small><a href="/invoice">Create First Invoice</a>'
+        f'<div class="quick-start"><small>QUICK START</small><a href="{dashboard_text(first_action["url"])}">{dashboard_text(first_action["label"])}</a>'
         '<a class="secondary" href="/demo">Try Demo Data</a></div></div></section>'
     )
     completion_html = "" if setup_percentage < 100 else (
@@ -1088,7 +1405,7 @@ def home():
         ("Dashboard", "/" in registered_get_paths),
         ("Shipment", callable(shipment_detail) and "/shipment/{shipment_no}" in registered_get_paths),
         ("PDF", callable(shipment_pdf)),
-        ("Version", APP_VERSION == "3.3.0"),
+        ("Version", APP_VERSION == "3.5.0"),
         ("Health Card", len(system_health) == 5 and all(passed for _, passed in system_health)),
         ("Footer", callable(release_footer)),
         ("Navigation", navigation_paths.issubset(registered_get_paths)),
@@ -1125,6 +1442,7 @@ body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif;ove
 .overview-grid,.status-grid,.document-grid{{display:grid;gap:18px;min-width:0;}}
 .overview-grid{{grid-template-columns:repeat(5,minmax(0,1fr));}}
 .dashboard-stat-grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}}.dashboard-stat-card{{display:flex;min-height:142px;flex-direction:column;justify-content:center;background:white;color:#111827;border:1px solid #E5E7EB;border-radius:16px;padding:22px;text-decoration:none;box-shadow:0 9px 22px rgba(17,24,39,.07);transition:transform .15s ease,box-shadow .15s ease}}.dashboard-stat-card:hover{{transform:translateY(-3px);box-shadow:0 12px 26px rgba(17,24,39,.11)}}.dashboard-stat-card:focus-visible{{outline:3px solid #2563EB;outline-offset:3px}}.dashboard-stat-card span{{color:#64748B;font-weight:bold}}.dashboard-stat-card strong{{margin-top:10px;font-size:44px;color:#111827}}
+.operations-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}}.operations-panel{{background:white;border:1px solid #E5E7EB;border-radius:18px;padding:22px;box-shadow:0 9px 22px rgba(17,24,39,.07)}}.operations-panel h2{{margin:0 0 16px;font-size:24px}}.operations-stat-grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}}.operations-stat-card{{display:flex;min-height:92px;flex-direction:column;justify-content:center;padding:14px;border:1px solid #E5E7EB;border-radius:12px;background:#F8FAFC;color:#111827;text-decoration:none}}.operations-stat-card span{{color:#64748B;font-size:12px;font-weight:bold}}.operations-stat-card strong{{margin-top:7px;font-size:28px}}.operations-recent-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:18px}}.operations-list{{overflow:hidden;border:1px solid #E5E7EB;border-radius:14px;background:white}}.operations-list h3{{margin:0;padding:15px 17px;border-bottom:1px solid #E5E7EB;font-size:18px}}.operations-row{{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 17px;border-bottom:1px solid #E5E7EB}}.operations-row:last-child{{border-bottom:0}}.operations-row div{{display:grid;gap:5px;min-width:0}}.operations-row div span{{overflow:hidden;color:#64748B;font-size:13px;text-overflow:ellipsis;white-space:nowrap}}.operations-meta{{color:#64748B;font-size:13px;font-weight:bold;white-space:nowrap}}
 .workflow-guide{{background:white;border:1px solid #E5E7EB;border-radius:18px;padding:24px;box-shadow:0 10px 24px rgba(17,24,39,.07)}}.guide-progress-row{{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px}}.guide-progress-copy{{display:grid;gap:4px}}.guide-progress-copy span{{color:#64748B;font-size:13px;font-weight:bold}}.guide-progress-copy strong{{font-size:24px}}.guide-progress-track{{flex:1;max-width:460px;height:8px;overflow:hidden;border-radius:999px;background:#E5E7EB}}.guide-progress-fill{{display:block;height:100%;border-radius:inherit;background:#2563EB}}.guide-progress-fill.complete{{background:#166534}}.guide-steps{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}}.guide-step{{position:relative;display:grid;gap:7px;min-height:112px;align-content:center;border:1px solid #D1D5DB;border-radius:13px;padding:16px;background:#F8FAFC;color:#475569}}.guide-step.complete{{border-color:#BBF7D0;background:#F0FDF4;color:#166534}}.guide-step.current{{border:2px solid #2563EB;background:#111827;color:white;box-shadow:0 8px 20px rgba(37,99,235,.18)}}.guide-step small{{font-weight:bold;opacity:.72}}.guide-icon{{font-size:18px;font-weight:bold}}.guide-context{{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:18px;padding:16px;border-radius:12px;background:#F8FAFC;color:#334155}}.guide-context p{{margin:0;line-height:1.5}}.guide-next-button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;padding:11px 16px;border-radius:10px;background:#1D4ED8;color:white;text-decoration:none;font-weight:bold;white-space:nowrap}}.guide-next-button:focus-visible{{outline:3px solid #2563EB;outline-offset:3px}}.guide-complete-badge{{display:inline-flex;padding:9px 12px;border-radius:999px;background:#DCFCE7;color:#166534;font-weight:bold;white-space:nowrap}}
 .status-grid{{grid-template-columns:repeat(6,minmax(0,1fr));}}
 .document-grid{{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));}}
@@ -1192,9 +1510,9 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 .health-card .health-check{{display:grid;place-items:center;width:24px;height:24px;margin:0 0 7px;border-radius:999px;background:#DCFCE7;color:#166534;font-weight:bold;}}
 .release-card{{background:#111827;color:white;border-radius:18px;padding:26px;box-shadow:0 10px 24px rgba(17,24,39,.12)}}.release-heading{{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}}.release-heading h3{{margin:0 0 7px;font-size:26px}}.release-heading p{{margin:0;color:#CBD5E1}}.release-status{{display:inline-block;padding:8px 12px;border-radius:999px;background:#DCFCE7;color:#166534;font-weight:bold}}.release-checks{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin:22px 0}}.release-check{{display:flex;align-items:center;gap:8px;background:#1F2937;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:bold}}.release-check span{{color:#86EFAC}}.release-notes{{margin:0;padding-left:20px;color:#E5E7EB;line-height:1.7}}
 .tp-release-footer{{width:100%;margin:34px auto 0;padding:24px 0 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}}.tp-release-footer strong{{display:block;color:#374151}}.tp-release-version{{font-size:12px}}
-@media(max-width:1000px){{.overview-grid{{grid-template-columns:repeat(3,1fr);}}.dashboard-stat-grid,.guide-steps{{grid-template-columns:repeat(2,minmax(0,1fr))}}.setup-steps,.celebration-actions{{grid-template-columns:repeat(2,minmax(0,1fr))}}.status-grid{{grid-template-columns:repeat(3,1fr);}}.action-row{{grid-template-columns:repeat(2,minmax(0,1fr));}}.next-actions-grid{{grid-template-columns:1fr 1fr}}}}
+@media(max-width:1000px){{.overview-grid{{grid-template-columns:repeat(3,1fr);}}.dashboard-stat-grid,.guide-steps{{grid-template-columns:repeat(2,minmax(0,1fr))}}.operations-grid,.operations-recent-grid{{grid-template-columns:1fr}}.setup-steps,.celebration-actions{{grid-template-columns:repeat(2,minmax(0,1fr))}}.status-grid{{grid-template-columns:repeat(3,1fr);}}.action-row{{grid-template-columns:repeat(2,minmax(0,1fr));}}.next-actions-grid{{grid-template-columns:1fr 1fr}}}}
 @media(max-width:1000px){{.system-grid,.health-grid{{grid-template-columns:repeat(2,minmax(0,1fr));}}}}
-@media(max-width:640px){{.page{{padding-top:28px;}}.hero h1{{font-size:38px;}}.welcome-card{{grid-template-columns:1fr;padding:22px}}.dashboard-stat-grid,.guide-steps,.setup-steps,.celebration-actions{{grid-template-columns:1fr}}.workflow-celebration{{grid-template-columns:1fr;text-align:center}}.setup-heading{{align-items:flex-start;flex-direction:column}}.guide-progress-row,.guide-context{{align-items:stretch;flex-direction:column}}.guide-progress-track{{width:100%;max-width:none}}.guide-next-button{{width:100%}}.overview-grid,.status-grid,.system-grid,.health-grid{{grid-template-columns:1fr 1fr;}}.next-actions-grid{{grid-template-columns:1fr}}.action-row{{grid-template-columns:1fr;}}.global-search{{flex-direction:column;}}.activity-row,.activity-copy{{align-items:stretch;flex-direction:column;}}.recent-invoice-row{{grid-template-columns:1fr;gap:12px}}.recent-invoice-row strong{{white-space:normal}}.activity-module{{min-width:0;width:max-content;}}.activity-title{{display:block;margin:5px 0 0;}}.activity-open{{min-height:46px;text-align:center;}}}}
+@media(max-width:640px){{.page{{padding-top:28px;}}.hero h1{{font-size:38px;}}.welcome-card{{grid-template-columns:1fr;padding:22px}}.dashboard-stat-grid,.guide-steps,.setup-steps,.celebration-actions{{grid-template-columns:1fr}}.operations-stat-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}.workflow-celebration{{grid-template-columns:1fr;text-align:center}}.setup-heading{{align-items:flex-start;flex-direction:column}}.guide-progress-row,.guide-context{{align-items:stretch;flex-direction:column}}.guide-progress-track{{width:100%;max-width:none}}.guide-next-button{{width:100%}}.overview-grid,.status-grid,.system-grid,.health-grid{{grid-template-columns:1fr 1fr;}}.next-actions-grid{{grid-template-columns:1fr}}.action-row{{grid-template-columns:1fr;}}.global-search{{flex-direction:column;}}.activity-row,.activity-copy{{align-items:stretch;flex-direction:column;}}.recent-invoice-row{{grid-template-columns:1fr;gap:12px}}.recent-invoice-row strong{{white-space:normal}}.activity-module{{min-width:0;width:max-content;}}.activity-title{{display:block;margin:5px 0 0;}}.activity-open{{min-height:46px;text-align:center;}}}}
 @media(max-width:420px){{.overview-grid,.status-grid{{grid-template-columns:1fr;}}}}
 </style>
 </head>
@@ -1214,6 +1532,14 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 <a class="dashboard-stat-card" href="/products"><span>Total Products</span><strong>{len(products)}</strong></a>
 <a class="dashboard-stat-card" href="/invoice-list"><span>Total Invoices</span><strong>{len(invoices)}</strong></a>
 <a class="dashboard-stat-card" href="/packing-list"><span>Total Packing Lists</span><strong>{len(packing_lists)}</strong></a>
+</div></section>
+
+<section class="section"><div class="operations-grid">
+<div class="operations-panel"><h2>Founding Beta</h2><div class="operations-stat-grid">{beta_cards}</div></div>
+<div class="operations-panel"><h2>Feedback</h2><div class="operations-stat-grid">{feedback_cards}</div></div>
+</div><div class="operations-recent-grid">
+<div class="operations-list"><h3>최근 신청 5건</h3>{recent_beta_rows}</div>
+<div class="operations-list"><h3>최근 Feedback 5건</h3>{recent_feedback_rows}</div>
 </div></section>
 
 <section class="section"><h2 class="section-title">Workflow Guide</h2><div class="workflow-guide">

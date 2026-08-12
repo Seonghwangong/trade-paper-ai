@@ -9,10 +9,10 @@ from pathlib import Path
 def route_snapshot(application):
     return [
         {
-            "methods": sorted(route.methods or []),
+            "methods": sorted(getattr(route, "methods", None) or []),
             "path": route.path,
-            "module": getattr(route.endpoint, "__module__", ""),
-            "endpoint": getattr(route.endpoint, "__name__", ""),
+            "module": getattr(getattr(route, "endpoint", None), "__module__", ""),
+            "endpoint": getattr(getattr(route, "endpoint", None), "__name__", ""),
         }
         for route in application.routes
     ]

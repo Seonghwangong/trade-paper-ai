@@ -1,32 +1,25 @@
-from fastapi import APIRouter, Body
-from app.storage import atomic_write_json, data_path, load_json_strict
+from fastapi import APIRouter, Body, Request
+from app.account_company import load_account_company, safe_local_path, save_account_company
+from app.storage import data_path
 from app.validation import require_text
 
 router = APIRouter()
 
-COMPANY_FILE = data_path("company.json")
+ACCOUNT_COMPANIES_FILE = data_path("account_companies.json")
 
 
-def load_company():
-    return load_json_strict(COMPANY_FILE, {
-        "name": "",
-        "address": "",
-        "email": "",
-        "phone": ""
-    }, dict)
-
-
-def save_company_data(data):
-    atomic_write_json(COMPANY_FILE, data, dict)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
 
 
 @router.get("/company-data")
-def get_company_data():
-    return load_company()
+def get_company_data(request: Request):
+    return load_account_company(_account_id(request), ACCOUNT_COMPANIES_FILE)
 
 
 @router.post("/save-company")
-def save_company(payload: dict = Body(...)):
+def save_company(request: Request, payload: dict = Body(...)):
     name = require_text("Company name", payload.get("name", ""))
     data = {
         "name": name,
@@ -35,6 +28,6 @@ def save_company(payload: dict = Body(...)):
         "phone": payload.get("phone", "")
     }
 
-    save_company_data(data)
-
-    return data
+    saved = save_account_company(_account_id(request), data, ACCOUNT_COMPANIES_FILE)
+    saved["redirect_to"] = safe_local_path(payload.get("next", "/"))
+    return saved

@@ -1,16 +1,15 @@
 from typing import Annotated, List, Optional
 from copy import deepcopy
-from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
-import json
 
 from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
 
 router = APIRouter()
 
@@ -29,6 +28,8 @@ from app import shipment as shipment_module
 from app import buyer as buyer_module
 from app.account_company import load_account_company
 from app.routers.company import ACCOUNT_COMPANIES_FILE
+from app.ui import imported_section_css, render_imported_section
+from app.shipment import shipment_detail_redirect_url
 
 BOOKING_FILE = data_path("booking_confirmations.json")
 SHIPMENT_FILE = data_path("shipments.json")
@@ -123,12 +124,6 @@ def validate_booking_links(shipment_no, si_no, packing_no, bl_no, invoice_no, ac
 
 def next_booking_record_no(records):
     return next_identifier(records, "booking_record_no", "BK")
-    numbers = [
-        int(record.get("booking_record_no", "BK-000").split("-")[1])
-        for record in records
-        if record.get("booking_record_no", "").startswith("BK-")
-    ]
-    return f"BK-{max(numbers, default=0) + 1:03d}"
 
 
 def shipment_exists(shipment_no, account_id):
@@ -466,6 +461,7 @@ button{padding:15px 18px;background:#111827;color:white;border:none;border-radiu
 .add{width:100%;background:#374151;margin-bottom:20px;}
 .remove{grid-column:1/-1;width:100%;background:#991B1B;}
 .totals{display:flex;gap:18px;flex-wrap:wrap;font-size:17px;font-weight:bold;color:#111827;margin:8px 0 20px;}
+__IMPORTED_CSS__
 @media(max-width:860px){body{padding:18px}.grid,.item-row{grid-template-columns:1fr}h1{font-size:34px}}
 </style>
 </head>
@@ -499,7 +495,8 @@ __NO_INPUT__
 <div><label>Container Count</label><input type="text" name="container_count" value="__CONTAINER_COUNT__" placeholder="Container Count"></div>
 </div>
 </div>
-<div class="card"><h2>Exporter / Consignee</h2><div class="grid">
+__IMPORTED_PARTY_START__
+<h2>Exporter / Consignee</h2><div class="grid">
 <input type="text" name="exporter_name" value="__EXPORTER__" placeholder="Exporter Name">
 <input type="text" name="exporter_address" value="__EXPORTER_ADDRESS__" placeholder="Exporter Address">
 <input type="email" name="exporter_email" value="__EXPORTER_EMAIL__" placeholder="Exporter Email">
@@ -509,7 +506,8 @@ __NO_INPUT__
 <input type="email" name="consignee_email" value="__CONSIGNEE_EMAIL__" placeholder="Consignee Email">
 <input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin">
 <input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country">
-</div></div>
+</div>
+__IMPORTED_PARTY_END__
 <div class="card">
 <h2>Transport Schedule</h2>
 <div class="grid">
@@ -524,7 +522,7 @@ __NO_INPUT__
 <div><label>Place of Delivery</label><input type="text" name="place_of_delivery" value="__PLACE_OF_DELIVERY__" placeholder="Place of Delivery"></div>
 </div>
 </div>
-<div class="card">
+__IMPORTED_CARGO_START__
 <h2>Cargo Summary</h2>
 <div id="items">__ITEM_ROWS__</div>
 <button class="add" type="button" onclick="addItem()">+ Add Item</button>
@@ -536,7 +534,7 @@ __NO_INPUT__
 <span>Total Net Weight: <span id="netText">__TOTAL_NET_WEIGHT__</span></span>
 <span>Total Gross Weight: <span id="grossText">__TOTAL_GROSS_WEIGHT__</span></span>
 </div>
-</div>
+__IMPORTED_CARGO_END__
 <div class="card">
 <h2>Remarks</h2>
 <textarea name="remarks" placeholder="Remarks">__REMARKS__</textarea>
@@ -576,7 +574,15 @@ calculateTotals();
 </body>
 </html>
 """
+    for section_type in ("party", "cargo"):
+        start_marker = f"__IMPORTED_{section_type.upper()}_START__"
+        end_marker = f"__IMPORTED_{section_type.upper()}_END__"
+        before, marker, remainder = html.partition(start_marker)
+        content, closing_marker, after = remainder.partition(end_marker)
+        if marker and closing_marker:
+            html = before + render_imported_section(section_type, content) + after
     replacements = {
+        "__IMPORTED_CSS__": imported_section_css(),
         "__TITLE__": html_text(title),
         "__ACTION__": html_attr(action),
         "__NO_INPUT__": no_input,
@@ -710,7 +716,9 @@ def save_booking(
         record["account_id"] = account_id
         records.append(record)
     locked_json_mutation(BOOKING_FILE, [], add_booking, list)
-    return RedirectResponse("/booking-list", status_code=303)
+    return RedirectResponse(
+        shipment_detail_redirect_url(shipment_no, account_id, "/booking-list"), status_code=303,
+    )
 
 
 @router.get("/edit-booking/{booking_record_no}", response_class=HTMLResponse)
@@ -763,7 +771,9 @@ def update_booking(
             return
         raise HTTPException(status_code=404, detail="Booking not found")
     locked_json_mutation(BOOKING_FILE, [], replace_booking, list)
-    return RedirectResponse("/booking-list", status_code=303)
+    return RedirectResponse(
+        shipment_detail_redirect_url(shipment_no, account_id, "/booking-list"), status_code=303,
+    )
 
 
 @router.get("/delete-booking/{booking_record_no}")
@@ -841,18 +851,19 @@ body{{font-family:Arial,sans-serif;background:#f3f4f6;padding:40px;color:#111827
     return HTMLResponse(html)
 
 
-def draw_text_fit(pdf, text, x, y, max_width, font="Helvetica", size=8, min_size=6):
+def draw_text_fit(pdf, text, x, y, max_width, font=TP_UNICODE, size=8, min_size=6):
     text = str(text or "")
     current_size = size
     while current_size > min_size and pdf.stringWidth(text, font, current_size) > max_width:
         current_size -= 0.5
     pdf.setFont(font, current_size)
-    pdf.drawString(x, y, text)
+    pdf.drawString(x, y, fit_pdf_text(pdf, text, max_width, font, current_size))
 
 
 def create_booking_pdf_buffer(payload):
     payload = public_booking(payload)
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     navy = colors.HexColor("#111827")
@@ -860,7 +871,7 @@ def create_booking_pdf_buffer(payload):
     muted = colors.HexColor("#6B7280")
 
     def footer():
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.setFillColor(muted)
         pdf.drawCentredString(width / 2, 30, "Generated by Trade Paper AI")
         pdf.setFillColor(colors.black)
@@ -869,10 +880,10 @@ def create_booking_pdf_buffer(payload):
         pdf.setFillColor(navy)
         pdf.roundRect(40, height - 92, width - 80, 56, 8, stroke=0, fill=1)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 22)
+        pdf.setFont(TP_UNICODE_BOLD, 22)
         pdf.drawCentredString(width / 2, height - 70, "BOOKING CONFIRMATION")
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         info = [
             ("Record No", payload.get("booking_record_no", "")), ("Booking No", payload.get("booking_no", "")),
             ("Booking Date", payload.get("booking_date", "")), ("Shipment No", payload.get("shipment_no", "")),
@@ -909,7 +920,7 @@ def create_booking_pdf_buffer(payload):
         pdf.setFillColor(navy)
         pdf.rect(40, y, width - 80, 24, stroke=0, fill=1)
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 8)
+        pdf.setFont(TP_UNICODE_BOLD, 8)
         for x, label in [(48, "No"), (74, "Item"), (218, "HS Code"), (300, "Qty"), (354, "Carton"), (412, "Net Weight"), (492, "Gross Weight")]:
             pdf.drawString(x, y + 8, label)
         pdf.setFillColor(colors.black)
@@ -946,19 +957,19 @@ def create_booking_pdf_buffer(payload):
     pdf.setFillColor(navy)
     pdf.roundRect(335, summary_y, 220, 78, 8, stroke=0, fill=1)
     pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFont(TP_UNICODE_BOLD, 10)
     pdf.drawString(350, summary_y + 52, f"Total Cartons: {payload.get('total_carton', '')}")
     pdf.drawString(350, summary_y + 32, f"Total Net Weight: {payload.get('total_net_weight', '')}")
     pdf.drawString(350, summary_y + 12, f"Total Gross Weight: {payload.get('total_gross_weight', '')}")
     pdf.setFillColor(colors.black)
     if payload.get("remarks"):
-        pdf.setFont("Helvetica-Bold", 10)
+        pdf.setFont(TP_UNICODE_BOLD, 10)
         pdf.drawString(40, summary_y + 52, "Remarks")
         draw_text_fit(pdf, payload.get("remarks", ""), 40, summary_y + 34, 260, size=9)
     signature_y = max(90, summary_y - 42)
     pdf.setStrokeColor(colors.black)
     pdf.line(380, signature_y, 555, signature_y)
-    pdf.setFont("Helvetica", 9)
+    pdf.setFont(TP_UNICODE, 9)
     pdf.drawString(415, signature_y - 15, "Authorized Signature")
     footer()
     pdf.save()

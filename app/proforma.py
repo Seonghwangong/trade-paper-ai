@@ -1,11 +1,9 @@
 from typing import List
-from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 import html as html_lib
-import json
 
-from fastapi import APIRouter, Body, Form, HTTPException
+from fastapi import APIRouter, Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -13,40 +11,85 @@ from reportlab.pdfgen import canvas
 
 router = APIRouter()
 
-from app.storage import atomic_write_json, data_path, load_json_strict, locked_json_mutation, next_identifier
-from app.validation import require_items, require_text
-from app.referential_integrity import confirmed_identifier_delete, identifier_delete_confirmation
+from app.storage import atomic_write_json, data_path, locked_json_mutation, next_identifier
+from app.validation import DataValidationError, require_consistent_reference, require_items, require_text
+from app.referential_integrity import find_dependencies, render_delete_page
+from app.account_proforma import ensure_legacy_proforma_ownership, public_proforma
+from app.export import set_pdf_export_record
+from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
+from app.account_company import load_account_company
+from app.auth import USERS_FILE
+from app.routers.company import ACCOUNT_COMPANIES_FILE
 from app.ui import badge, button, form_css, form_footer, metadata, navigation_footer, page_shell, search_toolbar, section_card, table
+from app import quotation as quotation_module
+from app import buyer as buyer_module
+from app import product as product_module
 
 PROFORMA_FILE = data_path("proformas.json")
 COMPANY_FILE = data_path("company.json")
 QUOTATION_FILE = data_path("quotations.json")
 
 
-def load_company():
-    return load_json_strict(COMPANY_FILE, {}, dict)
+def _account_id(request):
+    user = request.scope.get("trade_paper_user") or {}
+    return str(user.get("account_id", "") or "").strip()
+
+def load_company(account_id):
+    return load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
 
 
-def load_proformas():
-    return load_json_strict(PROFORMA_FILE, [], list)
+def load_proforma_records():
+    return ensure_legacy_proforma_ownership(PROFORMA_FILE, USERS_FILE)
 
 
-def load_quotations():
-    return load_json_strict(QUOTATION_FILE, [], list)
+def owned_proforma_records(account_id):
+    owner = str(account_id or "").strip()
+    return [record for record in load_proforma_records()
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+
+
+def load_proformas(account_id):
+    return [public_proforma(record) for record in owned_proforma_records(account_id)]
+
+
+def _owned_proforma(pi_no, account_id):
+    record = next((record for record in owned_proforma_records(account_id)
+                   if str(record.get("pi_no", "") or "").strip() == str(pi_no or "").strip()), None)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Proforma invoice not found")
+    return record
+
+
+def validate_proforma_sources(account_id, seller, buyer, buyer_address, buyer_email, items):
+    company = load_company(account_id)
+    require_consistent_reference("Seller", seller, company.get("name", ""), "Company Master")
+    buyer_record = next((record for record in buyer_module.load_buyers(account_id)
+                         if str(record.get("name", "") or "").strip() == str(buyer or "").strip()), None)
+    if buyer_record is None:
+        raise DataValidationError("Buyer", "The selected Buyer is no longer available.", "Select a Buyer from Buyer Master, then save again.")
+    require_consistent_reference("Buyer address", buyer_address, buyer_record.get("address", ""), "Buyer Master")
+    require_consistent_reference("Buyer email", buyer_email, buyer_record.get("email", ""), "Buyer Master")
+    products = product_module.load_products(account_id)
+    enriched = []
+    for submitted in items:
+        product = next((record for record in products
+                        if str(record.get("name", "") or "").strip() == str(submitted.get("name", "") or "").strip()), None)
+        if product is None:
+            raise DataValidationError("Product", "The selected Product is no longer available.", "Select a Product from Product Master, then save again.")
+        item = dict(submitted)
+        require_consistent_reference("HS Code", item.get("hs_code", ""), product.get("hs_code", ""), "Product Master")
+        item["hs_code"] = item.get("hs_code", "") or product.get("hs_code", "")
+        item["unit_price"] = item.get("unit_price", "") or product.get("unit_price", "")
+        enriched.append(item)
+    return enriched
+
+
+def load_quotations(account_id):
+    return quotation_module.load_quotations(account_id)
 
 
 def save_proformas(proformas):
     atomic_write_json(PROFORMA_FILE, proformas, list)
-
-
-def next_pi_no(proformas):
-    return next_identifier(proformas, "pi_no", "PI")
-    existing_numbers = [
-        int(p.get("pi_no", "PI-000").split("-")[1])
-        for p in proformas
-        if p.get("pi_no", "").startswith("PI-")
-    ]
-    return f"PI-{max(existing_numbers, default=0) + 1:03d}"
 
 
 def build_items(item_name, hs_code, qty, unit_price, amount):
@@ -105,8 +148,8 @@ def build_proforma_item_rows(items):
 
 
 @router.get("/proforma-list")
-def proforma_list(search: str = ""):
-    proformas = list(reversed(load_proformas()))
+def proforma_list(request: Request, search: str = ""):
+    proformas = list(reversed(load_proformas(_account_id(request))))
 
     if search:
         search_lower = search.lower()
@@ -140,19 +183,15 @@ def proforma_list(search: str = ""):
 
 
 @router.get("/proforma-data/{pi_no}")
-def proforma_data(pi_no: str):
-    for proforma in load_proformas():
-        if proforma.get("pi_no") == pi_no:
-            return proforma
-
-    raise HTTPException(status_code=404, detail="Proforma invoice not found")
+def proforma_data(pi_no: str, request: Request):
+    return public_proforma(_owned_proforma(pi_no, _account_id(request)))
 
 
 @router.get("/proforma-form")
-def proforma_form(quotation_no: str = ""):
+def proforma_form(request: Request, quotation_no: str = ""):
     source_quotation = {}
     if quotation_no:
-        for quotation in load_quotations():
+        for quotation in load_quotations(request.scope["trade_paper_user"]["account_id"]):
             if quotation.get("quotation_no") == quotation_no:
                 source_quotation = quotation
                 break
@@ -381,11 +420,9 @@ calculateAllAmounts();
 
 
 @router.get("/edit-proforma/{pi_no}")
-def edit_proforma(pi_no: str):
-    proformas = load_proformas()
-
-    for proforma in proformas:
-        if proforma.get("pi_no") == pi_no:
+def edit_proforma(pi_no: str, request: Request):
+    proforma = public_proforma(_owned_proforma(pi_no, _account_id(request)))
+    if proforma:
             rows = ""
             for item in proforma.get("items", []):
                 rows += f"""
@@ -549,11 +586,10 @@ calculateAllAmounts();
 """
             return HTMLResponse(html)
 
-    return HTMLResponse("Proforma Invoice Not Found")
-
 
 @router.post("/proforma")
 def save_proforma(
+    request: Request,
     seller: str = Form(""),
     buyer: str = Form(""),
     buyer_address: str = Form(""),
@@ -570,7 +606,8 @@ def save_proforma(
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
     items = build_items(item_name, hs_code, qty, unit_price, amount)
-    require_items(items)
+    account_id = _account_id(request)
+    items = validate_proforma_sources(account_id, seller, buyer, buyer_address, buyer_email, require_items(items))
     def add_proforma(proformas):
         proforma = {
         "pi_no": next_identifier(proformas, "pi_no", "PI"),
@@ -582,6 +619,7 @@ def save_proforma(
         "currency": currency,
         "items": items,
         "total_amount": total_amount,
+        "account_id": account_id,
         }
         proformas.append(proforma)
     locked_json_mutation(PROFORMA_FILE, [], add_proforma, list)
@@ -592,6 +630,7 @@ def save_proforma(
 @router.post("/update-proforma/{pi_no}")
 def update_proforma(
     pi_no: str,
+    request: Request,
     seller: str = Form(""),
     buyer: str = Form(""),
     buyer_address: str = Form(""),
@@ -608,10 +647,12 @@ def update_proforma(
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
     items = build_items(item_name, hs_code, qty, unit_price, amount)
-    require_items(items)
+    account_id = _account_id(request)
+    _owned_proforma(pi_no, account_id)
+    items = validate_proforma_sources(account_id, seller, buyer, buyer_address, buyer_email, require_items(items))
     def replace_proforma(proformas):
         for proforma in proformas:
-            if proforma.get("pi_no") != pi_no:
+            if proforma.get("pi_no") != pi_no or proforma.get("account_id") != account_id:
                 continue
             proforma["seller"] = seller
             proforma["buyer"] = buyer
@@ -629,17 +670,38 @@ def update_proforma(
 
 
 @router.get("/delete-proforma/{pi_no}")
-def delete_proforma(pi_no: str):
-    return identifier_delete_confirmation("Proforma Invoice", "Proforma Invoice", pi_no, PROFORMA_FILE, "pi_no", f"/delete-proforma/{pi_no}", "/proforma-list")
+def delete_proforma(pi_no: str, request: Request):
+    _owned_proforma(pi_no, _account_id(request))
+    return render_delete_page("Proforma Invoice", pi_no, f"/delete-proforma/{pi_no}", "/proforma-list", find_dependencies("Proforma Invoice", pi_no, _account_id(request)))
 
 @router.post("/delete-proforma/{pi_no}")
-def confirm_delete_proforma(pi_no: str):
-    return confirmed_identifier_delete("Proforma Invoice", "Proforma Invoice", pi_no, PROFORMA_FILE, "pi_no", f"/delete-proforma/{pi_no}", "/proforma-list", "/proforma-list")
+def confirm_delete_proforma(pi_no: str, request: Request):
+    account_id = _account_id(request)
+    _owned_proforma(pi_no, account_id)
+    dependencies = find_dependencies("Proforma Invoice", pi_no, account_id)
+    if dependencies:
+        return render_delete_page("Proforma Invoice", pi_no, f"/delete-proforma/{pi_no}", "/proforma-list", dependencies, status_code=409)
+    def remove(records):
+        index = next((i for i, record in enumerate(records)
+                      if record.get("pi_no") == pi_no and record.get("account_id") == account_id), None)
+        if index is None:
+            raise HTTPException(status_code=404, detail="Proforma invoice not found")
+        records.pop(index)
+    locked_json_mutation(PROFORMA_FILE, [], remove, list)
+    return RedirectResponse("/proforma-list", status_code=303)
 
 
 @router.post("/proforma/pdf")
-def create_proforma_pdf(payload: dict = Body(...)):
-    company = load_company()
+def create_proforma_pdf(request: Request, payload: dict = Body(...), validate_sources: bool = True):
+    account_id = _account_id(request)
+    payload = public_proforma(payload)
+    if validate_sources:
+        payload["items"] = validate_proforma_sources(
+            account_id, payload.get("seller", ""), payload.get("buyer", ""),
+            payload.get("buyer_address", ""), payload.get("buyer_email", ""),
+            require_items(payload.get("items", [])),
+        )
+    company = load_company(account_id)
 
     pi_no = payload.get("pi_no") or "-"
     today = datetime.now().strftime("%Y-%m-%d")
@@ -662,6 +724,7 @@ def create_proforma_pdf(payload: dict = Body(...)):
         total_amount = calculate_total(items)
 
     buffer = BytesIO()
+    ensure_pdf_fonts()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
@@ -677,32 +740,25 @@ def create_proforma_pdf(payload: dict = Body(...)):
     summary_h = 65
     summary_gap = 20
 
-    def fit_text(text, max_width, font_name="Helvetica", font_size=8):
-        text = str(text or "")
-        if pdf.stringWidth(text, font_name, font_size) <= max_width:
-            return text
-
-        suffix = "..."
-        while text and pdf.stringWidth(text + suffix, font_name, font_size) > max_width:
-            text = text[:-1]
-        return text + suffix if text else suffix
+    def fit_text(text, max_width, font_name=TP_UNICODE, font_size=8):
+        return fit_pdf_text(pdf, text, max_width, font_name, font_size)
 
     def draw_document_header():
         pdf.setFillColor(colors.HexColor("#111827"))
         pdf.rect(0, height - 90, width, 90, fill=1, stroke=0)
 
         pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 24)
+        pdf.setFont(TP_UNICODE_BOLD, 24)
         pdf.drawString(45, height - 55, "PROFORMA INVOICE")
 
-        pdf.setFont("Helvetica", 9)
+        pdf.setFont(TP_UNICODE, 9)
         pdf.drawRightString(width - 45, height - 38, "Trade Paper AI")
         pdf.drawRightString(width - 45, height - 55, "Automated Trade Document")
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 11)
-        pdf.drawString(45, height - 125, f"PI No: {pi_no}")
-        pdf.drawString(45, height - 145, f"PI Date: {pi_date}")
+        pdf.setFont(TP_UNICODE_BOLD, 11)
+        pdf.drawString(45, height - 125, fit_text(f"PI No: {pi_no}", 505, TP_UNICODE_BOLD, 11))
+        pdf.drawString(45, height - 145, fit_text(f"PI Date: {pi_date}", 505, TP_UNICODE_BOLD, 11))
         pdf.drawString(45, height - 163, f"Date: {today}")
 
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
@@ -711,18 +767,18 @@ def create_proforma_pdf(payload: dict = Body(...)):
         pdf.roundRect(310, height - 260, 240, 80, 8, fill=1)
 
         pdf.setFillColor(colors.HexColor("#111827"))
-        pdf.setFont("Helvetica-Bold", 11)
+        pdf.setFont(TP_UNICODE_BOLD, 11)
         pdf.drawString(60, height - 197, "SELLER")
         pdf.drawString(325, height - 197, "BUYER")
 
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(60, height - 220, seller)
-        pdf.drawString(60, height - 235, seller_address)
-        pdf.drawString(60, height - 250, seller_email)
+        pdf.setFont(TP_UNICODE, 9)
+        pdf.drawString(60, height - 220, fit_text(seller, 210, font_size=9))
+        pdf.drawString(60, height - 235, fit_text(seller_address, 210, font_size=9))
+        pdf.drawString(60, height - 250, fit_text(seller_email, 210, font_size=9))
 
-        pdf.drawString(325, height - 220, buyer)
-        pdf.drawString(325, height - 235, buyer_address)
-        pdf.drawString(325, height - 250, buyer_email)
+        pdf.drawString(325, height - 220, fit_text(buyer, 210, font_size=9))
+        pdf.drawString(325, height - 235, fit_text(buyer_address, 210, font_size=9))
+        pdf.drawString(325, height - 250, fit_text(buyer_email, 210, font_size=9))
 
     def draw_table_header():
         header_y = height - 315
@@ -731,7 +787,7 @@ def create_proforma_pdf(payload: dict = Body(...)):
         pdf.rect(table_x, header_y, table_w, table_header_h, fill=1, stroke=0)
 
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica-Bold", 8)
+        pdf.setFont(TP_UNICODE_BOLD, 8)
         pdf.drawString(52, header_y + 10, "No")
         pdf.drawString(80, header_y + 10, "Item")
         pdf.drawString(205, header_y + 10, "HS Code")
@@ -739,7 +795,7 @@ def create_proforma_pdf(payload: dict = Body(...)):
         pdf.drawRightString(430, header_y + 10, "Unit Price")
         pdf.drawRightString(540, header_y + 10, "Amount")
 
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
         return header_y - table_header_h
 
@@ -749,12 +805,12 @@ def create_proforma_pdf(payload: dict = Body(...)):
 
     def draw_signature_footer():
         pdf.setFillColor(colors.black)
-        pdf.setFont("Helvetica", 10)
+        pdf.setFont(TP_UNICODE, 10)
         pdf.drawString(45, 115, "Authorized Signature:")
         pdf.line(170, 115, 330, 115)
 
         pdf.setFillColor(colors.HexColor("#6B7280"))
-        pdf.setFont("Helvetica", 8)
+        pdf.setFont(TP_UNICODE, 8)
         pdf.drawString(45, 60, "This document was generated by Trade Paper AI.")
         pdf.drawString(45, 45, "For trade documentation automation.")
 
@@ -772,10 +828,10 @@ def create_proforma_pdf(payload: dict = Body(...)):
         pdf.rect(table_x, y, table_w, row_h, fill=0)
         pdf.drawString(52, y + 9, str(index))
         pdf.drawString(80, y + 9, fit_text(item.get("name", ""), 110))
-        pdf.drawString(205, y + 9, str(item.get("hs_code", "")))
-        pdf.drawRightString(330, y + 9, str(item.get("qty", "")))
-        pdf.drawRightString(430, y + 9, str(item.get("unit_price", "")))
-        pdf.drawRightString(540, y + 9, str(item.get("amount", "")))
+        pdf.drawString(205, y + 9, fit_text(item.get("hs_code", ""), 75))
+        pdf.drawRightString(330, y + 9, fit_text(item.get("qty", ""), 55))
+        pdf.drawRightString(430, y + 9, fit_text(item.get("unit_price", ""), 85))
+        pdf.drawRightString(540, y + 9, fit_text(item.get("amount", ""), 85))
         y -= row_h
 
     summary_x = table_right - summary_w
@@ -792,12 +848,13 @@ def create_proforma_pdf(payload: dict = Body(...)):
     pdf.roundRect(summary_x, summary_bottom, summary_w, summary_h, 8, fill=1, stroke=0)
 
     pdf.setFillColor(colors.white)
-    pdf.setFont("Helvetica-Bold", 10)
+    pdf.setFont(TP_UNICODE_BOLD, 10)
     text_x = summary_x + 15
     text_y = summary_top - 23
     line_gap = 18
-    pdf.drawString(text_x, text_y, f"Total Amount: {currency} {total_amount:,.2f}")
-    pdf.drawString(text_x, text_y - line_gap, f"Currency: {currency}")
+    summary_text_w = summary_w - 30
+    pdf.drawString(text_x, text_y, fit_text(f"Total Amount: {currency} {total_amount:,.2f}", summary_text_w, TP_UNICODE_BOLD, 10))
+    pdf.drawString(text_x, text_y - line_gap, fit_text(f"Currency: {currency}", summary_text_w, TP_UNICODE_BOLD, 10))
 
     draw_signature_footer()
 
@@ -815,9 +872,7 @@ def create_proforma_pdf(payload: dict = Body(...)):
 
 
 @router.get("/proforma-pdf/{pi_no}")
-def proforma_pdf(pi_no: str):
-    for proforma in load_proformas():
-        if proforma.get("pi_no") == pi_no:
-            return create_proforma_pdf(proforma)
-
-    return {"error": "Proforma invoice not found"}
+def proforma_pdf(pi_no: str, request: Request):
+    record = public_proforma(_owned_proforma(pi_no, _account_id(request)))
+    set_pdf_export_record(request, record)
+    return create_proforma_pdf(request, record, validate_sources=False)
