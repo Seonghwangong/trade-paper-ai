@@ -4,6 +4,7 @@ from io import BytesIO
 from copy import deepcopy
 from typing import Annotated, Optional
 import html as html_lib
+import zipfile
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -144,13 +145,33 @@ DOCUMENTS = [
     },
 ]
 
-STATUS_OPTIONS = ["Inquiry", "Quoted", "Confirmed", "In Production", "Ready to Ship", "Shipped", "Completed"]
+TRACKING_STATUS_OPTIONS = ["Draft", "Booked", "Loaded", "In Transit", "Arrived", "Delivered", "Completed"]
+LEGACY_STATUS_OPTIONS = ["Inquiry", "Quoted", "Confirmed", "In Production", "Ready to Ship", "Shipped"]
+STATUS_OPTIONS = [*TRACKING_STATUS_OPTIONS, *LEGACY_STATUS_OPTIONS]
+TRACKING_FIELDS = (
+    "container_no", "seal_no", "container_type", "etd", "eta",
+    "actual_departure", "actual_arrival", "tracking_memo",
+)
 
 PARTY_SNAPSHOT_FIELDS = (
     "shipper", "shipper_address", "shipper_email", "shipper_phone",
     "consignee", "consignee_address", "consignee_email",
 )
 CARGO_SNAPSHOT_FIELDS = ("items", "total_carton", "total_net_weight", "total_gross_weight")
+
+DOCUMENT_PACKAGE_ITEMS = (
+    {"label": "Commercial Invoice", "field": "invoice_no", "view": "/invoice-list?search={value}", "edit": "/edit-invoice/{value}", "pdf": "/invoice-pdf/{value}"},
+    {"label": "Packing List", "field": "packing_no", "view": "/packing-list?search={value}", "edit": "/edit-packing/{value}", "pdf": "/packing-list-pdf/{value}"},
+    {"label": "Shipping Instruction", "field": "si_no", "view": "/si-list?search={value}", "edit": "/edit-si/{value}", "pdf": "/si-pdf/{value}"},
+    {"label": "Booking Confirmation", "field": "booking_record_no", "view": "/booking/{value}", "edit": "/edit-booking/{value}", "pdf": "/booking-pdf/{value}"},
+    {"label": "Bill of Lading", "field": "bl_no", "view": "/bl-list?search={value}", "edit": "/edit-bl/{value}", "pdf": "/bl-pdf/{value}"},
+    {"label": "Certificate of Origin", "field": "co_no", "view": "/co/{value}", "edit": "/edit-co/{value}", "pdf": "/co-pdf/{value}"},
+)
+EMAIL_DOCUMENT_TYPES = {
+    "invoice_no": "invoice", "packing_no": "packing",
+    "si_no": "shipping-instruction", "booking_record_no": "booking",
+    "bl_no": "bill-of-lading", "co_no": "certificate-of-origin",
+}
 
 
 def html_attr(value):
@@ -202,7 +223,7 @@ def blank_shipment():
         "shipment_name": "",
         "customer": "",
         "buyer": "",
-        "status": "Inquiry",
+        "status": "Draft",
         "remarks": "",
     }
     for doc in DOCUMENTS:
@@ -210,6 +231,7 @@ def blank_shipment():
     for field in PARTY_SNAPSHOT_FIELDS:
         record[field] = ""
     record.update({"items": [], "total_carton": "", "total_net_weight": "", "total_gross_weight": ""})
+    record.update({field: "" for field in TRACKING_FIELDS})
     return record
 
 
@@ -308,6 +330,8 @@ def resolve_shipment_snapshot(record, account_id, bill=None, packing=None, invoi
     resolved["invoice_no"] = invoice_no
     if ("buyer" not in resolved or (not preserve_empty and not resolved.get("buyer"))) and buyer.get("name"):
         resolved["buyer"] = buyer.get("name", "")
+    from app import product as product_module
+    product_module.enrich_items_from_products(resolved.get("items", []), account_id)
     return resolved
 
 
@@ -470,6 +494,85 @@ def resolve_operational_records(shipment_no, datasets=None):
         {"operational": operational, "matches": reverse_records_for(shipment_no, operational, datasets)}
         for operational in OPERATIONAL_RECORDS
     ]
+
+
+def resolve_document_package(shipment, datasets):
+    """Resolve the six customer-facing package documents from one owned Shipment."""
+    direct = {entry["document"]["field"]: entry for entry in resolve_direct_documents(shipment, datasets)}
+    booking_group = next(
+        group for group in resolve_operational_records(shipment.get("shipment_no", ""), datasets)
+        if group["operational"]["key"] == "booking_record_no"
+    )
+    def related(records, key):
+        candidates = []
+        for record in records:
+            if any(
+                shipment.get(field) and record.get(field) == shipment.get(field)
+                for field in ("shipment_no", "si_no", "packing_no", "invoice_no", "bl_no")
+            ):
+                candidates.append({"value": str(record.get(key, "") or ""), "record": record})
+        candidates = [candidate for candidate in candidates if candidate["value"]]
+        return select_operational_match(candidates, shipment)
+
+    booking = select_operational_match(booking_group["matches"], shipment)
+    if not booking:
+        booking = related(datasets.get("booking_confirmations.json", []), "booking_record_no")
+    package = []
+    for descriptor in DOCUMENT_PACKAGE_ITEMS:
+        field = descriptor["field"]
+        if field == "booking_record_no":
+            value = booking["value"] if booking else ""
+            exists = bool(booking)
+        else:
+            resolved = direct[field]
+            value, exists = resolved["value"], resolved["exists"]
+            if not exists and field in {"bl_no", "co_no"}:
+                filename = "bills_of_lading.json" if field == "bl_no" else "certificates_of_origin.json"
+                inferred = related(datasets.get(filename, []), field)
+                if inferred:
+                    value, exists = inferred["value"], True
+        package.append({**descriptor, "value": value, "exists": exists})
+    return package
+
+
+def render_document_package_page(request, selected_shipment_no=""):
+    account_id = _account_id(request)
+    shipments = sorted(load_shipments(account_id), key=lambda row: str(row.get("shipment_no", "")), reverse=True)
+    options = ['<option value="">Select Shipment</option>']
+    for shipment in shipments:
+        value = str(shipment.get("shipment_no", "") or "")
+        selected = " selected" if value == selected_shipment_no else ""
+        label = " · ".join(part for part in (value, str(shipment.get("shipment_name", "") or "")) if part)
+        options.append(f'<option value="{html_attr(value)}"{selected}>{html_text(label)}</option>')
+
+    cards = '<div class="empty">Select a Shipment to build its document package.</div>'
+    package_actions = ""
+    if selected_shipment_no:
+        shipment = find_shipment(selected_shipment_no, account_id)
+        if not shipment:
+            raise HTTPException(status_code=404, detail="Shipment not found")
+        package = resolve_document_package(public_shipment(shipment), load_workflow_datasets(account_id))
+        rows = []
+        for item in package:
+            if item["exists"]:
+                value = item["value"]
+                actions = "".join(
+                    f'<a href="{html_attr(item[key].format(value=quote(value, safe="")))}">{label}</a>'
+                    for key, label in (("view", "View"), ("edit", "Edit"), ("pdf", "PDF"))
+                )
+                actions += f'<a href="/send-email/{EMAIL_DOCUMENT_TYPES[item["field"]]}/{quote(value, safe="")}">Send Email</a>'
+                status = '<span class="status complete">Complete</span>'
+                identifier = html_text(value)
+            else:
+                actions = ""
+                status = '<span class="status missing">Missing</span>'
+                identifier = f'{html_text(item["label"])} is missing'
+            rows.append(f'''<article class="doc"><div><h2>{html_text(item["label"])}</h2><p>{identifier}</p></div><div>{status}<div class="actions">{actions}</div></div></article>''')
+        cards = "".join(rows)
+        complete_count = sum(1 for item in package if item["exists"])
+        package_actions = f'''<div class="summary"><strong>{complete_count} / {len(package)} documents complete</strong><div><a class="download" href="/shipment/{html_attr(selected_shipment_no)}/package.zip">Download Package (.zip)</a> <a class="download" href="/send-email/document-package/{html_attr(selected_shipment_no)}">Send Email</a></div></div>'''
+
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Document Package</title><style>*{{box-sizing:border-box}}body{{margin:0;padding:40px;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{width:min(980px,94%);margin:auto}}.nav{{display:flex;gap:10px;margin-bottom:24px}}.nav a,.download,.actions a{{display:inline-flex;padding:11px 14px;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:700}}h1{{font-size:44px;margin:0 0 8px}}.sub{{color:#64748B;margin:0 0 26px}}form,.summary,.doc,.empty{{background:#fff;border:1px solid #E5E7EB;border-radius:15px;padding:20px;margin-bottom:15px}}form{{display:flex;gap:12px}}select,button{{min-height:46px;padding:10px 13px;border:1px solid #CBD5E1;border-radius:9px;font-size:16px}}select{{flex:1;background:#fff}}button{{background:#111827;color:#fff;font-weight:700;cursor:pointer}}.summary,.doc{{display:flex;align-items:center;justify-content:space-between;gap:16px}}.doc h2{{margin:0 0 6px;font-size:19px}}.doc p{{margin:0;color:#64748B}}.status{{display:inline-block;padding:6px 9px;border-radius:999px;font-size:12px;font-weight:800}}.complete{{background:#DCFCE7;color:#166534}}.missing{{background:#FEE2E2;color:#991B1B}}.actions{{display:flex;gap:6px;margin-top:9px}}.actions a{{padding:7px 9px;font-size:12px}}@media(max-width:700px){{body{{padding:20px}}form,.summary,.doc{{align-items:stretch;flex-direction:column}}h1{{font-size:34px}}}}</style></head><body><main><div class="nav"><a href="/">Dashboard</a><a href="/shipment-list">Shipment List</a></div><h1>Document Package</h1><p class="sub">All trade documents connected to one Shipment.</p><form action="/document-package" method="get"><select name="shipment_no" required>{''.join(options)}</select><button type="submit">Build Package</button></form>{package_actions}<section>{cards}</section></main></body></html>''')
 
 
 def operational_count(shipment_no):
@@ -1152,6 +1255,7 @@ def shipment_list(request: Request, search: str = ""):
 <td><span class="pill">{html_text(record.get('status', ''))}</span></td>
 <td>{html_text(progress)}</td>
 <td><a class="link" href="/shipment/{html_attr(shipment_no)}">View</a></td>
+<td><a class="link" href="/shipment/{html_attr(shipment_no)}/package">Package</a></td>
 <td><a class="link" href="/edit-shipment/{html_attr(shipment_no)}">Edit</a></td>
 <td><a class="danger" href="/delete-shipment/{html_attr(shipment_no)}">Delete</a></td>
 </tr>
@@ -1204,7 +1308,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 <table>
 <thead>
 <tr>
-<th>Shipment No</th><th>Shipment Name</th><th>Buyer / Customer</th><th>Status</th><th>Linked Direct Documents</th><th>View</th><th>Edit</th><th>Delete</th>
+<th>Shipment No</th><th>Shipment Name</th><th>Buyer / Customer</th><th>Status</th><th>Linked Direct Documents</th><th>View</th><th>Package</th><th>Edit</th><th>Delete</th>
 </tr>
 </thead>
 <tbody>{rows}</tbody>
@@ -1238,6 +1342,123 @@ def shipment_form(request: Request, bl_no: str = "", si_no: str = ""):
     )
 
 
+@router.get("/document-package", response_class=HTMLResponse)
+def document_package(request: Request, shipment_no: str = ""):
+    return render_document_package_page(request, str(shipment_no or "").strip())
+
+
+@router.get("/shipment/{shipment_no}/package", response_class=HTMLResponse)
+def shipment_document_package(shipment_no: str, request: Request):
+    return render_document_package_page(request, shipment_no)
+
+
+def tracking_suggestions(shipment, account_id):
+    """Suggest only missing values from owned operational records; never persist automatically."""
+    datasets = load_workflow_datasets(account_id)
+    booking = select_operational_match(
+        reverse_records_for(shipment.get("shipment_no", ""), OPERATIONAL_RECORDS[0], datasets), shipment,
+    )
+    containers = reverse_records_for(shipment.get("shipment_no", ""), OPERATIONAL_RECORDS[1], datasets)
+    container = select_operational_match(containers, shipment)
+    bill = _first_record(datasets.get("bills_of_lading.json", []), "bl_no", shipment.get("bl_no", ""))
+    booking_record = (booking or {}).get("record", {})
+    container_record = (container or {}).get("record", {})
+    return {
+        "container_no": container_record.get("container_no", ""),
+        "seal_no": container_record.get("seal_no", ""),
+        "container_type": container_record.get("container_type", ""),
+        "etd": booking_record.get("etd") or bill.get("etd", ""),
+        "eta": booking_record.get("eta") or bill.get("eta", ""),
+    }
+
+
+@router.get("/shipment/{shipment_no}/tracking", response_class=HTMLResponse)
+def edit_shipment_tracking(shipment_no: str, request: Request):
+    account_id = _account_id(request)
+    owned = find_shipment(shipment_no, account_id)
+    if not owned:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    record = public_shipment(owned)
+    suggestions = tracking_suggestions(record, account_id)
+    values = {field: record.get(field, "") or suggestions.get(field, "") for field in TRACKING_FIELDS}
+    statuses = "".join(
+        f'<option value="{html_attr(status)}"{" selected" if status == record.get("status") else ""}>{html_text(status)}</option>'
+        for status in TRACKING_STATUS_OPTIONS
+    )
+    fields = "".join(
+        f'<div><label>{html_text(label)}</label><input aria-label="{html_attr(label)}" type="{input_type}" name="{name}" value="{html_attr(values[name])}"></div>'
+        for name, label, input_type in (
+            ("container_no", "Container No", "text"), ("seal_no", "Seal No", "text"),
+            ("container_type", "Container Type", "text"), ("etd", "ETD", "date"),
+            ("eta", "ETA", "date"), ("actual_departure", "Actual Departure", "date"),
+            ("actual_arrival", "Actual Arrival", "date"),
+        )
+    )
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Edit Shipment Tracking</title><style>*{{box-sizing:border-box}}body{{margin:0;padding:40px;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{width:min(850px,94%);margin:auto;background:#fff;padding:30px;border-radius:16px}}.nav{{display:flex;gap:10px;margin-bottom:22px}}a,button{{padding:12px 16px;border:0;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:700}}h1{{margin:0 0 8px}}.sub{{color:#64748B;margin-bottom:24px}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:15px}}label{{display:block;font-weight:700;margin-bottom:7px}}input,select,textarea{{width:100%;padding:12px;border:1px solid #CBD5E1;border-radius:9px;font:inherit}}textarea{{min-height:120px}}.memo{{margin-top:15px}}button{{width:100%;margin-top:20px;font-size:16px;cursor:pointer}}@media(max-width:700px){{body{{padding:18px}}.grid{{grid-template-columns:1fr}}}}</style></head><body><main><div class="nav"><a href="/shipment/{html_attr(shipment_no)}">Back to Shipment</a></div><h1>Edit Tracking</h1><p class="sub">{html_text(shipment_no)} · suggested empty values remain fully editable.</p><form action="/shipment/{html_attr(shipment_no)}/tracking" method="post"><div class="grid"><div><label>Shipment Status</label><select aria-label="Shipment Status" name="status" required>{statuses}</select></div>{fields}</div><div class="memo"><label>Tracking Memo</label><textarea aria-label="Tracking Memo" name="tracking_memo">{html_text(values["tracking_memo"])}</textarea></div><button type="submit">Save Tracking</button></form></main></body></html>''')
+
+
+@router.post("/shipment/{shipment_no}/tracking")
+def update_shipment_tracking(
+    shipment_no: str, request: Request, status: str = Form("Draft"),
+    container_no: str = Form(""), seal_no: str = Form(""), container_type: str = Form(""),
+    etd: str = Form(""), eta: str = Form(""), actual_departure: str = Form(""),
+    actual_arrival: str = Form(""), tracking_memo: str = Form(""),
+):
+    account_id = _account_id(request)
+    if find_shipment(shipment_no, account_id) is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    status = require_allowed_value("Shipment status", status, TRACKING_STATUS_OPTIONS)
+    submitted = {
+        "container_no": container_no, "seal_no": seal_no, "container_type": container_type,
+        "etd": etd, "eta": eta, "actual_departure": actual_departure,
+        "actual_arrival": actual_arrival, "tracking_memo": tracking_memo,
+    }
+    def replace(records):
+        for record in records:
+            if record.get("shipment_no") == shipment_no and str(record.get("account_id", "") or "").strip() == account_id:
+                record["status"] = status
+                record.update(submitted)
+                return
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    locked_json_mutation(SHIPMENT_FILE, [], replace, list)
+    return RedirectResponse(f"/shipment/{quote(shipment_no, safe='')}", status_code=303)
+
+
+@router.get("/shipment/{shipment_no}/package.zip")
+def download_document_package(shipment_no: str, request: Request):
+    account_id = _account_id(request)
+    owned = find_shipment(shipment_no, account_id)
+    if not owned:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    package = resolve_document_package(public_shipment(owned), load_workflow_datasets(account_id))
+    from app import invoice as invoice_module
+    from app import packing as packing_module
+    from app import shipping_instruction as si_module
+    from app import booking_confirmation as booking_module
+    from app import bill_of_lading as bl_module
+    from app import certificate_of_origin as co_module
+    pdf_handlers = {
+        "invoice_no": invoice_module.invoice_pdf,
+        "packing_no": packing_module.packing_list_pdf,
+        "si_no": si_module.si_pdf,
+        "booking_record_no": booking_module.booking_pdf,
+        "bl_no": bl_module.bl_pdf,
+        "co_no": co_module.co_pdf,
+    }
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for item in package:
+            if not item["exists"]:
+                continue
+            value = item["value"]
+            response = pdf_handlers[item["field"]](value, request)
+            archive.writestr(f"{value}.pdf", response.body)
+    return Response(
+        buffer.getvalue(), media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{html_attr(shipment_no)}-document-package.zip"'},
+    )
+
+
 def shipment_success_response(shipment_no, si_no, packing_no):
     booking_url = workflow_url("/booking-form", [
         ("shipment_no", shipment_no), ("si_no", si_no), ("packing_no", packing_no),
@@ -1252,7 +1473,7 @@ def save_shipment(
     shipment_name: str = Form(""),
     customer: str = Form(""),
     buyer: str = Form(""),
-    status: str = Form("Inquiry"),
+    status: str = Form("Draft"),
     remarks: str = Form(""),
     quotation_no: str = Form(""),
     pi_no: str = Form(""),
@@ -1307,8 +1528,22 @@ def shipment_detail(shipment_no: str, request: Request):
     if not owned_shipment:
         raise HTTPException(status_code=404, detail="Shipment not found")
     shipment = public_shipment(owned_shipment)
+    tracking_rows = "".join(
+        f'<div><div class="label">{html_text(label)}</div><div class="value">{html_text(shipment.get(field, "") or "-")}</div></div>'
+        for field, label in (
+            ("container_no", "Container No"), ("seal_no", "Seal No"),
+            ("container_type", "Container Type"), ("etd", "ETD"), ("eta", "ETA"),
+            ("actual_departure", "Actual Departure"), ("actual_arrival", "Actual Arrival"),
+        )
+    )
 
     workflow_datasets = load_workflow_datasets(account_id)
+    from app.document_email import shipment_email_history
+    email_history = list(reversed(shipment_email_history(shipment_no, account_id)))
+    email_history_rows = "".join(
+        f'<tr><td>{html_text(item.get("sent_at", ""))}</td><td>{html_text(item.get("document_no", ""))}</td><td>{html_text(item.get("recipient", ""))}</td><td>{html_text(item.get("subject", ""))}</td><td>{html_text(item.get("status", ""))}</td></tr>'
+        for item in email_history
+    ) or '<tr><td colspan="5">No email delivery history.</td></tr>'
     cards = ""
     resolved_direct = resolve_direct_documents(shipment, workflow_datasets)
     for resolved in resolved_direct:
@@ -1327,6 +1562,7 @@ def shipment_detail(shipment_no: str, request: Request):
 {view_action}
 <a href="{html_attr(doc['pdf'].format(value=value))}">PDF</a>
 <a href="{html_attr(doc['edit'].format(value=value))}">Edit</a>
+<a href="/send-email/{EMAIL_DOCUMENT_TYPES.get(doc['field'], '')}/{quote(value, safe='')}">Send Email</a>
 </div>
 """
         cards += f"""
@@ -1355,6 +1591,7 @@ def shipment_detail(shipment_no: str, request: Request):
 <a href="{html_attr(operational['view'].format(value=value))}">View</a>
 <a href="{html_attr(operational['pdf'].format(value=value))}">PDF</a>
 <a href="{html_attr(operational['edit'].format(value=value))}">Edit</a>
+{f'<a href="/send-email/{EMAIL_DOCUMENT_TYPES[operational["field"]]}/{quote(value, safe="")}">Send Email</a>' if operational.get("field") in EMAIL_DOCUMENT_TYPES else ''}
 </div>
 </div>
 """
@@ -1439,6 +1676,9 @@ button,.btn{{display:inline-block;padding:13px 18px;background:#111827;color:whi
 .health-track{{display:block;height:5px;margin-top:9px;background:#374151;border-radius:999px;overflow:hidden;}}
 .health-fill{{display:block;height:100%;border-radius:999px;}}
 .remarks{{margin-top:14px;background:#1F2937;border-radius:12px;padding:14px;}}
+.tracking{{margin-top:24px;background:white;border:1px solid #E5E7EB;border-radius:16px;padding:24px;box-shadow:0 10px 25px rgba(15,23,42,.07)}}
+.tracking-head{{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:18px}}.tracking-head h2{{margin:0}}
+.tracking-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.tracking-grid>div{{padding:14px;border:1px solid #E5E7EB;border-radius:11px;background:#F8FAFC}}.tracking .label{{color:#64748B}}.tracking-status{{display:inline-flex;padding:8px 13px;border-radius:999px;background:#DBEAFE;color:#1E3A8A;font-size:17px;font-weight:800}}.tracking-memo{{margin-top:13px;padding:14px;border-radius:11px;background:#F8FAFC;white-space:pre-wrap}}
 .next-step{{display:flex;align-items:center;justify-content:space-between;gap:22px;margin-top:24px;padding:24px 26px;background:#111827;color:white;border-radius:16px;box-shadow:0 12px 30px rgba(15,23,42,.14);}}
 .next-step h2{{font-size:28px;margin:5px 0 8px;}}
 .next-step p{{color:#D1D5DB;margin:0;line-height:1.5;}}
@@ -1509,7 +1749,9 @@ button,.btn{{display:inline-block;padding:13px 18px;background:#111827;color:whi
 .actions a{{flex:1;text-align:center;background:#111827;color:white;text-decoration:none;padding:10px;border-radius:10px;font-weight:bold;}}
 .section-title{{margin:34px 0 0;font-size:26px;}}
 .operational-record+.operational-record{{border-top:1px solid #E5E7EB;margin-top:18px;padding-top:18px;}}
+.email-history{{margin-top:24px;background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:24px;overflow:auto}}.email-history table{{width:100%;border-collapse:collapse}}.email-history th,.email-history td{{padding:10px;border-bottom:1px solid #E5E7EB;text-align:left;font-size:13px}}
 @media(max-width:780px){{body{{padding:18px}}.meta{{grid-template-columns:1fr}}.header h1{{font-size:32px}}.next-step{{align-items:flex-start;flex-direction:column}}.optional-track{{grid-template-columns:1fr 1fr}}}}
+@media(max-width:780px){{.tracking-grid{{grid-template-columns:1fr}}.tracking-head{{align-items:flex-start;flex-direction:column}}}}
 @media(max-width:480px){{.optional-track{{grid-template-columns:1fr}}}}
 @media(max-width:780px){{.relationship-heading{{align-items:flex-start;flex-direction:column}}.relationship-tree{{min-width:0}}.relationship-tree,.relationship-tree ul{{padding-left:20px}}.relationship-tree ul::before{{left:6px}}.relationship-tree li{{padding-left:20px}}.relationship-tree li::before{{left:6px;width:14px}}.relationship-node,.relationship-node.root{{width:100%;max-width:100%}}}}
 </style>
@@ -1521,6 +1763,8 @@ button,.btn{{display:inline-block;padding:13px 18px;background:#111827;color:whi
 <a class="btn" href="/shipment-list">Shipment List</a>
 <a class="btn" href="/edit-shipment/{html_attr(shipment_no)}">Edit Shipment</a>
 <a class="btn" href="/shipment-pdf/{html_attr(shipment_no)}">PDF</a>
+<a class="btn" href="/shipment/{html_attr(shipment_no)}/package">Document Package</a>
+<a class="btn" href="/send-email/document-package/{html_attr(shipment_no)}">Send Package</a>
 </div>
 <div class="header">
 <h1>{html_text(shipment.get("shipment_no", ""))}</h1>
@@ -1537,6 +1781,8 @@ button,.btn{{display:inline-block;padding:13px 18px;background:#111827;color:whi
 </div>
 <div class="remarks"><div class="label">Remarks</div><div>{html_text(shipment.get("remarks", ""))}</div></div>
 </div>
+<section class="tracking"><div class="tracking-head"><div><h2>Tracking Information</h2><div class="tracking-status">{html_text(shipment.get("status", "Draft"))}</div></div><a class="btn" href="/shipment/{html_attr(shipment_no)}/tracking">Edit Tracking</a></div><div class="tracking-grid">{tracking_rows}</div><div class="tracking-memo"><div class="label">Tracking Memo</div>{html_text(shipment.get("tracking_memo", "") or "-")}</div></section>
+<section class="email-history"><h2>Email Delivery History</h2><table><thead><tr><th>Sent At</th><th>Document</th><th>Recipient</th><th>Subject</th><th>Result</th></tr></thead><tbody>{email_history_rows}</tbody></table></section>
 {next_step_card}
 {workflow_timeline}
 {relationship_graph}
@@ -1747,7 +1993,7 @@ def update_shipment(
     shipment_name: str = Form(""),
     customer: str = Form(""),
     buyer: str = Form(""),
-    status: str = Form("Inquiry"),
+    status: str = Form("Draft"),
     remarks: str = Form(""),
     quotation_no: str = Form(""),
     pi_no: str = Form(""),
@@ -1795,6 +2041,8 @@ def update_shipment(
                 updated[field] = current.get(field, "") if value is None else value
             for field in CARGO_SNAPSHOT_FIELDS:
                 updated[field] = deepcopy(current.get(field, [] if field == "items" else ""))
+            for field in TRACKING_FIELDS:
+                updated[field] = current.get(field, "")
             updated = resolve_shipment_snapshot(updated, account_id)
             validate_shipment_values(updated, account_id, datasets)
             updated["account_id"] = account_id

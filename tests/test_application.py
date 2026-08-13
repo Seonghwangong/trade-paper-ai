@@ -9,12 +9,12 @@ from starlette.requests import Request
 from tests.helpers import normalize_html, route_snapshot_digest
 
 
-EXPECTED_ROUTE_DIGEST = "5076dea854c15fa8eaf838bce78b794a231d6ad4cfc931a3c8e3d690d42623e1"
+EXPECTED_ROUTE_DIGEST = "c377ab86988d4411a1b8e50c941e6af371732748cbf8b298126c4b32f0d01b17"
 
 
 def test_application_import_and_route_order():
     assert main.app is not None
-    assert len(main.app.routes) == 219
+    assert len(main.app.routes) == 233
     assert route_snapshot_digest(main.app) == EXPECTED_ROUTE_DIGEST
 
 
@@ -258,6 +258,7 @@ def test_deployment_readiness_validates_required_production_settings(tmp_path):
     }
     report = main.deployment_readiness(production)
     assert report["email_backend"] == "disabled"
+    assert report["email_configuration"] == "Not Ready"
     assert report["warnings"] == [
         "SMTP/email delivery is disabled; password reset email delivery is unavailable."
     ]

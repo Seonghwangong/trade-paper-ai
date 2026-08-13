@@ -74,7 +74,12 @@ def load_packing_lists(account_id):
     return packing_module.load_packing_lists(account_id)
 
 
-def validate_bl_links(packing_no, invoice_no, account_id, shipment_no=""):
+def load_bookings(account_id):
+    from app import booking_confirmation as booking_module
+    return booking_module.load_bookings(account_id)
+
+
+def validate_bl_links(packing_no, invoice_no, account_id, shipment_no="", booking_record_no=""):
     packing = require_existing_reference("Packing List", packing_no, load_packing_lists(account_id), "packing_no", required=True)
     require_consistent_reference("Invoice", invoice_no, packing.get("invoice_no", ""), "selected Packing List")
     require_existing_reference("Invoice", invoice_no or packing.get("invoice_no", ""), invoice_module.load_invoices(account_id), "invoice_no", required=True)
@@ -83,6 +88,14 @@ def validate_bl_links(packing_no, invoice_no, account_id, shipment_no=""):
         shipment = require_existing_reference("Shipment", shipment_no, shipment_module.load_shipments(account_id), "shipment_no", required=True)
         require_consistent_reference("Packing List", packing_no, shipment.get("packing_no", ""), "selected Shipment")
         require_consistent_reference("Invoice", invoice_no, shipment.get("invoice_no", ""), "selected Shipment")
+    if booking_record_no:
+        booking = require_existing_reference(
+            "Booking Confirmation", booking_record_no, load_bookings(account_id),
+            "booking_record_no", required=True,
+        )
+        require_consistent_reference("Shipment", shipment_no, booking.get("shipment_no", ""), "selected Booking")
+        require_consistent_reference("Packing List", packing_no, booking.get("packing_no", ""), "selected Booking")
+        require_consistent_reference("Invoice", invoice_no, booking.get("invoice_no", ""), "selected Booking")
 
 
 def html_attr(value):
@@ -123,22 +136,22 @@ def build_items(name, quantity, hs_code, carton, net_weight, gross_weight):
     return items
 
 
-def build_item_rows(items):
+def build_item_rows(items, readonly=False):
     if not items:
         items = [{}]
 
     rows = ""
+    readonly_attr = " readonly" if readonly else ""
     for item in items:
         rows += f"""
 <div class="item-row">
 <input type="hidden" name="item_id" value="{html_attr(item.get('item_id', ''))}">
-<input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item Name">
-<input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity" oninput="calculateTotals()">
-<input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
-<input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton" oninput="calculateTotals()">
-<input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight" oninput="calculateTotals()">
-<input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight" oninput="calculateTotals()">
-<button class="remove" type="button" onclick="removeItem(this)">Remove Item</button>
+<input type="text" name="item_name" value="{html_attr(item.get('name', ''))}" placeholder="Item Name"{readonly_attr}>
+<input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity"{readonly_attr}>
+<input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code"{readonly_attr}>
+<input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton"{readonly_attr}>
+<input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight"{readonly_attr}>
+<input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight"{readonly_attr}>
 </div>
 """
     return rows
@@ -146,6 +159,10 @@ def build_item_rows(items):
 
 def blank_payload():
     return {
+        "bl_no": "",
+        "booking_record_no": "",
+        "shipment_no": "",
+        "si_no": "",
         "packing_no": "",
         "invoice_no": "",
         "shipper": "",
@@ -156,11 +173,14 @@ def blank_payload():
         "consignee_address": "",
         "consignee_email": "",
         "notify_party": "",
+        "carrier": "",
         "vessel": "",
         "voyage_no": "",
         "port_of_loading": "",
         "port_of_discharge": "",
         "place_of_delivery": "",
+        "place_of_receipt": "",
+        "freight_term": "",
         "bl_date": datetime.now().strftime("%Y-%m-%d"),
         "items": [],
         "total_carton": "",
@@ -214,6 +234,8 @@ def resolve_party_snapshot(payload, account_id, packing=None, invoice=None):
     }
     fill_missing_snapshot_fields(resolved, fallbacks, preserve_empty=preserve_empty)
     resolved["invoice_no"] = invoice_no
+    from app import product as product_module
+    product_module.enrich_items_from_products(resolved.get("items", []), account_id)
     return resolved
 
 
@@ -244,25 +266,74 @@ def payload_from_packing(packing_no, account_id):
     return payload
 
 
+def payload_from_booking(booking_record_no, account_id):
+    """Build a new B/L snapshot from one account-owned Booking Confirmation."""
+    target = str(booking_record_no or "").strip()
+    if not target:
+        return blank_payload()
+    booking = next(
+        (record for record in load_bookings(account_id)
+         if str(record.get("booking_record_no", "") or "").strip() == target),
+        None,
+    )
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    from app import booking_confirmation as booking_module
+    snapshot = booking_module.resolve_booking_snapshot(booking, account_id)
+    payload = blank_payload()
+    payload.update({
+        "booking_record_no": target,
+        "shipment_no": snapshot.get("shipment_no", ""),
+        "si_no": snapshot.get("si_no", ""),
+        "packing_no": snapshot.get("packing_no", ""),
+        "invoice_no": snapshot.get("invoice_no", ""),
+        "shipper": snapshot.get("exporter_name", snapshot.get("exporter", "")),
+        "shipper_address": snapshot.get("exporter_address", ""),
+        "shipper_email": snapshot.get("exporter_email", ""),
+        "shipper_phone": snapshot.get("exporter_phone", ""),
+        "consignee": snapshot.get("consignee_name", snapshot.get("consignee", "")),
+        "consignee_address": snapshot.get("consignee_address", ""),
+        "consignee_email": snapshot.get("consignee_email", ""),
+        "carrier": snapshot.get("carrier", ""),
+        "vessel": snapshot.get("vessel", ""),
+        "voyage_no": snapshot.get("voyage_no", ""),
+        "port_of_loading": snapshot.get("port_of_loading", ""),
+        "port_of_discharge": snapshot.get("port_of_discharge", ""),
+        "place_of_delivery": snapshot.get("place_of_delivery", ""),
+        "items": snapshot.get("items", []),
+        "total_carton": snapshot.get("total_carton", ""),
+        "total_net_weight": snapshot.get("total_net_weight", ""),
+        "total_gross_weight": snapshot.get("total_gross_weight", ""),
+    })
+    return payload
+
+
 def build_record(
     bl_no, packing_no, invoice_no, shipper, consignee, notify_party, vessel,
     voyage_no, port_of_loading, port_of_discharge, place_of_delivery, bl_date,
     item_name, quantity, hs_code, carton, net_weight, gross_weight,
-    total_carton, total_net_weight, total_gross_weight,
+    total_carton, total_net_weight, total_gross_weight, booking_record_no="",
+    shipment_no="", si_no="", carrier="", place_of_receipt="", freight_term="",
 ):
     items = build_items(item_name, quantity, hs_code, carton, net_weight, gross_weight)
     return {
         "bl_no": bl_no,
+        "booking_record_no": booking_record_no,
+        "shipment_no": shipment_no,
+        "si_no": si_no,
         "packing_no": packing_no,
         "invoice_no": invoice_no,
         "shipper": shipper,
         "consignee": consignee,
         "notify_party": notify_party,
+        "carrier": carrier,
         "vessel": vessel,
         "voyage_no": voyage_no,
         "port_of_loading": port_of_loading,
         "port_of_discharge": port_of_discharge,
         "place_of_delivery": place_of_delivery,
+        "place_of_receipt": place_of_receipt,
+        "freight_term": freight_term,
         "bl_date": bl_date,
         "items": items,
         "total_carton": total_carton,
@@ -271,11 +342,28 @@ def build_record(
     }
 
 
-def render_form(record, action, title, button_text, show_bl_no=False, shipment_no=""):
-    rows = build_item_rows(record.get("items", []))
+def render_form(record, action, title, button_text, show_bl_no=False, shipment_no="", account_id="", create_mode=False):
+    rows = build_item_rows(record.get("items", []), readonly=True)
     bl_no_input = ""
     if show_bl_no:
         bl_no_input = f'<input type="text" value="{html_attr(record.get("bl_no", ""))}" placeholder="B/L No" readonly>'
+    else:
+        bl_no_input = f'<input type="text" value="{html_attr(record.get("bl_no", ""))}" placeholder="Generated on save" readonly>'
+
+    selected_booking = str(record.get("booking_record_no", "") or "")
+    if create_mode:
+        options = ['<option value="">Select Booking</option>']
+        for booking in reversed(load_bookings(account_id)):
+            value = str(booking.get("booking_record_no", "") or "")
+            selected = " selected" if value == selected_booking else ""
+            options.append(f'<option value="{html_attr(value)}"{selected}>{html_attr(value)} · {html_attr(booking.get("booking_reference", booking.get("booking_no", "")))}</option>')
+        required = '' if record.get("packing_no") and not selected_booking else ' required aria-required="true"'
+        booking_control = f'<select name="booking_record_no"{required} onchange="selectBooking(this.value)">{"".join(options)}</select>'
+    else:
+        booking_control = f'<input type="hidden" name="booking_record_no" value="{html_attr(selected_booking)}"><input type="text" value="{html_attr(selected_booking)}" readonly>'
+
+    def readonly_field(name, value):
+        return f'<input type="hidden" name="{html_attr(name)}" value="{html_attr(value)}"><input type="text" value="{html_attr(value)}" readonly>'
 
     html = """
 <!DOCTYPE html>
@@ -302,6 +390,11 @@ __FORM_FOOTER__
 </div>
 
 <script>
+function selectBooking(value){
+    const url = new URL('/bl-form', window.location.origin);
+    if(value) url.searchParams.set('booking_record_no', value);
+    window.location.assign(url.toString());
+}
 function addItem(){
     const area = document.getElementById("items_area");
     const first = document.querySelector(".item-row");
@@ -352,6 +445,7 @@ calculateTotals();
         "__TITLE__": html_attr(title),
         "__ACTION__": html_attr(action),
         "__BL_NO_INPUT__": bl_no_input,
+        "__BOOKING_CONTROL__": booking_control,
         "__PACKING_NO__": html_attr(record.get("packing_no", "")),
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
         "__BL_DATE__": html_attr(record.get("bl_date", "")),
@@ -363,6 +457,9 @@ calculateTotals();
         "__PORT_OF_LOADING__": html_attr(record.get("port_of_loading", "")),
         "__PORT_OF_DISCHARGE__": html_attr(record.get("port_of_discharge", "")),
         "__PLACE_OF_DELIVERY__": html_attr(record.get("place_of_delivery", "")),
+        "__CARRIER__": html_attr(record.get("carrier", "")),
+        "__PLACE_OF_RECEIPT__": html_attr(record.get("place_of_receipt", "")),
+        "__FREIGHT_TERM__": html_attr(record.get("freight_term", "")),
         "__ITEM_ROWS__": rows,
         "__TOTAL_CARTON__": html_attr(record.get("total_carton", "")),
         "__TOTAL_NET_WEIGHT__": html_attr(record.get("total_net_weight", "")),
@@ -371,25 +468,28 @@ calculateTotals();
         "__FORM_CSS__": form_css(max_width=960) + imported_section_css() + "\n.tp-imported-content .card{margin:0;padding:0;border:0;background:transparent}",
         "__NAVIGATION__": navigation_footer("/bl-list", "B/L List", state="Editing" if show_bl_no else "New"),
         "__DOCUMENT_SECTION__": section_card("Document Information", metadata([
+            ("Booking *", booking_control),
             ("B/L No", bl_no_input),
-            ("Packing No", f'<input type="text" name="packing_no" value="{html_attr(record.get("packing_no", ""))}" placeholder="Packing No">'),
-            ("Invoice No", f'<input type="text" name="invoice_no" value="{html_attr(record.get("invoice_no", ""))}" placeholder="Invoice No">'),
-            ("B/L Date", f'<input type="date" name="bl_date" value="{html_attr(record.get("bl_date", ""))}">'),
+            ("Shipment", readonly_field("shipment_no", record.get("shipment_no", shipment_no))),
+            ("Shipping Instruction", readonly_field("si_no", record.get("si_no", ""))),
+            ("Commercial Invoice", readonly_field("invoice_no", record.get("invoice_no", ""))),
+            ("Packing List", readonly_field("packing_no", record.get("packing_no", ""))),
+            ("Issue Date", f'<input type="date" name="bl_date" value="{html_attr(record.get("bl_date", ""))}">'),
         ])),
         "__PARTY_SECTION__": render_imported_section("party", section_card("Party Information", metadata([
-            ("Shipper", f'<input type="text" name="shipper" value="{html_attr(record.get("shipper", ""))}" placeholder="Shipper">'),
-            ("Shipper Address", f'<input type="text" name="shipper_address" value="{html_attr(record.get("shipper_address", ""))}" placeholder="Shipper Address">'),
-            ("Shipper Email", f'<input type="email" name="shipper_email" value="{html_attr(record.get("shipper_email", ""))}" placeholder="Shipper Email">'),
-            ("Shipper Phone", f'<input type="text" name="shipper_phone" value="{html_attr(record.get("shipper_phone", ""))}" placeholder="Shipper Phone">'),
-            ("Consignee", f'<input type="text" name="consignee" value="{html_attr(record.get("consignee", ""))}" placeholder="Consignee">'),
-            ("Consignee Address", f'<input type="text" name="consignee_address" value="{html_attr(record.get("consignee_address", ""))}" placeholder="Consignee Address">'),
-            ("Consignee Email", f'<input type="email" name="consignee_email" value="{html_attr(record.get("consignee_email", ""))}" placeholder="Consignee Email">'),
-            ("Notify Party", f'<input type="text" name="notify_party" value="{html_attr(record.get("notify_party", ""))}" placeholder="Notify Party">'),
+            ("Shipper", f'<input type="text" name="shipper" value="{html_attr(record.get("shipper", ""))}" readonly>'),
+            ("Shipper Address", f'<input type="text" name="shipper_address" value="{html_attr(record.get("shipper_address", ""))}" readonly>'),
+            ("Shipper Email", f'<input type="email" name="shipper_email" value="{html_attr(record.get("shipper_email", ""))}" readonly>'),
+            ("Shipper Phone", f'<input type="text" name="shipper_phone" value="{html_attr(record.get("shipper_phone", ""))}" readonly>'),
+            ("Consignee", f'<input type="text" name="consignee" value="{html_attr(record.get("consignee", ""))}" readonly>'),
+            ("Consignee Address", f'<input type="text" name="consignee_address" value="{html_attr(record.get("consignee_address", ""))}" readonly>'),
+            ("Consignee Email", f'<input type="email" name="consignee_email" value="{html_attr(record.get("consignee_email", ""))}" readonly>'),
+            ("Notify Party", f'<input type="text" name="notify_party" value="{html_attr(record.get("notify_party", ""))}" readonly>'),
         ]))),
-        "__TRANSPORT_SECTION__": section_card("Transport Information", f'<input type="text" name="vessel" value="{html_attr(record.get("vessel", ""))}" placeholder="Vessel"><input type="text" name="voyage_no" value="{html_attr(record.get("voyage_no", ""))}" placeholder="Voyage No"><input type="text" name="port_of_loading" value="{html_attr(record.get("port_of_loading", ""))}" placeholder="Port of Loading"><input type="text" name="port_of_discharge" value="{html_attr(record.get("port_of_discharge", ""))}" placeholder="Port of Discharge"><input type="text" name="place_of_delivery" value="{html_attr(record.get("place_of_delivery", ""))}" placeholder="Place of Delivery">'),
-        "__CARGO_SECTION__": render_imported_section("cargo", section_card("Cargo Information", f'<div id="items_area">{rows}</div><button class="add" type="button" onclick="addItem()">+ Add Cargo Item</button><input id="total_carton" type="hidden" name="total_carton" value="{html_attr(record.get("total_carton", ""))}"><input id="total_net_weight" type="hidden" name="total_net_weight" value="{html_attr(record.get("total_net_weight", ""))}"><input id="total_gross_weight" type="hidden" name="total_gross_weight" value="{html_attr(record.get("total_gross_weight", ""))}"><div class="totals" id="totals_text"></div>')),
+        "__TRANSPORT_SECTION__": section_card("Transport Information", f'<input type="text" name="carrier" value="{html_attr(record.get("carrier", ""))}" placeholder="Ocean Carrier"><input type="text" name="vessel" value="{html_attr(record.get("vessel", ""))}" placeholder="Vessel"><input type="text" name="voyage_no" value="{html_attr(record.get("voyage_no", ""))}" placeholder="Voyage"><input type="text" name="port_of_loading" value="{html_attr(record.get("port_of_loading", ""))}" placeholder="Port of Loading"><input type="text" name="port_of_discharge" value="{html_attr(record.get("port_of_discharge", ""))}" placeholder="Port of Discharge"><input type="text" name="place_of_receipt" value="{html_attr(record.get("place_of_receipt", ""))}" placeholder="Place of Receipt"><input type="text" name="place_of_delivery" value="{html_attr(record.get("place_of_delivery", ""))}" placeholder="Place of Delivery"><input type="text" name="freight_term" value="{html_attr(record.get("freight_term", ""))}" placeholder="Freight Term">'),
+        "__CARGO_SECTION__": render_imported_section("cargo", section_card("Cargo Information", f'<div id="items_area">{rows}</div><input id="total_carton" type="hidden" name="total_carton" value="{html_attr(record.get("total_carton", ""))}"><input id="total_net_weight" type="hidden" name="total_net_weight" value="{html_attr(record.get("total_net_weight", ""))}"><input id="total_gross_weight" type="hidden" name="total_gross_weight" value="{html_attr(record.get("total_gross_weight", ""))}"><div class="totals" id="totals_text"></div>')),
         "__FORM_FOOTER__": form_footer("/bl-list", button_text),
-        "__SHIPMENT_CONTEXT__": f'<input type="hidden" name="shipment_no" value="{html_attr(shipment_no)}">' if shipment_no else "",
+        "__SHIPMENT_CONTEXT__": "",
     }
     for key, value in replacements.items():
         html = html.replace(key, value)
@@ -418,37 +518,54 @@ def bl_list(request: Request, search: str = ""):
             badge(bl_no), html_attr(record.get("packing_no", "")), html_attr(record.get("invoice_no", "")),
             html_attr(record.get("shipper", "")), html_attr(record.get("consignee", "")),
             button("PDF", f"/bl-pdf/{bl_no}", "secondary"),
+            button("Send Email", f"/send-email/bill-of-lading/{bl_no}", "secondary"),
             button("Edit", f"/edit-bl/{bl_no}", "secondary"),
             button("Delete", f"/delete-bl/{bl_no}", "danger"),
         ])
     content = search_toolbar(button("+ New B/L", "/bl-form"), button("Dashboard", "/", "secondary"), action="/bl-list", value=search, placeholder="Search B/L, packing, invoice, shipper, consignee or item", reset_url="/bl-list", count_label=f"Total Bills of Lading : {len(records)}")
-    content += table(["B/L No", "Packing", "Invoice", "Shipper", "Consignee", "PDF", "Edit", "Delete"], rows, empty_message="No Bills of Lading have been registered yet.")
+    content += table(["B/L No", "Packing", "Invoice", "Shipper", "Consignee", "PDF", "Email", "Edit", "Delete"], rows, empty_message="No Bills of Lading have been registered yet.")
     return HTMLResponse(page_shell("Bill of Lading List", content, subtitle="Manage all Bill of Lading documents"))
 
 
 @router.get("/bl-form")
-def bl_form(request: Request, packing_no: str = "", shipment_no: str = ""):
+def bl_form(request: Request, booking_record_no: str = "", packing_no: str = "", shipment_no: str = ""):
     account_id = _account_id(request)
-    record = payload_from_packing(packing_no, account_id)
-    if packing_no or shipment_no:
+    record = payload_from_booking(booking_record_no, account_id) if booking_record_no else payload_from_packing(packing_no, account_id)
+    if booking_record_no:
+        shipment_no = record.get("shipment_no", "")
+        validate_bl_links(record.get("packing_no", ""), record.get("invoice_no", ""), account_id, shipment_no, booking_record_no)
+    elif packing_no or shipment_no:
         validate_bl_links(record.get("packing_no", packing_no), record.get("invoice_no", ""), account_id, shipment_no)
-    return render_form(record, "/bl", "Bill of Lading", "Save Bill of Lading", shipment_no=shipment_no)
+    record["bl_no"] = next_identifier(load_bill_of_lading_records(), "bl_no", "BL")
+    return render_form(record, "/bl", "Bill of Lading", "Save Bill of Lading", shipment_no=shipment_no, account_id=account_id, create_mode=True)
+
+
+def bl_success_response(record):
+    bl_no = str(record.get("bl_no", "") or "")
+    shipment_no = str(record.get("shipment_no", "") or "")
+    co_url = f'/co-form?bl_no={html_attr(bl_no)}&amp;shipment_no={html_attr(shipment_no)}'
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bill of Lading Saved</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}.card{{width:min(620px,100%);padding:34px;border:1px solid #E5E7EB;border-radius:18px;background:#fff;text-align:center;box-shadow:0 14px 34px rgba(15,23,42,.09)}}h1{{margin:0 0 10px}}p{{color:#475569}}.actions{{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:20px}}a{{display:inline-flex;min-height:46px;align-items:center;padding:11px 16px;border-radius:10px;background:#E5E7EB;color:#111827;text-decoration:none;font-weight:800}}a.primary{{background:#111827;color:#fff}}</style></head><body><main><section class="card"><h1>Bill of Lading Saved</h1><p>✓ {html_attr(bl_no)} was created successfully.</p><div class="actions"><a class="primary" href="{co_url}">Continue to Certificate of Origin →</a><a href="/bl-pdf/{html_attr(bl_no)}">View PDF</a><a href="/shipment/{html_attr(shipment_no)}">View Shipment</a></div></section></main></body></html>''')
 
 
 @router.post("/bl")
 def save_bl(
     request: Request,
+    booking_record_no: str = Form(""),
     shipment_no: str = Form(""),
+    si_no: str = Form(""),
     packing_no: str = Form(""),
     invoice_no: str = Form(""),
     shipper: str = Form(""),
     consignee: str = Form(""),
     notify_party: str = Form(""),
+    carrier: str = Form(""),
     vessel: str = Form(""),
     voyage_no: str = Form(""),
     port_of_loading: str = Form(""),
     port_of_discharge: str = Form(""),
     place_of_delivery: str = Form(""),
+    place_of_receipt: str = Form(""),
+    freight_term: str = Form(""),
     bl_date: str = Form(""),
     item_name: List[str] = Form([]),
     item_id: List[str] = Form([]),
@@ -467,7 +584,21 @@ def save_bl(
     consignee_email: Annotated[Optional[str], Form()] = None,
 ):
     account_id = _account_id(request)
-    validate_bl_links(packing_no, invoice_no, account_id, shipment_no)
+    booking_record_no = booking_record_no if isinstance(booking_record_no, str) else ""
+    si_no = si_no if isinstance(si_no, str) else ""
+    carrier = carrier if isinstance(carrier, str) else ""
+    place_of_receipt = place_of_receipt if isinstance(place_of_receipt, str) else ""
+    freight_term = freight_term if isinstance(freight_term, str) else ""
+    item_id = item_id if isinstance(item_id, (list, tuple)) else []
+    total_carton = total_carton if isinstance(total_carton, str) else ""
+    total_net_weight = total_net_weight if isinstance(total_net_weight, str) else ""
+    total_gross_weight = total_gross_weight if isinstance(total_gross_weight, str) else ""
+    shipper_address = shipper_address if isinstance(shipper_address, str) else None
+    shipper_email = shipper_email if isinstance(shipper_email, str) else None
+    shipper_phone = shipper_phone if isinstance(shipper_phone, str) else None
+    consignee_address = consignee_address if isinstance(consignee_address, str) else None
+    consignee_email = consignee_email if isinstance(consignee_email, str) else None
+    validate_bl_links(packing_no, invoice_no, account_id, shipment_no, booking_record_no)
     shipper = require_text("Shipper", shipper)
     consignee = require_text("Consignee", consignee)
     saved = {}
@@ -479,6 +610,7 @@ def save_bl(
         place_of_delivery, bl_date, item_name, quantity, hs_code, carton,
         net_weight, gross_weight, total_carton, total_net_weight,
         total_gross_weight,
+        booking_record_no, shipment_no, si_no, carrier, place_of_receipt, freight_term,
         )
         assign_item_ids(record["items"], item_id)
         record.update({
@@ -491,32 +623,39 @@ def save_bl(
         record = resolve_party_snapshot(record, account_id)
         record["account_id"] = account_id
         records.append(record)
-        saved["bl_no"] = bl_number
+        saved.update(record)
     locked_json_mutation(BL_FILE, [], add_bl, list)
-    return RedirectResponse(url=shipment_context_redirect_url(shipment_no, "bl_no", saved["bl_no"], "/bl-list"), status_code=303)
+    shipment_context_redirect_url(shipment_no, "bl_no", saved["bl_no"], "/bl-list")
+    return bl_success_response(saved)
 
 
 @router.get("/edit-bl/{bl_no}")
 def edit_bl(bl_no: str, request: Request):
     record = public_bill_of_lading(_owned_bl(bl_no, _account_id(request)))
     record = resolve_party_snapshot(record, _account_id(request))
-    return render_form(record, f"/update-bl/{bl_no}", "Edit Bill of Lading", "Update Bill of Lading", True)
+    return render_form(record, f"/update-bl/{bl_no}", "Edit Bill of Lading", "Update Bill of Lading", True, shipment_no=record.get("shipment_no", ""), account_id=_account_id(request))
 
 
 @router.post("/update-bl/{bl_no}")
 def update_bl(
     bl_no: str,
     request: Request,
+    booking_record_no: str = Form(""),
+    shipment_no: str = Form(""),
+    si_no: str = Form(""),
     packing_no: str = Form(""),
     invoice_no: str = Form(""),
     shipper: str = Form(""),
     consignee: str = Form(""),
     notify_party: str = Form(""),
+    carrier: str = Form(""),
     vessel: str = Form(""),
     voyage_no: str = Form(""),
     port_of_loading: str = Form(""),
     port_of_discharge: str = Form(""),
     place_of_delivery: str = Form(""),
+    place_of_receipt: str = Form(""),
+    freight_term: str = Form(""),
     bl_date: str = Form(""),
     item_name: List[str] = Form([]),
     item_id: List[str] = Form([]),
@@ -536,7 +675,16 @@ def update_bl(
 ):
     account_id = _account_id(request)
     current = _owned_bl(bl_no, account_id)
-    validate_bl_links(packing_no, invoice_no, account_id)
+    booking_record_no = booking_record_no if isinstance(booking_record_no, str) else ""
+    shipment_no = shipment_no if isinstance(shipment_no, str) else ""
+    si_no = si_no if isinstance(si_no, str) else ""
+    carrier = carrier if isinstance(carrier, str) else str(current.get("carrier", "") or "")
+    place_of_receipt = place_of_receipt if isinstance(place_of_receipt, str) else str(current.get("place_of_receipt", "") or "")
+    freight_term = freight_term if isinstance(freight_term, str) else str(current.get("freight_term", "") or "")
+    booking_record_no = booking_record_no or current.get("booking_record_no", "")
+    shipment_no = shipment_no or current.get("shipment_no", "")
+    si_no = si_no or current.get("si_no", "")
+    validate_bl_links(packing_no, invoice_no, account_id, shipment_no, booking_record_no)
     shipper = require_text("Shipper", shipper)
     consignee = require_text("Consignee", consignee)
     updated = build_record(
@@ -545,6 +693,7 @@ def update_bl(
         place_of_delivery, bl_date, item_name, quantity, hs_code, carton,
         net_weight, gross_weight, total_carton, total_net_weight,
         total_gross_weight,
+        booking_record_no, shipment_no, si_no, carrier, place_of_receipt, freight_term,
     )
     assign_item_ids(updated["items"], item_id, current.get("items", []))
     updated.update({

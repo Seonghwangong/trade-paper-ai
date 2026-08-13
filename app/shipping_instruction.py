@@ -290,6 +290,8 @@ def resolve_si_snapshot(record, account_id, shipment=None, packing=None, invoice
         "packing_no": packing_no,
         "invoice_no": invoice_no,
     })
+    from app import product as product_module
+    product_module.enrich_items_from_products(resolved.get("items", []), account_id)
     return resolved
 
 
@@ -625,6 +627,7 @@ def si_list(request: Request, search: str = ""):
 <td>{html_text(record.get('consignee', ''))}</td>
 <td>{html_text(record.get('total_carton', ''))}</td>
 <td><a class="link" href="/si-pdf/{html_attr(si_no)}">PDF</a></td>
+<td><a class="link" href="/send-email/shipping-instruction/{html_attr(si_no)}">Send Email</a></td>
 <td><a class="link" href="/edit-si/{html_attr(si_no)}">Edit</a></td>
 <td><a class="danger" href="/delete-si/{html_attr(si_no)}">Delete</a></td>
 </tr>
@@ -676,7 +679,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 <table>
 <thead>
 <tr>
-<th>S/I No</th><th>Date</th><th>Packing No</th><th>Invoice No</th><th>Shipper</th><th>Consignee</th><th>Total Cartons</th><th>PDF</th><th>Edit</th><th>Delete</th>
+<th>S/I No</th><th>Date</th><th>Packing No</th><th>Invoice No</th><th>Shipper</th><th>Consignee</th><th>Total Cartons</th><th>PDF</th><th>Email</th><th>Edit</th><th>Delete</th>
 </tr>
 </thead>
 <tbody>{rows}</tbody>

@@ -82,6 +82,38 @@ def test_smtp_success_and_password_reset_templates():
     assert "<h1>Password Reset</h1>" in smtp.message.get_body(preferencelist=("html",)).get_content()
 
 
+def test_deliver_password_reset_reaches_smtp_adapter_without_external_delivery(monkeypatch):
+    SuccessfulSMTP.instances = []
+    environment = _environment()
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(
+        email_delivery, "deliver_email",
+        lambda message: email_delivery._send_smtp(message, environment, smtp_factory=SuccessfulSMTP),
+    )
+    assert email_delivery.deliver_password_reset("owner@example.com", "mock-reset-token") is True
+    sent = SuccessfulSMTP.instances[0].message
+    assert sent["To"] == "owner@example.com"
+    assert "mock-reset-token" in sent.get_body(preferencelist=("plain",)).get_content()
+
+
+def test_smtp_pdf_and_zip_attachments_use_existing_adapter():
+    SuccessfulSMTP.instances = []
+    message = email_delivery.DeliveryMessage(
+        "buyer@example.com", "Trade documents", "Attached", "<p>Attached</p>",
+        "document_delivery", attachments=(
+            email_delivery.EmailAttachment("INV-001.pdf", b"%PDF mock", "application/pdf"),
+            email_delivery.EmailAttachment("SHP-001.zip", b"PK mock", "application/zip"),
+        ),
+    )
+    assert email_delivery.deliver_email(message, _environment(), smtp_factory=SuccessfulSMTP)
+    attachments = list(SuccessfulSMTP.instances[0].message.iter_attachments())
+    assert [(item.get_filename(), item.get_content_type(), item.get_payload(decode=True)) for item in attachments] == [
+        ("INV-001.pdf", "application/pdf", b"%PDF mock"),
+        ("SHP-001.zip", "application/zip", b"PK mock"),
+    ]
+
+
 def test_smtp_retries_connection_and_timeout_but_not_authentication():
     environment = _environment()
     message = email_delivery.DeliveryMessage(
@@ -114,6 +146,34 @@ def test_smtp_retries_connection_and_timeout_but_not_authentication():
         message, environment, smtp_factory=authentication_failure,
     ) is False
     assert len(auth_calls) == 1
+
+
+def test_smtp_failure_logs_exclude_credentials_message_recipient_and_attachment(caplog):
+    environment = _environment()
+    message = email_delivery.DeliveryMessage(
+        "private-recipient@example.com", "private subject", "private body",
+        "<p>private html</p>", "document_delivery",
+        attachments=(email_delivery.EmailAttachment("secret.pdf", b"secret attachment"),),
+    )
+    def authentication_failure(*args, **kwargs):
+        raise smtplib.SMTPAuthenticationError(535, b"smtp-secret-value private body")
+    caplog.set_level(logging.WARNING, logger="trade-paper-ai.email-delivery")
+    assert email_delivery.deliver_email(message, environment, smtp_factory=authentication_failure) is False
+    for secret in (
+        "smtp-secret-value", "smtp-user", "private-recipient@example.com",
+        "private subject", "private body", "private html", "secret.pdf", "secret attachment",
+    ):
+        assert secret not in caplog.text
+    assert "error_type=SMTPAuthenticationError" in caplog.text
+
+
+def test_secret_free_email_readiness():
+    assert email_delivery.email_readiness(_environment()) == {"backend": "SMTP", "configuration": "Ready"}
+    missing = _environment()
+    missing.pop("TRADE_PAPER_SMTP_PASSWORD")
+    assert email_delivery.email_readiness(missing) == {"backend": "SMTP", "configuration": "Not Ready"}
+    text = repr(email_delivery.email_readiness(missing))
+    assert "smtp-user" not in text and "smtp-secret-value" not in text
 
 
 def test_public_base_url_policy_does_not_use_request_hosts():

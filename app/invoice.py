@@ -20,6 +20,7 @@ from app.auth import USERS_FILE
 from app.account_company import load_account_company
 from app.routers.company import ACCOUNT_COMPANIES_FILE
 from app import proforma as proforma_module
+from app import product as product_module
 from app.export import set_pdf_export_record
 
 COMPANY_FILE = data_path("company.json")
@@ -81,6 +82,7 @@ def create_invoice(request: Request, payload: dict = Body(...)):
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
     require_items(record.get("items", []))
+    product_module.enrich_items_from_products(record.get("items", []), _account_id(request))
     require_existing_reference("Proforma Invoice", record.get("pi_no", ""), load_proformas(_account_id(request)), "pi_no")
     def add_invoice(invoices):
         record["invoice_no"] = next_identifier(invoices, "invoice_no", "INV")
@@ -308,6 +310,8 @@ def edit_invoice(invoice_no: str, request: Request):
             hs_code = item.get("hs_code", "")
             quantity = item.get("quantity", "")
             unit_price = item.get("unit_price", "")
+            origin = item.get("origin", "")
+            unit = item.get("unit", "")
 
             html = f"""
 <!DOCTYPE html>
@@ -348,6 +352,8 @@ def edit_invoice(invoice_no: str, request: Request):
 
 <input type="text" name="item_name" value="{item_name}" placeholder="Item Name">
 <input type="text" name="hs_code" id="hs1" value="{hs_code}" placeholder="HS Code">
+<input type="text" name="origin" id="origin1" value="{origin}" placeholder="Country of Origin">
+<input type="text" name="unit" id="unit1" value="{unit}" placeholder="Unit">
 <input type="number" name="quantity" id="qty1" value="{quantity}" placeholder="Quantity" oninput="calculateTotal()">
 <input type="number" name="unit_price" id="price1" value="{unit_price}" placeholder="Unit Price" oninput="calculateTotal()">
 </div>
@@ -392,6 +398,8 @@ function selectProduct(number){{
     document.querySelector('input[name="item_name"]').value = product.name || "";
     document.getElementById("price" + number).value = product.unit_price || 0;
     document.getElementById("hs" + number).value = product.hs_code || "";
+    document.getElementById("origin" + number).value = product.origin || "";
+    document.getElementById("unit" + number).value = product.unit || "";
     calculateTotal();
 }}
 
@@ -424,6 +432,8 @@ def update_invoice(
     hs_code: str = Form(""),
     quantity: str = Form(""),
     unit_price: str = Form(""),
+    origin: str = Form(""),
+    unit: str = Form(""),
     seller_address: Annotated[Optional[str], Form()] = None,
     seller_email: Annotated[Optional[str], Form()] = None,
     seller_phone: Annotated[Optional[str], Form()] = None,
@@ -432,6 +442,8 @@ def update_invoice(
     buyer = require_text("Buyer", buyer)
     require_items([item_name])
     account_id = _account_id(request)
+    origin = origin if isinstance(origin, str) else ""
+    unit = unit if isinstance(unit, str) else ""
     def replace_invoice(invoices):
         for inv in invoices:
             if (
@@ -464,7 +476,9 @@ def update_invoice(
                 "name": item_name,
                 "hs_code": hs_code,
                 "quantity": quantity_value,
-                "unit_price": unit_price_value
+                "unit_price": unit_price_value,
+                "origin": origin,
+                "unit": unit,
             }]
             return
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -570,10 +584,11 @@ def invoice_list(request: Request, search: str = ""):
             badge(invoice_no), html_lib.escape(str(inv.get("seller", "") or "")),
             html_lib.escape(str(inv.get("buyer", "") or "")), item_names, f"USD {total:g}",
             button("PDF", f"/invoice-pdf/{invoice_no}", "secondary"),
+            button("Send Email", f"/send-email/invoice/{invoice_no}", "secondary"),
             button("Created" if packing_exists else "Packing", packing_href, "secondary"),
             button("Edit", f"/edit-invoice/{invoice_no}", "secondary"),
             button("Delete", f"/delete-invoice/{invoice_no}", "danger"),
         ])
     content = search_toolbar(button("+ New Invoice", "/invoice"), button("← Dashboard", "/", "secondary"), action="/invoice-list", value=search, placeholder="Search invoice, buyer, seller or item", reset_url="/invoice-list", count_label=f"Total Invoices : {len(valid_invoices)}")
-    content += table(["Invoice No", "Seller", "Buyer", "Product", "Total", "PDF", "Packing", "Edit", "Delete"], rows)
+    content += table(["Invoice No", "Seller", "Buyer", "Product", "Total", "PDF", "Email", "Packing", "Edit", "Delete"], rows)
     return HTMLResponse(page_shell("Invoice List", content, subtitle="Manage all invoice documents"))

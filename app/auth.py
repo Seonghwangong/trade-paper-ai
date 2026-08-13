@@ -399,6 +399,30 @@ class AuthenticationMiddleware:
                 )
                 await response(scope, receive, send)
                 return
+        if user is not None:
+            from app import subscription
+            if subscription.is_document_creation(request):
+                summary = subscription.usage_summary(user["account_id"])
+                if not summary["allowed"]:
+                    response = subscription.usage_limit_response(summary)
+                    await response(scope, receive, send)
+                    return
+                response_status = {"value": 500}
+                recorded = {"value": False}
+                async def usage_send(message):
+                    if message.get("type") == "http.response.start":
+                        response_status["value"] = int(message.get("status", 500))
+                    if (
+                        message.get("type") == "http.response.body"
+                        and not message.get("more_body", False)
+                        and 200 <= response_status["value"] < 400
+                        and not recorded["value"]
+                    ):
+                        subscription.record_document_usage(user["account_id"], path)
+                        recorded["value"] = True
+                    await send(message)
+                await self.app(scope, receive, usage_send)
+                return
         await self.app(scope, receive, send)
 
 
@@ -688,6 +712,8 @@ def register(
             "email": normalized_email,
             "password": _password_hash(password),
             "session_version": 0,
+            "plan": "Free",
+            "subscription_status": "Trial",
         })
 
     locked_json_mutation(USERS_FILE, [], add_user, list)

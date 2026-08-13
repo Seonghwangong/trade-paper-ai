@@ -113,6 +113,14 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             page.locator("#phone").fill(company_phone)
             page.get_by_role("button", name="Save Company").click()
             page.wait_for_url(f"{base_url}/")
+            assert page.get_by_text("Current Plan", exact=True).is_visible()
+            assert page.get_by_role("heading", name="Free", exact=True).is_visible()
+            page.get_by_role("link", name="Upgrade", exact=True).click()
+            page.get_by_role("button", name="Choose Starter").click()
+            page.wait_for_url(f"{base_url}/subscription")
+            assert page.get_by_role("heading", name="Starter", exact=True).is_visible()
+            assert page.locator(".badge", has_text="Trial").is_visible()
+            page.goto(f"{base_url}/")
             company = page.evaluate("fetch('/company-data').then(response => response.json())")
             assert company == {
                 "name": company_name,
@@ -147,6 +155,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             page.locator('input[name="hs_code"]').fill("847130")
             page.locator('input[name="unit_price"]').fill("125")
             page.locator('input[name="origin"]').fill("KR")
+            page.locator('input[name="unit"]').fill("PCS")
             page.get_by_role("button", name="Save Product").click()
             page.wait_for_url(f"{base_url}/products")
             products = page.evaluate("fetch('/product-data').then(response => response.json())")
@@ -155,6 +164,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
                 "hs_code": "847130",
                 "unit_price": "125",
                 "origin": "KR",
+                "unit": "PCS",
             }]
 
             # Steps 7-9: selections fill the Invoice UI and the saved payload is observed exactly.
@@ -172,6 +182,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert page.locator("#item1").input_value() == product_name
             assert page.locator("#hs1").input_value() == "847130"
             assert page.locator("#price1").input_value() == "125"
+            assert page.locator("#origin1").input_value() == "KR"
+            assert page.locator("#unit1").input_value() == "PCS"
             page.locator("#qty1").fill("4")
             assert page.locator("#total").text_content() == "Total: USD 500"
             page.get_by_role("button", name="Save Invoice").click()
@@ -189,6 +201,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
                 "hs_code": "847130",
                 "quantity": 4,
                 "unit_price": 125,
+                "origin": "KR",
+                "unit": "PCS",
             }]
             assert invoice["seller_address"] == company_address
             assert invoice["seller_email"] == email
@@ -204,6 +218,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert page.locator('input[name="hs_code"]').input_value() == "847130"
             assert page.locator('input[name="quantity"]').input_value() == "4"
             assert page.locator('input[name="unit_price"]').input_value() == "125"
+            assert page.locator('input[name="origin"]').input_value() == "KR"
+            assert page.locator('input[name="unit"]').input_value() == "PCS"
             assert page.locator('input[name="seller_address"]').input_value() == company_address
             assert page.locator('input[name="seller_email"]').input_value() == email
             assert page.locator('input[name="seller_phone"]').input_value() == company_phone
@@ -240,6 +256,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert item_card.locator(".item").input_value() == product_name
             assert item_card.locator(".quantity").input_value() == "4"
             assert item_card.locator(".hs_code").input_value() == "847130"
+            assert item_card.locator(".origin").input_value() == "KR"
+            assert item_card.locator(".unit").input_value() == "PCS"
             assert item_card.locator(".carton").input_value() == ""
             assert item_card.locator(".net_weight").input_value() == ""
             assert item_card.locator(".gross_weight").input_value() == ""
@@ -291,6 +309,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
                 "item_name": product_name,
                 "quantity": "4",
                 "hs_code": "847130",
+                "origin": "KR",
+                "unit": "PCS",
                 "carton": "2",
                 "net_weight": "40",
                 "gross_weight": "44",
@@ -316,6 +336,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
                 "name": product_name,
                 "quantity": 4,
                 "hs_code": "847130",
+                "origin": "KR",
+                "unit": "PCS",
                 "carton": "2",
                 "net_weight": "40",
                 "gross_weight": "44",
@@ -340,7 +362,9 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             page.locator('input[name="port_of_loading"]').fill("Busan")
             page.locator('input[name="port_of_discharge"]').fill("Los Angeles")
             page.get_by_role("button", name="Save Bill of Lading").click()
-            page.wait_for_url(f"{base_url}/bl-list")
+            page.get_by_role("heading", name="Bill of Lading Saved").wait_for(state="visible")
+            assert page.get_by_role("link", name="Continue to Certificate of Origin →").is_visible()
+            page.goto(f"{base_url}/bl-list")
             bl_edit_path = page.locator(f'tr:has-text("{packing_no}") a', has_text="Edit").get_attribute("href")
             assert bl_edit_path
             bl_no = bl_edit_path.rsplit("/", 1)[-1]
@@ -408,15 +432,27 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             for field, expected in co_party.items():
                 assert page.locator(f'input[name="{field}"]').input_value() == expected
             for field, expected in {"item_name": product_name, "hs_code": "847130", "quantity": "4",
-                                    "carton": "2", "net_weight": "40", "gross_weight": "44"}.items():
+                                    "unit": "PCS", "carton": "2", "net_weight": "40", "gross_weight": "44"}.items():
                 assert page.locator(f'input[name="{field}"]').input_value() == expected
+            assert page.locator('select[name="bl_no"]').input_value() == bl_no
+            for field in ("shipment_no", "invoice_no", "packing_no"):
+                assert page.locator(f'input[name="{field}"]').get_attribute("readonly") is not None
+            page.locator('input[name="exporter_name"]').fill("User Edited Exporter")
+            co_party["exporter_name"] = "User Edited Exporter"
+            page.locator('input[name="issuing_authority"]').fill("Busan Chamber")
+            page.locator('input[name="certificate_type"]').fill("Preferential")
+            page.locator('input[name="unit"]').fill("SET")
             page.locator('input[name="destination_country"]').fill("US")
             page.get_by_role("button", name="Save Certificate of Origin").click()
-            page.wait_for_url(f"{base_url}/shipment/{shipment_no}")
+            page.get_by_role("heading", name="Certificate of Origin Saved").wait_for(state="visible")
+            view_certificate = page.get_by_role("link", name="View Certificate")
+            assert view_certificate.is_visible()
+            assert page.get_by_role("link", name="Back to Dashboard").is_visible()
+            co_no = view_certificate.get_attribute("href").rsplit("/", 1)[-1]
             page.goto(f"{base_url}/co-list")
             co_edit_path = page.locator(f'tr:has-text("{bl_no}") a', has_text="Edit").get_attribute("href")
             assert co_edit_path
-            co_no = co_edit_path.rsplit("/", 1)[-1]
+            assert co_edit_path.rsplit("/", 1)[-1] == co_no
             page.goto(f"{base_url}{co_edit_path}")
             for field, expected in co_party.items():
                 assert page.locator(f'input[name="{field}"]').input_value() == expected
@@ -425,8 +461,59 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             co_api = page.evaluate(f"fetch('/co-data/{co_no}').then(response => response.json())")
             assert "account_id" not in co_api and co_api["shipment_no"] == shipment_no
             assert co_api["items"][0]["gross_weight"] == "44"
+            assert co_api["items"][0]["unit"] == "SET"
+            assert co_api["issuing_authority"] == "Busan Chamber"
+            assert co_api["certificate_type"] == "Preferential"
             co_pdf = page.request.get(f"{base_url}/co-pdf/{co_no}")
             assert co_pdf.ok and co_pdf.body().startswith(b"%PDF") and b"account_id" not in co_pdf.body()
+
+            # Shipment Document Package resolves all six documents and downloads owned PDFs only.
+            page.goto(f"{base_url}/shipment/{shipment_no}")
+            package_link = page.get_by_role("link", name="Document Package")
+            assert package_link.is_visible()
+            package_link.click()
+            page.wait_for_url(f"{base_url}/shipment/{shipment_no}/package")
+            assert page.get_by_role("heading", name="Document Package").is_visible()
+            for label in ("Commercial Invoice", "Packing List", "Shipping Instruction",
+                          "Booking Confirmation", "Bill of Lading", "Certificate of Origin"):
+                assert page.get_by_role("heading", name=label).is_visible()
+            assert page.get_by_text("5 / 6 documents complete").is_visible()
+            assert page.get_by_text("Booking Confirmation is missing").is_visible()
+            assert page.get_by_role("link", name="View", exact=True).count() == 5
+            assert page.get_by_role("link", name="Edit", exact=True).count() == 5
+            package_zip = page.request.get(f"{base_url}/shipment/{shipment_no}/package.zip")
+            assert package_zip.ok and package_zip.headers["content-type"].startswith("application/zip")
+            page.locator(f'a[href="/send-email/document-package/{shipment_no}"]').click()
+            page.wait_for_url(f"{base_url}/send-email/document-package/{shipment_no}")
+            assert page.get_by_label("Recipient").input_value() == buyer_email
+            assert page.get_by_label("Subject").input_value() == f"Document Package {shipment_no}"
+            page.get_by_label("Message").fill("Please review the attached trade documents.")
+            with page.expect_response(lambda response: response.request.method == "POST") as sent_response:
+                page.get_by_role("button", name="Send Email").click()
+            assert sent_response.value.status == 200, sent_response.value.text()
+            assert "Failed" in sent_response.value.text()
+
+            # Shipment Tracking is explicitly user-managed and remains visible on Detail.
+            page.goto(f"{base_url}/shipment/{shipment_no}")
+            assert page.get_by_text("Draft", exact=True).first.is_visible()
+            page.get_by_role("link", name="Edit Tracking").click()
+            page.wait_for_url(f"{base_url}/shipment/{shipment_no}/tracking")
+            page.get_by_label("Shipment Status").select_option(label="In Transit")
+            page.get_by_label("Container No").fill(f"CONT-{browser_name}")
+            page.get_by_label("Seal No").fill(f"SEAL-{browser_name}")
+            page.get_by_label("Container Type").fill("40HC")
+            page.get_by_label("ETD").fill("2026-08-20")
+            page.get_by_label("ETA").fill("2026-09-02")
+            page.get_by_label("Actual Departure").fill("2026-08-21")
+            page.get_by_label("Tracking Memo").fill("Vessel departed on schedule.")
+            page.get_by_role("button", name="Save Tracking").click()
+            page.wait_for_url(f"{base_url}/shipment/{shipment_no}")
+            assert page.get_by_text("In Transit", exact=True).first.is_visible()
+            assert page.get_by_text(f"CONT-{browser_name}", exact=True).is_visible()
+            assert page.get_by_text("Vessel departed on schedule.").is_visible()
+            page.get_by_role("link", name="Edit Tracking").click()
+            assert page.get_by_label("Shipment Status").input_value() == "In Transit"
+            assert page.get_by_label("Container No").input_value() == f"CONT-{browser_name}"
 
             # Account B cannot list, search, edit, or fetch Account A records.
             page.get_by_role("button", name="Logout").click()
@@ -457,6 +544,10 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert denied_shipment is not None and denied_shipment.status == 404
             denied_shipment_pdf = page.goto(f"{base_url}/shipment-pdf/{shipment_no}")
             assert denied_shipment_pdf is not None and denied_shipment_pdf.status == 404
+            denied_package = page.goto(f"{base_url}/shipment/{shipment_no}/package")
+            assert denied_package is not None and denied_package.status == 404
+            denied_tracking = page.goto(f"{base_url}/shipment/{shipment_no}/tracking")
+            assert denied_tracking is not None and denied_tracking.status == 404
             denied_co = page.goto(f"{base_url}/edit-co/{co_no}")
             assert denied_co is not None and denied_co.status == 404
             denied_co_api = page.goto(f"{base_url}/co-data/{co_no}")

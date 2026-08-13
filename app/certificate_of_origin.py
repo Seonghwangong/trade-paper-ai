@@ -85,12 +85,14 @@ PARTY_SNAPSHOT_FIELDS = (
 )
 
 
-def validate_co_links(bl_no, packing_no, invoice_no, account_id, shipment_no=""):
+def validate_co_links(bl_no, packing_no, invoice_no, account_id, shipment_no="", booking_record_no="", si_no=""):
     bill = require_existing_reference("Bill of Lading", bl_no, load_bills_of_lading(account_id), "bl_no", required=True)
     require_existing_reference("Packing List", packing_no, packing_module.load_packing_lists(account_id), "packing_no")
     require_existing_reference("Invoice", invoice_no, invoice_module.load_invoices(account_id), "invoice_no")
     require_consistent_reference("Packing List", packing_no, bill.get("packing_no", ""), "selected Bill of Lading")
     require_consistent_reference("Invoice", invoice_no, bill.get("invoice_no", ""), "selected Bill of Lading")
+    require_consistent_reference("Booking", booking_record_no, bill.get("booking_record_no", ""), "selected Bill of Lading")
+    require_consistent_reference("Shipping Instruction", si_no, bill.get("si_no", ""), "selected Bill of Lading")
     if shipment_no:
         shipment = require_existing_reference("Shipment", shipment_no, shipment_module.load_shipments(account_id), "shipment_no", required=True)
         require_consistent_reference("Bill of Lading", bl_no, shipment.get("bl_no", ""), "selected Shipment")
@@ -106,8 +108,9 @@ def html_text(value):
     return html_lib.escape(str(value or ""))
 
 
-def bl_select_html(selected, account_id):
-    options = ['<select name="bl_no">', '<option value="">Select B/L</option>']
+def bl_select_html(selected, account_id, disabled=False):
+    disabled_attr = " disabled" if disabled else " required"
+    options = [f'<select name="bl_no"{disabled_attr}>', '<option value="">Select Bill of Lading</option>']
     for bl in load_bills_of_lading(account_id):
         bl_no = bl.get("bl_no", "")
         if not bl_no:
@@ -115,6 +118,8 @@ def bl_select_html(selected, account_id):
         selected_attr = " selected" if bl_no == selected else ""
         options.append(f'<option value="{html_attr(bl_no)}"{selected_attr}>{html_text(bl_no)}</option>')
     options.append("</select>")
+    if disabled:
+        options.append(f'<input type="hidden" name="bl_no" value="{html_attr(selected)}">')
     return "".join(options)
 
 
@@ -133,10 +138,19 @@ def find_product_origin(item, products):
     return item.get("origin", "")
 
 
-def build_items(name, hs_code, quantity, origin, carton=None, net_weight=None, gross_weight=None):
+def find_product_unit(item, products):
+    item_name = str(item.get("name", "")).strip().casefold()
+    item_hs = str(item.get("hs_code", "")).strip().casefold()
+    product = next((p for p in products if item_name and str(p.get("name", "")).strip().casefold() == item_name), None)
+    product = product or next((p for p in products if item_hs and str(p.get("hs_code", "")).strip().casefold() == item_hs), None)
+    return (product or {}).get("unit", item.get("unit", ""))
+
+
+def build_items(name, hs_code, quantity, origin, carton=None, net_weight=None, gross_weight=None, unit=None):
     carton = carton if isinstance(carton, (list, tuple)) else []
     net_weight = net_weight if isinstance(net_weight, (list, tuple)) else []
     gross_weight = gross_weight if isinstance(gross_weight, (list, tuple)) else []
+    unit = unit if isinstance(unit, (list, tuple)) else []
     items = []
     for i in range(len(name)):
         if not name[i].strip():
@@ -146,6 +160,7 @@ def build_items(name, hs_code, quantity, origin, carton=None, net_weight=None, g
             "hs_code": hs_code[i] if i < len(hs_code) else "",
             "quantity": quantity[i] if i < len(quantity) else "",
             "origin": origin[i] if i < len(origin) else "",
+            "unit": unit[i] if i < len(unit) else "",
             "carton": carton[i] if i < len(carton) else "",
             "net_weight": net_weight[i] if i < len(net_weight) else "",
             "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
@@ -166,6 +181,7 @@ def build_item_rows(items):
 <input type="text" name="hs_code" value="{html_attr(item.get('hs_code', ''))}" placeholder="HS Code">
 <input type="text" name="quantity" value="{html_attr(item.get('quantity', ''))}" placeholder="Quantity">
 <input type="text" name="origin" value="{html_attr(item.get('origin', ''))}" placeholder="Origin">
+<input type="text" name="unit" value="{html_attr(item.get('unit', ''))}" placeholder="Unit">
 <input type="text" name="carton" value="{html_attr(item.get('carton', ''))}" placeholder="Carton">
 <input type="text" name="net_weight" value="{html_attr(item.get('net_weight', ''))}" placeholder="Net Weight">
 <input type="text" name="gross_weight" value="{html_attr(item.get('gross_weight', ''))}" placeholder="Gross Weight">
@@ -180,6 +196,8 @@ def blank_payload():
         "co_date": datetime.now().strftime("%Y-%m-%d"),
         "bl_no": "",
         "shipment_no": "",
+        "booking_record_no": "",
+        "si_no": "",
         "invoice_no": "",
         "packing_no": "",
         "exporter": "",
@@ -190,6 +208,8 @@ def blank_payload():
         "port_of_loading": "",
         "port_of_discharge": "",
         "remarks": "",
+        "issuing_authority": "",
+        "certificate_type": "",
         "items": [],
     }
 
@@ -226,12 +246,19 @@ def resolve_co_snapshot(record, account_id, shipment=None, bill=None, packing=No
     for item in resolved.get("items", []):
         if isinstance(item, dict) and ("origin" not in item or (not preserve_empty and not item["origin"])):
             item["origin"] = find_product_origin(item, products)
+        if isinstance(item, dict) and ("unit" not in item or (not preserve_empty and not item["unit"])):
+            item["unit"] = find_product_unit(item, products)
     origins = [item.get("origin") for item in resolved.get("items", []) if isinstance(item, dict) and item.get("origin")]
     if ("country_of_origin" not in resolved or (not preserve_empty and not resolved["country_of_origin"])) and origins and len(set(origins)) == 1:
         resolved["country_of_origin"] = origins[0]
     if "destination_country" not in resolved or (not preserve_empty and not resolved["destination_country"]):
         resolved["destination_country"] = bill.get("place_of_delivery", "")
-    resolved.update({"shipment_no": shipment_no, "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no})
+    resolved.update({
+        "shipment_no": shipment_no,
+        "booking_record_no": resolved.get("booking_record_no") or bill.get("booking_record_no", ""),
+        "si_no": resolved.get("si_no") or bill.get("si_no") or shipment.get("si_no", ""),
+        "bl_no": bl_no, "packing_no": packing_no, "invoice_no": invoice_no,
+    })
     return resolved
 
 
@@ -255,6 +282,7 @@ def payload_from_bl(bl_no, products, account_id):
                 "hs_code": item.get("hs_code", ""),
                 "quantity": item.get("quantity", ""),
                 "origin": origin,
+                "unit": item.get("unit", ""),
             })
 
         unique_origins = set(origins)
@@ -262,6 +290,9 @@ def payload_from_bl(bl_no, products, account_id):
 
         payload.update({
             "bl_no": bl.get("bl_no", ""),
+            "booking_record_no": bl.get("booking_record_no", ""),
+            "shipment_no": bl.get("shipment_no", ""),
+            "si_no": bl.get("si_no", ""),
             "invoice_no": bl.get("invoice_no", ""),
             "packing_no": bl.get("packing_no", ""),
             "exporter": bl.get("shipper", ""),
@@ -282,6 +313,7 @@ def build_record(
     country_of_origin, destination_country, transport_details,
     port_of_loading, port_of_discharge, remarks, item_name, hs_code,
     quantity, origin, shipment_no="", carton=None, net_weight=None, gross_weight=None,
+    unit=None, booking_record_no="", si_no="", issuing_authority="", certificate_type="",
 ):
     return {
         "co_no": co_no,
@@ -298,7 +330,11 @@ def build_record(
         "port_of_discharge": port_of_discharge,
         "remarks": remarks,
         "shipment_no": shipment_no,
-        "items": build_items(item_name, hs_code, quantity, origin, carton, net_weight, gross_weight),
+        "booking_record_no": booking_record_no,
+        "si_no": si_no,
+        "issuing_authority": issuing_authority,
+        "certificate_type": certificate_type,
+        "items": build_items(item_name, hs_code, quantity, origin, carton, net_weight, gross_weight, unit),
     }
 
 
@@ -345,9 +381,13 @@ __SHIPMENT_CONTEXT__
 <h2>Document Information</h2>
 __CO_NO_INPUT__
 <input type="date" name="co_date" value="__CO_DATE__">
+<label>Bill of Lading *</label>
 __BL_SELECT__
-<input type="text" name="invoice_no" value="__INVOICE_NO__" placeholder="Invoice No">
-<input type="text" name="packing_no" value="__PACKING_NO__" placeholder="Packing No">
+<input type="text" name="booking_record_no" value="__BOOKING_NO__" placeholder="Booking" readonly>
+<input type="text" name="shipment_no" value="__SHIPMENT_NO__" placeholder="Shipment" readonly>
+<input type="text" name="si_no" value="__SI_NO__" placeholder="Shipping Instruction" readonly>
+<input type="text" name="invoice_no" value="__INVOICE_NO__" placeholder="Commercial Invoice" readonly>
+<input type="text" name="packing_no" value="__PACKING_NO__" placeholder="Packing List" readonly>
 </div>
 <div class="card">
 <h2>Party Information</h2>
@@ -361,6 +401,8 @@ __BL_SELECT__
 </div>
 <div class="card">
 <h2>Origin And Shipment</h2>
+<input type="text" name="issuing_authority" value="__ISSUING_AUTHORITY__" placeholder="Issuing Authority">
+<input type="text" name="certificate_type" value="__CERTIFICATE_TYPE__" placeholder="Certificate Type">
 <input type="text" name="country_of_origin" value="__COUNTRY_OF_ORIGIN__" placeholder="Country of Origin">
 <input type="text" name="destination_country" value="__DESTINATION_COUNTRY__" placeholder="Destination Country">
 <input type="text" name="transport_details" value="__TRANSPORT_DETAILS__" placeholder="Transport Details">
@@ -396,12 +438,20 @@ function productOriginFor(item){
         || PRODUCT_MASTER.find(product => hs && hsKey(product) === hs);
     return product?.origin || "";
 }
+function productUnitFor(item){
+    const name = itemNameKey(item);
+    const hs = hsKey(item);
+    const product = PRODUCT_MASTER.find(product => name && itemNameKey(product) === name)
+        || PRODUCT_MASTER.find(product => hs && hsKey(product) === hs);
+    return product?.unit || "";
+}
 function rowData(row){
     return {
         name: row.querySelector('[name="item_name"]')?.value || "",
         hs_code: row.querySelector('[name="hs_code"]')?.value || "",
         quantity: row.querySelector('[name="quantity"]')?.value || "",
         origin: row.querySelector('[name="origin"]')?.value || "",
+        unit: row.querySelector('[name="unit"]')?.value || "",
         carton: row.querySelector('[name="carton"]')?.value || "",
         net_weight: row.querySelector('[name="net_weight"]')?.value || "",
         gross_weight: row.querySelector('[name="gross_weight"]')?.value || ""
@@ -422,6 +472,7 @@ function itemRowHtml(item = {}){
 <input type="text" name="hs_code" value="${escapeAttr(item.hs_code || "")}" placeholder="HS Code">
 <input type="text" name="quantity" value="${escapeAttr(item.quantity || "")}" placeholder="Quantity">
 <input type="text" name="origin" value="${escapeAttr(item.origin || "")}" placeholder="Origin">
+<input type="text" name="unit" value="${escapeAttr(item.unit || "")}" placeholder="Unit">
 <input type="text" name="carton" value="${escapeAttr(item.carton || "")}" placeholder="Carton">
 <input type="text" name="net_weight" value="${escapeAttr(item.net_weight || "")}" placeholder="Net Weight">
 <input type="text" name="gross_weight" value="${escapeAttr(item.gross_weight || "")}" placeholder="Gross Weight">
@@ -462,11 +513,14 @@ async function loadBlPrefill(blNo){
         const current = currentItems();
         document.querySelector('[name="invoice_no"]').value = bl.invoice_no || "";
         document.querySelector('[name="packing_no"]').value = bl.packing_no || "";
-        document.querySelector('[name="exporter_name"]').value = bl.shipper || "";
-        document.querySelector('[name="exporter_address"]').value = bl.shipper_address || "";
-        document.querySelector('[name="exporter_email"]').value = bl.shipper_email || "";
-        document.querySelector('[name="exporter_phone"]').value = bl.shipper_phone || "";
-        document.querySelector('[name="consignee_name"]').value = bl.consignee || "";
+        document.querySelector('[name="booking_record_no"]').value = bl.booking_record_no || "";
+        document.querySelector('[name="shipment_no"]').value = bl.shipment_no || "";
+        document.querySelector('[name="si_no"]').value = bl.si_no || "";
+        document.querySelector('[name="exporter_name"]').value = bl.exporter_name || bl.shipper || "";
+        document.querySelector('[name="exporter_address"]').value = bl.exporter_address || bl.shipper_address || "";
+        document.querySelector('[name="exporter_email"]').value = bl.exporter_email || bl.shipper_email || "";
+        document.querySelector('[name="exporter_phone"]').value = bl.exporter_phone || bl.shipper_phone || "";
+        document.querySelector('[name="consignee_name"]').value = bl.consignee_name || bl.consignee || "";
         document.querySelector('[name="consignee_address"]').value = bl.consignee_address || "";
         document.querySelector('[name="consignee_email"]').value = bl.consignee_email || "";
         document.querySelector('[name="transport_details"]').value = [bl.vessel || "", bl.voyage_no || ""].filter(Boolean).join(" ");
@@ -481,6 +535,7 @@ async function loadBlPrefill(blNo){
                 hs_code: item.hs_code || "",
                 quantity: item.quantity || "",
                 origin: existing.origin || productOrigin || "",
+                unit: existing.unit || item.unit || productUnitFor(item) || "",
                 carton: item.carton || "",
                 net_weight: item.net_weight || "",
                 gross_weight: item.gross_weight || ""
@@ -503,7 +558,10 @@ document.querySelector('[name="bl_no"]')?.addEventListener("change", event => {
         "__ACTION__": html_attr(action),
         "__CO_NO_INPUT__": co_no_input,
         "__CO_DATE__": html_attr(record.get("co_date", "")),
-        "__BL_SELECT__": bl_select_html(record.get("bl_no", ""), account_id),
+        "__BL_SELECT__": bl_select_html(record.get("bl_no", ""), account_id, disabled=show_co_no),
+        "__BOOKING_NO__": html_attr(record.get("booking_record_no", "")),
+        "__SHIPMENT_NO__": html_attr(record.get("shipment_no", shipment_no)),
+        "__SI_NO__": html_attr(record.get("si_no", "")),
         "__INVOICE_NO__": html_attr(record.get("invoice_no", "")),
         "__PACKING_NO__": html_attr(record.get("packing_no", "")),
         "__EXPORTER__": html_attr(record.get("exporter", "")),
@@ -519,9 +577,11 @@ document.querySelector('[name="bl_no"]')?.addEventListener("change", event => {
         "__PORT_OF_LOADING__": html_attr(record.get("port_of_loading", "")),
         "__PORT_OF_DISCHARGE__": html_attr(record.get("port_of_discharge", "")),
         "__REMARKS__": html_attr(record.get("remarks", "")),
+        "__ISSUING_AUTHORITY__": html_attr(record.get("issuing_authority", "")),
+        "__CERTIFICATE_TYPE__": html_attr(record.get("certificate_type", "")),
         "__ITEM_ROWS__": build_item_rows(record.get("items", [])),
         "__BUTTON_TEXT__": html_attr(button_text),
-        "__SHIPMENT_CONTEXT__": f'<input type="hidden" name="shipment_no" value="{html_attr(shipment_no)}">' if shipment_no else "",
+        "__SHIPMENT_CONTEXT__": "",
         "__PRODUCT_MASTER__": product_master_json,
     }
     for key, value in replacements.items():
@@ -613,14 +673,17 @@ def co_form(request: Request, bl_no: str = "", shipment_no: str = ""):
         validate_co_links(record.get("bl_no", ""), record.get("packing_no", ""), record.get("invoice_no", ""), account_id, shipment_no)
     else:
         record = payload_from_bl(bl_no, products, account_id)
+        if bl_no and not record.get("bl_no"):
+            raise HTTPException(status_code=404, detail="Bill of Lading not found")
     return render_form(record, "/co", "Certificate of Origin", "Save Certificate of Origin", shipment_no=shipment_no, products=products, account_id=account_id)
 
 
 @router.get("/co-source/bl/{bl_no}")
 def co_source_bl(bl_no: str, request: Request):
-    for record in load_bills_of_lading(request.scope["trade_paper_user"]["account_id"]):
+    account_id = request.scope["trade_paper_user"]["account_id"]
+    for record in load_bills_of_lading(account_id):
         if record.get("bl_no") == bl_no:
-            return record
+            return resolve_co_snapshot({"bl_no": bl_no}, account_id, bill=record)
     raise HTTPException(status_code=404, detail="Bill of Lading not found")
 
 
@@ -636,12 +699,12 @@ def co_detail(co_no: str, request: Request):
 <td>{html_text(item.get("name", ""))}</td>
 <td>{html_text(item.get("hs_code", ""))}</td>
 <td>{html_text(item.get("quantity", ""))}</td>
-<td>{html_text(item.get("origin", ""))}</td><td>{html_text(item.get("carton", ""))}</td>
+<td>{html_text(item.get("unit", ""))}</td><td>{html_text(item.get("origin", ""))}</td><td>{html_text(item.get("carton", ""))}</td>
 <td>{html_text(item.get("net_weight", ""))}</td><td>{html_text(item.get("gross_weight", ""))}</td>
 </tr>
 """
     if not rows:
-        rows = '<tr><td colspan="8" style="text-align:center;color:#6B7280;padding:30px;">No goods items registered.</td></tr>'
+        rows = '<tr><td colspan="9" style="text-align:center;color:#6B7280;padding:30px;">No goods items registered.</td></tr>'
 
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"><title>{html_text(co_no)}</title>
 <style>
@@ -670,6 +733,7 @@ td{{padding:13px;border-bottom:1px solid #E5E7EB;}}
 <a class="btn" href="/co-list">C/O List</a>
 <a class="btn" href="/edit-co/{html_attr(co_no)}">Edit</a>
 <a class="btn" href="/co-pdf/{html_attr(co_no)}">PDF</a>
+<a class="btn" href="/send-email/certificate-of-origin/{html_attr(co_no)}">Send Email</a>
 </div>
 <div class="header">
 <h1>{html_text(co_no)}</h1>
@@ -679,6 +743,11 @@ td{{padding:13px;border-bottom:1px solid #E5E7EB;}}
 <div><div class="label">B/L No</div><div class="value">{html_text(record.get("bl_no", ""))}</div></div>
 <div><div class="label">Invoice No</div><div class="value">{html_text(record.get("invoice_no", ""))}</div></div>
 <div><div class="label">Packing No</div><div class="value">{html_text(record.get("packing_no", ""))}</div></div>
+<div><div class="label">Booking</div><div class="value">{html_text(record.get("booking_record_no", ""))}</div></div>
+<div><div class="label">Shipment</div><div class="value">{html_text(record.get("shipment_no", ""))}</div></div>
+<div><div class="label">Shipping Instruction</div><div class="value">{html_text(record.get("si_no", ""))}</div></div>
+<div><div class="label">Issuing Authority</div><div class="value">{html_text(record.get("issuing_authority", ""))}</div></div>
+<div><div class="label">Certificate Type</div><div class="value">{html_text(record.get("certificate_type", ""))}</div></div>
 <div><div class="label">Exporter</div><div class="value">{html_text(record.get("exporter", ""))}</div></div>
 <div><div class="label">Consignee</div><div class="value">{html_text(record.get("consignee", ""))}</div></div>
 <div><div class="label">Exporter Address</div><div class="value">{html_text(record.get("exporter_address", ""))}</div></div>
@@ -695,7 +764,7 @@ td{{padding:13px;border-bottom:1px solid #E5E7EB;}}
 <div class="mini"><b>Port of Loading</b>{html_text(record.get("port_of_loading", ""))}</div>
 <div class="mini"><b>Port of Discharge</b>{html_text(record.get("port_of_discharge", ""))}</div>
 </div></div>
-<div class="section"><h2>Goods Information</h2><div class="table-wrap"><table><thead><tr><th>No</th><th>Item</th><th>HS Code</th><th>Quantity</th><th>Origin</th><th>Carton</th><th>Net</th><th>Gross</th></tr></thead><tbody>{rows}</tbody></table></div></div>
+<div class="section"><h2>Goods Information</h2><div class="table-wrap"><table><thead><tr><th>No</th><th>Item</th><th>HS Code</th><th>Quantity</th><th>Unit</th><th>Origin</th><th>Carton</th><th>Net</th><th>Gross</th></tr></thead><tbody>{rows}</tbody></table></div></div>
 </div></body></html>"""
     return HTMLResponse(html)
 
@@ -731,9 +800,19 @@ def save_co(
     exporter_phone: Annotated[Optional[str], Form()] = None,
     consignee_address: Annotated[Optional[str], Form()] = None,
     consignee_email: Annotated[Optional[str], Form()] = None,
+    unit: Annotated[Optional[List[str]], Form()] = None,
+    booking_record_no: str = Form(""),
+    si_no: str = Form(""),
+    issuing_authority: str = Form(""),
+    certificate_type: str = Form(""),
 ):
     account_id = _account_id(request)
-    validate_co_links(bl_no, packing_no, invoice_no, account_id, shipment_no)
+    unit = unit if isinstance(unit, list) else None
+    booking_record_no = booking_record_no if isinstance(booking_record_no, str) else ""
+    si_no = si_no if isinstance(si_no, str) else ""
+    issuing_authority = issuing_authority if isinstance(issuing_authority, str) else ""
+    certificate_type = certificate_type if isinstance(certificate_type, str) else ""
+    validate_co_links(bl_no, packing_no, invoice_no, account_id, shipment_no, booking_record_no, si_no)
     exporter = require_text("Exporter", exporter_name or exporter)
     consignee = require_text("Consignee", consignee_name or consignee)
     saved = {}
@@ -744,6 +823,7 @@ def save_co(
         consignee, country_of_origin, destination_country, transport_details,
         port_of_loading, port_of_discharge, remarks, item_name, hs_code,
         quantity, origin, shipment_no, carton, net_weight, gross_weight,
+        unit, booking_record_no, si_no, issuing_authority, certificate_type,
         )
         assign_item_ids(record["items"], item_id)
         record.update({"exporter_name": exporter, "consignee_name": consignee})
@@ -757,7 +837,9 @@ def save_co(
         records.append(record)
         saved["co_no"] = co_number
     locked_json_mutation(CO_FILE, [], add_co, list)
-    return RedirectResponse(url=shipment_context_redirect_url(shipment_no, "co_no", saved["co_no"], "/co-list"), status_code=303)
+    co_no = saved["co_no"]
+    shipment_context_redirect_url(shipment_no, "co_no", co_no, "/")
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Certificate of Origin Saved</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}.card{{width:min(620px,100%);padding:34px;border:1px solid #E5E7EB;border-radius:18px;background:#fff;text-align:center;box-shadow:0 14px 34px rgba(15,23,42,.09)}}h1{{margin:0 0 10px}}p{{color:#475569}}.actions{{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:20px}}a{{display:inline-flex;min-height:46px;align-items:center;padding:11px 16px;border-radius:10px;background:#E5E7EB;color:#111827;text-decoration:none;font-weight:800}}a.primary{{background:#111827;color:#fff}}</style></head><body><main><section class="card"><h1>Certificate of Origin Saved</h1><p>✓ {html_text(co_no)} was created successfully.</p><div class="actions"><a class="primary" href="/co/{html_attr(co_no)}">View Certificate</a><a href="/">Back to Dashboard</a></div></section></main></body></html>''')
 
 
 @router.get("/edit-co/{co_no}")
@@ -799,10 +881,20 @@ def update_co(
     exporter_phone: Annotated[Optional[str], Form()] = None,
     consignee_address: Annotated[Optional[str], Form()] = None,
     consignee_email: Annotated[Optional[str], Form()] = None,
+    unit: Annotated[Optional[List[str]], Form()] = None,
+    booking_record_no: str = Form(""),
+    si_no: str = Form(""),
+    issuing_authority: str = Form(""),
+    certificate_type: str = Form(""),
 ):
     account_id = _account_id(request)
     current = _owned_certificate(co_no, account_id)
-    validate_co_links(bl_no, packing_no, invoice_no, account_id)
+    unit = unit if isinstance(unit, list) else None
+    booking_record_no = booking_record_no if isinstance(booking_record_no, str) else current.get("booking_record_no", "")
+    si_no = si_no if isinstance(si_no, str) else current.get("si_no", "")
+    issuing_authority = issuing_authority if isinstance(issuing_authority, str) else current.get("issuing_authority", "")
+    certificate_type = certificate_type if isinstance(certificate_type, str) else current.get("certificate_type", "")
+    validate_co_links(bl_no, packing_no, invoice_no, account_id, current.get("shipment_no", ""), booking_record_no, si_no)
     exporter = require_text("Exporter", exporter_name or exporter)
     consignee = require_text("Consignee", consignee_name or consignee)
     updated = build_record(
@@ -810,12 +902,13 @@ def update_co(
         country_of_origin, destination_country, transport_details,
         port_of_loading, port_of_discharge, remarks, item_name, hs_code,
         quantity, origin, current.get("shipment_no", ""), carton, net_weight, gross_weight,
+        unit, booking_record_no, si_no, issuing_authority, certificate_type,
     )
     assign_item_ids(updated["items"], item_id, current.get("items", []))
-    if carton is None or net_weight is None or gross_weight is None:
+    if carton is None or net_weight is None or gross_weight is None or unit is None:
         preserve_omitted_item_fields(
             updated["items"], current.get("items", []),
-            [field for values, field in ((carton, "carton"), (net_weight, "net_weight"), (gross_weight, "gross_weight")) if values is None],
+            [field for values, field in ((carton, "carton"), (net_weight, "net_weight"), (gross_weight, "gross_weight"), (unit, "unit")) if values is None],
         )
     updated.update({
         "exporter_name": exporter,

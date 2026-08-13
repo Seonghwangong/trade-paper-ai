@@ -1,0 +1,161 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import html
+
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from app.storage import data_path, load_json_strict, locked_json_mutation
+
+
+router = APIRouter()
+USERS_FILE = data_path("users.json")
+BILLING_HISTORY_FILE = data_path("billing_history.json")
+USAGE_EVENTS_FILE = data_path("usage_events.json")
+
+PLANS = {
+    "Free": {"monthly_document_limit": 5, "summary": "Up to 5 documents per month"},
+    "Starter": {"monthly_document_limit": None, "summary": "Unlimited documents"},
+    "Professional": {"monthly_document_limit": None, "summary": "Unlimited documents and professional workflow"},
+}
+SUBSCRIPTION_STATUSES = ("Trial", "Active", "Expired", "Cancelled")
+DOCUMENT_CREATION_PATHS = frozenset({
+    "/save-invoice", "/invoice", "/packing-list", "/packing", "/si",
+    "/shipment", "/booking", "/bl", "/co", "/quotation", "/proforma",
+    "/container", "/customs", "/inspection", "/insurance", "/weight",
+})
+
+
+def _text(value):
+    return html.escape(str(value or ""))
+
+
+def _attr(value):
+    return html.escape(str(value or ""), quote=True)
+
+
+def _account_id(request: Request):
+    user = request.scope.get("trade_paper_user") or {}
+    account_id = str(user.get("account_id", "") or "").strip()
+    if not account_id:
+        raise HTTPException(status_code=401, detail="Login required")
+    return account_id
+
+
+def subscription_for_account(account_id, users_file=None):
+    users = load_json_strict(users_file or USERS_FILE, [], list)
+    record = next((item for item in users if isinstance(item, dict) and str(item.get("account_id", "") or "") == account_id), {})
+    plan = str(record.get("plan", "Free") or "Free")
+    if plan not in PLANS:
+        plan = "Free"
+    status = str(record.get("subscription_status", "Trial") or "Trial")
+    if status not in SUBSCRIPTION_STATUSES:
+        status = "Trial"
+    return {"plan": plan, "status": status}
+
+
+def _month_key(now=None):
+    value = now or datetime.now(timezone.utc)
+    return value.strftime("%Y-%m")
+
+
+def monthly_usage(account_id, now=None, usage_file=None):
+    month = _month_key(now)
+    return sum(
+        1 for item in load_json_strict(usage_file or USAGE_EVENTS_FILE, [], list)
+        if isinstance(item, dict) and item.get("account_id") == account_id and str(item.get("created_at", "")).startswith(month)
+    )
+
+
+def usage_summary(account_id, now=None):
+    subscription = subscription_for_account(account_id)
+    used = monthly_usage(account_id, now)
+    limit = PLANS[subscription["plan"]]["monthly_document_limit"]
+    allowed = subscription["status"] in {"Trial", "Active"} and (limit is None or used < limit)
+    return {**subscription, "used": used, "limit": limit, "allowed": allowed}
+
+
+def is_document_creation(request: Request):
+    return request.method == "POST" and request.url.path in DOCUMENT_CREATION_PATHS
+
+
+def record_document_usage(account_id, path, now=None):
+    event = {"account_id": account_id, "path": str(path), "created_at": (now or datetime.now(timezone.utc)).isoformat()}
+    locked_json_mutation(USAGE_EVENTS_FILE, [], lambda rows: rows.append(event), list)
+
+
+def usage_limit_response(summary):
+    status = summary["status"]
+    message = "Your subscription is not active." if status not in {"Trial", "Active"} else "The Free plan monthly limit of 5 documents has been reached."
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usage Limit</title><style>body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}section{{max-width:560px;padding:34px;background:#fff;border-radius:18px;text-align:center}}a{{display:inline-block;margin-top:16px;padding:12px 17px;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:bold}}</style></head><body><main><section><h1>Usage Limit Reached</h1><p>{_text(message)}</p><a href="/pricing">View Plans</a></section></main></body></html>''', status_code=402)
+
+
+def _page(title, body):
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{_text(title)}</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{width:min(1100px,calc(100% - 32px));margin:36px auto}}nav{{display:flex;gap:10px;margin-bottom:24px}}a,.button,button{{display:inline-flex;min-height:44px;align-items:center;padding:10px 15px;border:0;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:800;cursor:pointer}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}.card,.summary{{padding:24px;background:#fff;border:1px solid #E5E7EB;border-radius:16px}}.card.current{{border:2px solid #2563EB}}.badge{{display:inline-block;padding:6px 9px;border-radius:999px;background:#DBEAFE;color:#1E3A8A;font-weight:800}}table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;border-bottom:1px solid #E5E7EB;text-align:left}}th{{background:#111827;color:#fff}}select{{min-height:42px;padding:8px;border:1px solid #CBD5E1;border-radius:8px}}form{{display:flex;gap:8px;align-items:center;flex-wrap:wrap}}@media(max-width:720px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main><nav><a href="/">Dashboard</a><a href="/subscription">Subscription</a></nav>{body}</main></body></html>''')
+
+
+@router.get("/pricing")
+def pricing(request: Request):
+    account_id = _account_id(request)
+    current = subscription_for_account(account_id)
+    cards = "".join(
+        f'''<article class="card{' current' if name == current['plan'] else ''}"><h2>{_text(name)}</h2><p>{_text(config['summary'])}</p>{'<span class="badge">Current Plan</span>' if name == current['plan'] else f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(name)}"><button type="submit">Choose { _text(name) }</button></form>'}</article>'''
+        for name, config in PLANS.items()
+    )
+    return _page("Pricing", f'<h1>Pricing</h1><p>Payment integration will be added in a future release.</p><section class="grid">{cards}</section>')
+
+
+@router.get("/subscription")
+def subscription_page(request: Request):
+    account_id = _account_id(request)
+    summary = usage_summary(account_id)
+    history = [item for item in load_json_strict(BILLING_HISTORY_FILE, [], list) if isinstance(item, dict) and item.get("account_id") == account_id]
+    rows = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("plan"))}</td><td>{_text(item.get("status"))}</td><td>${float(item.get("amount", 0) or 0):.2f}</td></tr>' for item in reversed(history)) or '<tr><td colspan="4">No billing history.</td></tr>'
+    limit = "Unlimited" if summary["limit"] is None else str(summary["limit"])
+    body = f'''<h1>Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Monthly documents: {summary['used']} / {limit}</p><a href="/pricing">Upgrade</a></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table>'''
+    return _page("Subscription", body)
+
+
+@router.post("/subscription/plan")
+def change_plan(request: Request, plan: str = Form("")):
+    account_id = _account_id(request)
+    if plan not in PLANS:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    status = "Active" if plan == "Free" else "Trial"
+    def update(users):
+        record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+        record["plan"] = plan
+        record["subscription_status"] = status
+    locked_json_mutation(USERS_FILE, [], update, list)
+    entry = {"account_id": account_id, "created_at": datetime.now(timezone.utc).isoformat(), "plan": plan, "status": status, "amount": 0, "event": "Plan Change"}
+    locked_json_mutation(BILLING_HISTORY_FILE, [], lambda rows: rows.append(entry), list)
+    return RedirectResponse("/subscription", status_code=303)
+
+
+@router.get("/admin/subscriptions")
+def subscription_admin(request: Request):
+    _account_id(request)
+    users = [item for item in load_json_strict(USERS_FILE, [], list) if isinstance(item, dict)]
+    paid = sum(subscription_for_account(str(item.get("account_id", "")))["plan"] in {"Starter", "Professional"} and subscription_for_account(str(item.get("account_id", "")))["status"] == "Active" for item in users)
+    billing = load_json_strict(BILLING_HISTORY_FILE, [], list)
+    month = _month_key()
+    mrr = sum(float(item.get("amount", 0) or 0) for item in billing if isinstance(item, dict) and str(item.get("created_at", "")).startswith(month) and item.get("status") == "Active")
+    rows = "".join(f'''<tr><td>{_text(item.get("company"))}</td><td>{_text(item.get("email"))}</td><td>{_text(subscription_for_account(str(item.get("account_id", "")))["plan"])}</td><td><form method="post" action="/admin/subscriptions/{_attr(item.get('account_id'))}/status"><select name="status">{''.join(f'<option value="{status}"{" selected" if status == subscription_for_account(str(item.get("account_id", "")))["status"] else ""}>{status}</option>' for status in SUBSCRIPTION_STATUSES)}</select><button>Save</button></form></td></tr>''' for item in users)
+    return _page("Subscription Admin", f'<h1>Subscription Admin</h1><section class="grid"><div class="card"><h2>Subscribers</h2><strong>{len(users)}</strong></div><div class="card"><h2>Paid Users</h2><strong>{paid}</strong></div><div class="card"><h2>MRR</h2><strong>${mrr:.2f}</strong></div></section><h2>Accounts</h2><table><thead><tr><th>Company</th><th>Email</th><th>Plan</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table>')
+
+
+@router.post("/admin/subscriptions/{account_id}/status")
+def update_subscription_status(account_id: str, request: Request, status: str = Form("")):
+    _account_id(request)
+    if status not in SUBSCRIPTION_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid subscription status")
+    def update(users):
+        record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+        record["subscription_status"] = status
+    locked_json_mutation(USERS_FILE, [], update, list)
+    return RedirectResponse("/admin/subscriptions", status_code=303)

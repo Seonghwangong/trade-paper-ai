@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 import socket
 import subprocess
@@ -192,12 +193,23 @@ def test_authentication_browser_flow(auth_server, browser_name):
                 "email": email,
                 "phone": "010-0000-0000",
             }
+            page.goto(f"{base_url}/pricing")
+            assert page.get_by_role("heading", name="Free", exact=True).is_visible()
+            page.get_by_role("button", name="Choose Starter").click()
+            page.wait_for_url(f"{base_url}/subscription")
+            assert page.get_by_role("heading", name="Starter", exact=True).is_visible()
+            assert page.locator(".badge", has_text="Trial").is_visible()
             page.goto(f"{base_url}/admin/feedback?search=Browser%20feedback%20{browser_name}")
             assert page.get_by_role("heading", name="Feedback Admin", exact=True).is_visible()
             assert page.get_by_text(f"Browser feedback {browser_name}", exact=True).is_visible()
             assert page.get_by_text(f"feedback-{browser_name}@example.com", exact=True).is_visible()
             assert page.get_by_text("UI/UX", exact=True).is_visible()
             assert page.get_by_text("5", exact=True).is_visible()
+            page.goto(f"{base_url}/admin/email-readiness")
+            assert page.get_by_role("heading", name="Email Readiness", exact=True).is_visible()
+            assert page.get_by_text("Email Backend", exact=True).is_visible()
+            assert page.get_by_text("Disabled", exact=True).is_visible()
+            assert "SMTP password" not in page.content()
             page.goto(f"{base_url}/admin/founding-beta?search=Beta%20Applicant")
             assert page.get_by_role("heading", name="Founding Beta Admin", exact=True).is_visible()
             assert page.get_by_text(f"Beta Applicant {browser_name}", exact=True).is_visible()
@@ -310,6 +322,7 @@ def test_authentication_browser_flow(auth_server, browser_name):
                 "hs_code": "111111",
                 "unit_price": "25",
                 "origin": "KR",
+                "unit": "",
             }]
             assert "account_id" not in product_a_data[0]
             page.goto(f"{base_url}/products?search=111111")
@@ -429,6 +442,20 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert continue_bl.is_visible()
             assert f"shipment_no={shipment_a_no}" in continue_bl.get_attribute("href")
             assert f"packing_no={packing_a_no}" in continue_bl.get_attribute("href")
+            continue_bl.click()
+            page.wait_for_url(re.compile(rf"{base_url}/bl-form\?booking_record_no=BK-\d+.*"))
+            assert page.locator('select[name="booking_record_no"]').input_value()
+            assert page.locator('input[name="shipment_no"]').input_value() == shipment_a_no
+            assert page.locator('input[name="packing_no"]').input_value() == packing_a_no
+            assert page.locator('input[name="shipper"]').get_attribute("readonly") is not None
+            assert page.locator('input[name="item_name"]').first.get_attribute("readonly") is not None
+            page.locator('input[name="carrier"]').fill("CODEX Ocean Carrier A")
+            page.locator('input[name="place_of_receipt"]').fill("Busan Warehouse")
+            page.locator('input[name="freight_term"]').fill("Prepaid")
+            page.get_by_role("button", name="Save Bill of Lading").click()
+            page.get_by_role("heading", name="Bill of Lading Saved").wait_for(state="visible")
+            assert page.get_by_role("link", name="Continue to Certificate of Origin →").is_visible()
+            bl_a_no = __import__("json").loads((data_dir / "bills_of_lading.json").read_text(encoding="utf-8"))[-1]["bl_no"]
             page.goto(f"{base_url}/booking-list")
             booking_a_edit_path = page.locator('a', has_text="Edit").first.get_attribute("href")
             booking_a_pdf_url = page.locator('a', has_text="PDF").first.get_attribute("href")
@@ -511,6 +538,10 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert company_b["name"] == "Isolated Company B"
             assert company_b["address"] == "Account B address"
             assert "account_id" not in company_b
+            page.goto(f"{base_url}/pricing")
+            page.get_by_role("button", name="Choose Starter").click()
+            page.wait_for_url(f"{base_url}/subscription")
+            assert page.get_by_role("heading", name="Starter", exact=True).is_visible()
             assert page.evaluate("fetch('/buyer-data').then(response => response.json())") == []
             assert page.evaluate("fetch('/product-data').then(response => response.json())") == []
             assert page.evaluate("fetch('/invoice-data').then(response => response.json())") == []
@@ -727,6 +758,10 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
             page.wait_for_url(f"{base_url}/si-list")
             assert page.get_by_text(si_a_no).count() == 0
+            page.goto(f"{base_url}/delete-bl/{bl_a_no}")
+            page.get_by_role("button", name="Delete", exact=True).click()
+            page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
+            page.wait_for_url(f"{base_url}/bl-list")
             page.goto(f"{base_url}{packing_a_edit_path.replace('/edit-packing/', '/packing-delete/')}")
             page.get_by_role("button", name="Delete", exact=True).click()
             page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()

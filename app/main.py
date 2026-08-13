@@ -35,8 +35,11 @@ from app import customer as customer_module
 from app.release_pages import router as release_pages_router
 from app.founding_beta import router as founding_beta_router
 from app.feedback import router as feedback_router
+from app.document_email import router as document_email_router
+from app.subscription import router as subscription_router
 from app import founding_beta as founding_beta_module
 from app import feedback as feedback_module
+from app import subscription as subscription_module
 from app.auth import AuthenticationMiddleware, router as auth_router
 from app import email_delivery
 from app.account_company import load_account_company
@@ -141,6 +144,7 @@ def deployment_readiness(environment=None, data_dir=None):
     report = {
         "environment": deployment or "development",
         "email_backend": backend,
+        "email_configuration": email_delivery.email_readiness(source)["configuration"],
         "warnings": [],
     }
     if backend == "disabled":
@@ -560,6 +564,8 @@ app.include_router(customer_router)
 app.include_router(release_pages_router)
 app.include_router(founding_beta_router)
 app.include_router(feedback_router)
+app.include_router(document_email_router)
+app.include_router(subscription_router)
 app.include_router(auth_router)
 def load_packing_lists():
     return load_json_strict(PACKING_FILE, [], list)
@@ -1094,6 +1100,9 @@ def global_search(request: Request, q: str = ""):
 @app.get("/")
 def home(request: Request):
     user = request.scope.get("trade_paper_user") or {}
+    subscription_summary = subscription_module.usage_summary(user.get("account_id", ""))
+    subscription_limit = "Unlimited" if subscription_summary["limit"] is None else str(subscription_summary["limit"])
+    subscription_html = f'''<section class="subscription-card"><div><span>Current Plan</span><h2>{dashboard_text(subscription_summary["plan"])}</h2><p>{dashboard_text(subscription_summary["status"])} · {subscription_summary["used"]} / {subscription_limit} documents this month</p></div><a href="/pricing">Upgrade</a></section>'''
     company = load_account_company(user.get("account_id", ""), company_module.ACCOUNT_COMPANIES_FILE)
     company_count = 1 if isinstance(company, dict) and str(company.get("name", "")).strip() else 0
     customers = customer_module.load_customers(user.get("account_id", ""))
@@ -1509,6 +1518,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 .health-grid{{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;}}.health-card{{align-items:center;text-align:center;}}
 .health-card .health-check{{display:grid;place-items:center;width:24px;height:24px;margin:0 0 7px;border-radius:999px;background:#DCFCE7;color:#166534;font-weight:bold;}}
 .release-card{{background:#111827;color:white;border-radius:18px;padding:26px;box-shadow:0 10px 24px rgba(17,24,39,.12)}}.release-heading{{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}}.release-heading h3{{margin:0 0 7px;font-size:26px}}.release-heading p{{margin:0;color:#CBD5E1}}.release-status{{display:inline-block;padding:8px 12px;border-radius:999px;background:#DCFCE7;color:#166534;font-weight:bold}}.release-checks{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin:22px 0}}.release-check{{display:flex;align-items:center;gap:8px;background:#1F2937;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:bold}}.release-check span{{color:#86EFAC}}.release-notes{{margin:0;padding-left:20px;color:#E5E7EB;line-height:1.7}}
+.subscription-card{{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:0 0 24px;padding:22px 26px;border-radius:16px;background:#EFF6FF;border:1px solid #BFDBFE}}.subscription-card span{{color:#1D4ED8;font-size:12px;font-weight:800;text-transform:uppercase}}.subscription-card h2{{margin:5px 0}}.subscription-card p{{margin:0;color:#475569}}.subscription-card a{{padding:11px 16px;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:800}}
 .tp-release-footer{{width:100%;margin:34px auto 0;padding:24px 0 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}}.tp-release-footer strong{{display:block;color:#374151}}.tp-release-version{{font-size:12px}}
 @media(max-width:1000px){{.overview-grid{{grid-template-columns:repeat(3,1fr);}}.dashboard-stat-grid,.guide-steps{{grid-template-columns:repeat(2,minmax(0,1fr))}}.operations-grid,.operations-recent-grid{{grid-template-columns:1fr}}.setup-steps,.celebration-actions{{grid-template-columns:repeat(2,minmax(0,1fr))}}.status-grid{{grid-template-columns:repeat(3,1fr);}}.action-row{{grid-template-columns:repeat(2,minmax(0,1fr));}}.next-actions-grid{{grid-template-columns:1fr 1fr}}}}
 @media(max-width:1000px){{.system-grid,.health-grid{{grid-template-columns:repeat(2,minmax(0,1fr));}}}}
@@ -1523,6 +1533,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 </header>
 
 {welcome_html}
+{subscription_html}
 
 <section class="section"><div class="getting-started"><div class="setup-heading"><h2>Getting Started</h2><strong>{setup_percentage}% Complete</strong></div><div class="setup-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{setup_percentage}"><span style="width:{setup_percentage}%"></span></div><div class="setup-steps">{setup_steps_html}</div></div></section>
 {completion_html}

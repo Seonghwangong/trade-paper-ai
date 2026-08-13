@@ -123,6 +123,8 @@ def create_packing_list(request: Request, payload: dict = Body(...)):
     for field, fallback in snapshot_fallbacks.items():
         record[field] = record.get(field) or fallback
     require_items(record.get("items", []))
+    from app import product as product_module
+    product_module.enrich_items_from_products(record.get("items", []), account_id)
     record["items"] = assign_item_ids([dict(item) for item in record.get("items", [])])
     def add_packing(records):
         record["packing_no"] = next_identifier(records, "packing_no", "PK")
@@ -166,11 +168,12 @@ def packing_list(request: Request, search: str = ""):
             "<br>".join(escaped(item.get("net_weight", "")) for item in items),
             "<br>".join(escaped(item.get("gross_weight", "")) for item in items),
             button("Download PDF", f"/packing-list-pdf/{packing_no}", "secondary"),
+            button("Send Email", f"/send-email/packing/{packing_no}", "secondary"),
             button("Edit", f"/edit-packing/{packing_no}", "secondary"),
             button("Delete", f"/packing-delete/{packing_no}", "danger"),
         ])
     content = search_toolbar(button("+ New Packing", "/packing-page"), button("← Dashboard", "/", "secondary"), action="/packing-list", value=search, placeholder="Search packing, invoice, buyer, seller or item", reset_url="/packing-list", count_label=f"Total Packing Lists : {len(packing_lists)}")
-    content += table(["Packing No", "Invoice No", "Seller", "Buyer", "Item", "Quantity", "HS Code", "Carton", "Net", "Gross", "PDF", "Edit", "Delete"], rows)
+    content += table(["Packing No", "Invoice No", "Seller", "Buyer", "Item", "Quantity", "HS Code", "Carton", "Net", "Gross", "PDF", "Email", "Edit", "Delete"], rows)
     return HTMLResponse(page_shell("Packing List", content, subtitle="Manage all packing documents"))
 
 @router.post("/packing")
@@ -190,10 +193,14 @@ def save_packing(
     buyer_address: Annotated[Optional[str], Form()] = None,
     buyer_email: Annotated[Optional[str], Form()] = None,
     item_id: List[str] = Form([]),
+    origin: List[str] = Form([]),
+    unit: List[str] = Form([]),
 ):
     invoice_no = require_text("Invoice No", invoice_no)
     account_id = _account_id(request)
     _owned_invoice(invoice_no, account_id)
+    origin = origin if isinstance(origin, list) else []
+    unit = unit if isinstance(unit, list) else []
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
     items = []
@@ -205,12 +212,16 @@ def save_packing(
         items.append({
             "name": item_name[i],
             "hs_code": hs_code[i] if i < len(hs_code) else "",
+            "origin": origin[i] if i < len(origin) else "",
+            "unit": unit[i] if i < len(unit) else "",
             "carton": carton[i] if i < len(carton) else "",
             "net_weight": net_weight[i] if i < len(net_weight) else "",
             "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
         })
 
     require_items(items)
+    from app import product as product_module
+    product_module.enrich_items_from_products(items, account_id)
     assign_item_ids(items, item_id)
     def add_packing(packing_lists):
         packing = {
@@ -271,6 +282,12 @@ def edit_packing(packing_no: str, request: Request):
 <p>HS Code</p>
 <input type="text" name="hs_code" value="{item.get('hs_code','')}">
 
+<p>Country of Origin</p>
+<input type="text" name="origin" value="{html_lib.escape(str(item.get('origin','') or ''), quote=True)}">
+
+<p>Unit</p>
+<input type="text" name="unit" value="{html_lib.escape(str(item.get('unit','') or ''), quote=True)}">
+
 <p>Carton</p>
 <input type="text" name="carton" value="{item.get('carton','')}">
 
@@ -306,11 +323,15 @@ def update_packing(
     buyer_address: Annotated[Optional[str], Form()] = None,
     buyer_email: Annotated[Optional[str], Form()] = None,
     item_id: List[str] = Form([]),
+    origin: List[str] = Form([]),
+    unit: List[str] = Form([]),
 ):
     invoice_no = require_text("Invoice No", invoice_no)
     account_id = _account_id(request)
     current = public_packing(_owned_packing(packing_no, account_id))
     _owned_invoice(invoice_no, account_id)
+    origin = origin if isinstance(origin, list) else []
+    unit = unit if isinstance(unit, list) else []
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
     items = []
@@ -333,12 +354,16 @@ def update_packing(
             "name": item_name[i],
             "quantity": quantity_value,
             "hs_code": hs_code[i] if i < len(hs_code) else "",
+            "origin": origin[i] if i < len(origin) else "",
+            "unit": unit[i] if i < len(unit) else "",
             "carton": carton[i] if i < len(carton) else "",
             "net_weight": net_weight[i] if i < len(net_weight) else "",
             "gross_weight": gross_weight[i] if i < len(gross_weight) else "",
         })
 
     require_items(items)
+    from app import product as product_module
+    product_module.enrich_items_from_products(items, account_id)
     assign_item_ids(items, item_id, current.get("items", []))
     def replace_packing(packing_lists):
         for packing in packing_lists:

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, parseaddr
 import html
 import logging
 import os
 import smtplib
 import ssl
 import time
-from typing import Mapping, Protocol
+from typing import Mapping, NamedTuple, Protocol
 from urllib.parse import quote, urlsplit
 
 
@@ -31,6 +31,12 @@ class EmailConfigurationError(EmailDeliveryError):
     """Raised when delivery configuration cannot be used safely."""
 
 
+class EmailAttachment(NamedTuple):
+    filename: str
+    content: bytes
+    mime_type: str = "application/pdf"
+
+
 @dataclass(frozen=True)
 class DeliveryMessage:
     recipient: str
@@ -38,6 +44,7 @@ class DeliveryMessage:
     text_body: str
     html_body: str
     purpose: str
+    attachments: tuple[EmailAttachment, ...] = ()
 
 
 class ApiEmailAdapter(Protocol):
@@ -142,7 +149,11 @@ def build_password_reset_message(
 
 def _safe_address(value: str, setting_name: str) -> str:
     address = str(value or "").strip()
-    if not address or "\r" in address or "\n" in address:
+    parsed = parseaddr(address)[1]
+    if (
+        not address or "\r" in address or "\n" in address
+        or parsed != address or "@" not in parsed
+    ):
         raise EmailConfigurationError(f"{setting_name} is invalid.")
     return address
 
@@ -159,6 +170,14 @@ def _smtp_message(message: DeliveryMessage, source: Mapping[str, str]) -> EmailM
     email["Subject"] = message.subject
     email.set_content(message.text_body)
     email.add_alternative(message.html_body, subtype="html")
+    for attachment in message.attachments:
+        maintype, _, subtype = attachment.mime_type.partition("/")
+        email.add_attachment(
+            attachment.content,
+            maintype=maintype or "application",
+            subtype=subtype or "octet-stream",
+            filename=attachment.filename,
+        )
     return email
 
 
@@ -239,6 +258,11 @@ def _send_smtp(
                 smtp.send_message(mime_message)
             return True
         except Exception as error:
+            logger.warning(
+                "SMTP delivery attempt failed: purpose=%s error_type=%s retryable=%s attempt=%d",
+                str(message.purpose or "unspecified"), type(error).__name__,
+                _transient_smtp_error(error), attempt + 1,
+            )
             if not _transient_smtp_error(error) or attempt + 1 >= SMTP_MAX_ATTEMPTS:
                 return False
             remaining = deadline - clock()
@@ -295,3 +319,18 @@ def deliver_password_reset(recipient: str, token: str) -> bool:
             type(error).__name__,
         )
         return False
+
+
+def email_readiness(source: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return a secret-free operational status for authenticated diagnostics."""
+    environment = _environment(source)
+    try:
+        backend = email_backend(environment)
+        if backend == "disabled":
+            return {"backend": "Disabled", "configuration": "Not Ready"}
+        validate_email_configuration(environment)
+        return {"backend": backend.upper(), "configuration": "Ready"}
+    except EmailConfigurationError:
+        backend = _setting(environment, "TRADE_PAPER_EMAIL_BACKEND", "disabled")
+        safe_backend = backend.upper() if backend.casefold() in SUPPORTED_EMAIL_BACKENDS else "Invalid"
+        return {"backend": safe_backend, "configuration": "Not Ready"}
