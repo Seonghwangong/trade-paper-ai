@@ -632,6 +632,8 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert page.evaluate("fetch('/customer-data').then(response => response.json())") == []
             denied_admin = page.goto(f"{base_url}/admin/dashboard")
             assert denied_admin is not None and denied_admin.status == 403
+            denied_email_readiness = page.goto(f"{base_url}/admin/email-readiness")
+            assert denied_email_readiness is not None and denied_email_readiness.status == 403
             page.goto(f"{base_url}/customer")
             assert page.get_by_text(customer_a_name).count() == 0
             denied = page.goto(f"{base_url}{customer_a_edit_path}")

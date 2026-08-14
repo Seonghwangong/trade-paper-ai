@@ -8,10 +8,10 @@ from starlette.requests import Request
 from app import document_email, email_delivery, invoice, shipment
 
 
-def _request(account="A", method="GET"):
+def _request(account="A", method="GET", admin=False):
     return Request({
         "type": "http", "method": method, "path": "/send-email/invoice/INV-001",
-        "headers": [], "trade_paper_user": {"account_id": account},
+        "headers": [], "trade_paper_user": {"account_id": account, "is_admin": admin},
     })
 
 
@@ -108,6 +108,9 @@ def test_shipment_detail_displays_account_scoped_email_history(monkeypatch):
 
 def test_admin_email_readiness_is_secret_free(monkeypatch):
     monkeypatch.setattr(email_delivery, "email_readiness", lambda: {"backend": "SMTP", "configuration": "Ready"})
-    html = document_email.email_readiness_admin(_request()).body.decode()
+    html = document_email.email_readiness_admin(_request(admin=True)).body.decode()
     assert "Email Backend" in html and "SMTP" in html and "Ready" in html
     assert "username" not in html.casefold() and "password" not in html.casefold()
+    with pytest.raises(HTTPException) as denied:
+        document_email.email_readiness_admin(_request())
+    assert denied.value.status_code == 403

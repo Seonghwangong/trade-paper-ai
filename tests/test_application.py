@@ -1,5 +1,6 @@
 from collections import Counter
 import asyncio
+import inspect
 
 import app.main as main
 import pytest
@@ -16,6 +17,14 @@ def test_application_import_and_route_order():
     assert main.app is not None
     assert len(main.app.routes) == 258
     assert route_snapshot_digest(main.app) == EXPECTED_ROUTE_DIGEST
+
+
+def test_email_readiness_route_reuses_admin_dashboard_authorization():
+    route = next(
+        route for route in main.app.routes
+        if route.path == "/admin/email-readiness" and "GET" in (route.methods or set())
+    )
+    assert "auth.require_admin(request)" in inspect.getsource(route.endpoint)
 
 
 def test_no_route_duplicates():

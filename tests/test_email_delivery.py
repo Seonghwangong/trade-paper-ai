@@ -174,6 +174,8 @@ def test_secret_free_email_readiness():
     assert email_delivery.email_readiness(missing) == {"backend": "SMTP", "configuration": "Not Ready"}
     text = repr(email_delivery.email_readiness(missing))
     assert "smtp-user" not in text and "smtp-secret-value" not in text
+    for sensitive in ("smtp-user", "smtp-secret-value", "owner@example.com", "private body", "secret.pdf"):
+        assert sensitive not in text
 
 
 def test_public_base_url_policy_does_not_use_request_hosts():
