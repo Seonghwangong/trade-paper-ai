@@ -50,7 +50,7 @@ def load_certificate_records():
 def owned_certificate_records(account_id):
     owner = str(account_id or "").strip()
     return [record for record in load_certificate_records()
-            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner and not record.get("archived_at")]
 
 
 def load_certificates(account_id):
@@ -838,6 +838,8 @@ def save_co(
         saved["co_no"] = co_number
     locked_json_mutation(CO_FILE, [], add_co, list)
     co_no = saved["co_no"]
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Certificate of Origin", co_no, path=CO_FILE.with_name("audit_log.json"))
     shipment_context_redirect_url(shipment_no, "co_no", co_no, "/")
     return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Certificate of Origin Saved</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}.card{{width:min(620px,100%);padding:34px;border:1px solid #E5E7EB;border-radius:18px;background:#fff;text-align:center;box-shadow:0 14px 34px rgba(15,23,42,.09)}}h1{{margin:0 0 10px}}p{{color:#475569}}.actions{{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:20px}}a{{display:inline-flex;min-height:46px;align-items:center;padding:11px 16px;border-radius:10px;background:#E5E7EB;color:#111827;text-decoration:none;font-weight:800}}a.primary{{background:#111827;color:#fff}}</style></head><body><main><section class="card"><h1>Certificate of Origin Saved</h1><p>✓ {html_text(co_no)} was created successfully.</p><div class="actions"><a class="primary" href="/co/{html_attr(co_no)}">View Certificate</a><a href="/">Back to Dashboard</a></div></section></main></body></html>''')
 
@@ -928,6 +930,8 @@ def update_co(
                 return
         raise HTTPException(status_code=404, detail="Certificate of Origin not found")
     locked_json_mutation(CO_FILE, [], replace_co, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update", "Certificate of Origin", co_no, path=CO_FILE.with_name("audit_log.json"))
     return RedirectResponse(
         url=shipment_detail_redirect_url(current.get("shipment_no", ""), account_id, "/co-list"), status_code=303,
     )
@@ -936,11 +940,14 @@ def update_co(
 @router.get("/delete-co/{co_no}")
 def delete_co(co_no: str, request: Request):
     _owned_certificate(co_no, _account_id(request))
-    return render_delete_page("Certificate of Origin", co_no, f"/delete-co/{co_no}", "/co-list", find_dependencies("Certificate of Origin", co_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Certificate of Origin", co_no, f"/delete-co/{co_no}", "/co-list")
 
 @router.post("/delete-co/{co_no}")
 def confirm_delete_co(co_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "certificate_of_origin", co_no, "/co-list")
     _owned_certificate(co_no, account_id)
     dependencies = find_dependencies("Certificate of Origin", co_no, account_id)
     if dependencies:

@@ -63,6 +63,7 @@ def owned_container_records(account_id):
         record for record in load_container_records()
         if isinstance(record, dict)
         and str(record.get("account_id", "") or "").strip() == owner
+        and not record.get("archived_at")
     ]
 
 
@@ -855,11 +856,14 @@ def update_container(
 @router.get("/delete-container/{container_record_no}")
 def delete_container(container_record_no: str, request: Request):
     _owned_container(container_record_no, _account_id(request))
-    return render_delete_page("Container Management", container_record_no, f"/delete-container/{container_record_no}", "/container-list", find_dependencies("Container Management", container_record_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Container Management", container_record_no, f"/delete-container/{container_record_no}", "/container-list")
 
 @router.post("/delete-container/{container_record_no}")
 def confirm_delete_container(container_record_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "container", container_record_no, "/container-list")
     _owned_container(container_record_no, account_id)
     dependencies = find_dependencies("Container Management", container_record_no, account_id)
     if dependencies:

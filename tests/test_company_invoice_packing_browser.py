@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import time
+import re
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -86,7 +87,7 @@ def _register_login_and_setup(page, base_url, browser_name, suffix):
     page.get_by_label("Email").fill(email)
     page.get_by_label("Password").fill("Test-1234")
     page.get_by_role("button", name="Login").click()
-    page.wait_for_url(f"{base_url}/company?setup=1&next=%2F")
+    page.wait_for_url(re.compile(rf"{base_url}/company\?setup=1&next=%2Fonboarding"))
     return company_name, email
 
 
@@ -112,6 +113,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             page.locator("#email").fill(email)
             page.locator("#phone").fill(company_phone)
             page.get_by_role("button", name="Save Company").click()
+            page.wait_for_url(re.compile(rf"{base_url}/onboarding\?next=%2F"))
+            page.get_by_role("button", name="Skip for now").click()
             page.wait_for_url(f"{base_url}/")
             assert page.get_by_text("Current Plan", exact=True).is_visible()
             assert page.get_by_role("heading", name="Free", exact=True).is_visible()
@@ -140,6 +143,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             page.locator('input[name="country"]').fill("KR")
             page.get_by_role("button", name="Save Buyer").click()
             page.wait_for_url(f"{base_url}/buyers")
+            assert page.locator('input[list="buyer-search-options"]').is_visible()
+            assert page.locator(f'#buyer-search-options option[value="{buyer_name}"]').count() == 1
             buyers = page.evaluate("fetch('/buyer-data').then(response => response.json())")
             assert buyers == [{
                 "name": buyer_name,
@@ -520,6 +525,8 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             page.wait_for_url(f"{base_url}/login")
             _register_login_and_setup(page, base_url, browser_name, "B")
             page.get_by_role("button", name="Save Company").click()
+            page.wait_for_url(re.compile(rf"{base_url}/onboarding\?next=%2F"))
+            page.get_by_role("button", name="Skip for now").click()
             page.wait_for_url(f"{base_url}/")
             assert page.evaluate("fetch('/buyer-data').then(response => response.json())") == []
             assert page.evaluate("fetch('/product-data').then(response => response.json())") == []

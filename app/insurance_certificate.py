@@ -50,7 +50,7 @@ def load_insurance_records():
 def owned_insurance_records(account_id):
     owner = str(account_id or "").strip()
     return [record for record in load_insurance_records()
-            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner and not record.get("archived_at")]
 
 
 def load_insurances(account_id):
@@ -884,11 +884,14 @@ def update_inspection(
 @router.get("/delete-insurance/{insurance_no}")
 def delete_inspection(insurance_no: str, request: Request):
     _owned_insurance(insurance_no, _account_id(request))
-    return render_delete_page("Insurance Certificate", insurance_no, f"/delete-insurance/{insurance_no}", "/insurance-list", find_dependencies("Insurance Certificate", insurance_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Insurance Certificate", insurance_no, f"/delete-insurance/{insurance_no}", "/insurance-list")
 
 @router.post("/delete-insurance/{insurance_no}")
 def confirm_delete_insurance(insurance_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "insurance", insurance_no, "/insurance-list")
     _owned_insurance(insurance_no, account_id)
     dependencies = find_dependencies("Insurance Certificate", insurance_no, account_id)
     if dependencies:

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Form, HTTPException, Request
+from difflib import get_close_matches
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.account_product import ensure_legacy_product_ownership, public_product
 from app.auth import USERS_FILE
@@ -34,6 +35,21 @@ def load_products(account_id):
     return [public_product(record) for _, record in owned_product_entries(account_id)]
 
 
+def enrich_items_from_products(items, account_id):
+    """Fill only missing smart fields; submitted document values always win."""
+    products = {str(product.get("name", "")).strip().casefold(): product for product in load_products(account_id)}
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        product = products.get(str(item.get("name", "")).strip().casefold())
+        if not product:
+            continue
+        for field in ("hs_code", "origin", "unit"):
+            if not str(item.get(field, "") or "").strip():
+                item[field] = product.get(field, "")
+    return items
+
+
 def _owned_product(index, account_id):
     records = load_product_records()
     if (
@@ -48,6 +64,19 @@ def _owned_product(index, account_id):
 @router.get("/product-data")
 def product_data(request: Request):
     return load_products(_account_id(request))
+
+
+@router.get("/product-suggestions")
+def product_suggestions(request: Request, q: str = ""):
+    query = str(q or "").strip().casefold()
+    products = load_products(_account_id(request))
+    if not query:
+        return []
+    matches = [product for product in products if query in str(product.get("name", "")).casefold()]
+    if matches:
+        return matches[:10]
+    names = {str(product.get("name", "")).casefold(): product for product in products}
+    return [names[name] for name in get_close_matches(query, names.keys(), n=5, cutoff=0.55)]
 
 
 @router.get("/products")
@@ -80,6 +109,7 @@ Manage all registered products
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:25px;gap:20px;">
 
 <div style="display:flex;gap:12px;">
+<a href="/audit-log?document=Product"><button type="button" style="padding:13px 22px;background:#374151;color:white;border:none;border-radius:10px;font-size:16px;">History</button></a>
 <a href="/product-form">
 <button style="padding:13px 22px;background:#111827;color:white;border:none;border-radius:10px;font-size:16px;">
 + Add Product
@@ -121,6 +151,7 @@ Total Products : {len(entries)}
 <th style="width:18%;">HS Code</th>
 <th style="width:16%;">Unit Price</th>
 <th style="width:18%;">Origin</th>
+<th style="width:10%;">Unit</th>
 <th style="width:8%;">Edit</th>
 <th style="width:8%;">Delete</th>
 </tr>
@@ -129,7 +160,7 @@ Total Products : {len(entries)}
     if not entries:
         html += """
 <tr>
-<td colspan="7" style="padding:35px;text-align:center;color:#6B7280;">
+<td colspan="8" style="padding:35px;text-align:center;color:#6B7280;">
 No products have been registered yet.
 </td>
 </tr>
@@ -143,6 +174,7 @@ No products have been registered yet.
 <td style="padding:14px;text-align:center;word-break:break-word;">{html_escape(product.get("hs_code", ""))}</td>
 <td style="padding:14px;text-align:center;word-break:break-word;">{html_escape(product.get("unit_price", ""))}</td>
 <td style="padding:14px;text-align:center;word-break:break-word;">{html_escape(product.get("origin", ""))}</td>
+<td style="padding:14px;text-align:center;word-break:break-word;">{html_escape(product.get("unit", ""))}</td>
 <td style="text-align:center;">
 <a href="/edit-product/{index}" style="color:#111827;text-decoration:none;font-weight:bold;">Edit</a>
 </td>
@@ -209,6 +241,7 @@ Update registered product information
 <input name="hs_code" value="{html_escape(product.get('hs_code', ''), attribute=True)}" placeholder="HS Code">
 <input name="unit_price" value="{html_escape(product.get('unit_price', ''), attribute=True)}" placeholder="Unit Price">
 <input name="origin" value="{html_escape(product.get('origin', ''), attribute=True)}" placeholder="Country of Origin">
+<input name="unit" value="{html_escape(product.get('unit', ''), attribute=True)}" placeholder="Unit (PCS / KG / SET)">
 
 <button type="submit" class="full">Update Product</button>
 
@@ -230,8 +263,10 @@ def update_product(
     hs_code: str = Form(""),
     unit_price: str = Form(""),
     origin: str = Form(""),
+    unit: str = Form(""),
 ):
     name = require_text("Product name", name)
+    unit = unit if isinstance(unit, str) else ""
     account_id = _account_id(request)
     def replace_product(products):
         if (
@@ -245,9 +280,12 @@ def update_product(
             "name": name,
             "hs_code": hs_code,
             "unit_price": unit_price,
-            "origin": origin
+            "origin": origin,
+            "unit": unit
         }
     locked_json_mutation(PRODUCT_FILE, [], replace_product, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update", "Product", name, path=PRODUCT_FILE.with_name("audit_log.json"))
 
     return RedirectResponse(url="/products", status_code=303)
 
@@ -258,7 +296,8 @@ def product_form(demo: int = 0):
         "hs_code": "847130",
         "unit_price": "850",
         "origin": "Korea",
-    } if demo == 1 else {"name": "", "hs_code": "", "unit_price": "", "origin": ""}
+        "unit": "PCS",
+    } if demo == 1 else {"name": "", "hs_code": "", "unit_price": "", "origin": "", "unit": ""}
     demo_notice = (
         '<div class="demo-preview"><b>Demo Preview</b><br>'
         'Temporary values — nothing is saved until you press Save.</div>'
@@ -311,6 +350,7 @@ __DEMO_NOTICE__
 <input name="hs_code" value="__DEMO_HS_CODE__" placeholder="HS Code">
 <input name="unit_price" value="__DEMO_UNIT_PRICE__" placeholder="Unit Price">
 <input name="origin" value="__DEMO_ORIGIN__" placeholder="Country of Origin">
+<input name="unit" value="__DEMO_UNIT__" placeholder="Unit (PCS / KG / SET)">
 
 <button type="submit" class="full">Save Product</button>
 
@@ -328,6 +368,7 @@ __DEMO_NOTICE__
         .replace("__DEMO_HS_CODE__", demo_values["hs_code"])
         .replace("__DEMO_UNIT_PRICE__", demo_values["unit_price"])
         .replace("__DEMO_ORIGIN__", demo_values["origin"])
+        .replace("__DEMO_UNIT__", demo_values["unit"])
     )
     return HTMLResponse(html)
 
@@ -338,17 +379,22 @@ def save_product(
     hs_code: str = Form(""),
     unit_price: str = Form(""),
     origin: str = Form(""),
+    unit: str = Form(""),
 ):
     name = require_text("Product name", name)
+    unit = unit if isinstance(unit, str) else ""
     product = {
         "account_id": _account_id(request),
         "name": name,
         "hs_code": hs_code,
         "unit_price": unit_price,
-        "origin": origin
+        "origin": origin,
+        "unit": unit
     }
 
     locked_json_mutation(PRODUCT_FILE, [], lambda products: products.append(product), list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Product", name, path=PRODUCT_FILE.with_name("audit_log.json"))
 
     return RedirectResponse(url="/products", status_code=303)
 

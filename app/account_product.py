@@ -46,4 +46,5 @@ def public_product(record):
         "hs_code": _text(record.get("hs_code")),
         "unit_price": _text(record.get("unit_price")),
         "origin": _text(record.get("origin")),
+        "unit": _text(record.get("unit")),
     }

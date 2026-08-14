@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 from pathlib import Path
 import socket
@@ -31,6 +32,7 @@ def auth_server(tmp_path_factory):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(Path.cwd())
     env["TRADE_PAPER_DATA_DIR"] = str(data_dir)
+    env["TRADE_PAPER_ADMIN_EMAILS"] = "browser-chromium@example.com,browser-webkit@example.com"
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "tests.e2e_server:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
         cwd=Path.cwd(),
@@ -82,7 +84,12 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert parsed.path == "/"
             health = page.evaluate("fetch('/health').then(response => response.json())")
             assert health == {"status": "ok", "version": "3.5.0", "release": "Founding Beta"}
-            assert page.get_by_role("heading", name="Enter once. Reuse across documents.").is_visible()
+            assert page.get_by_role("heading", name="Create Export Documents in Minutes, Not Hours.").is_visible()
+            assert page.get_by_role("link", name="Start Free").first.get_attribute("href") == "/register"
+            assert page.get_by_role("link", name="Watch 15-Second Demo").get_attribute("href") == "#demo"
+            page.get_by_role("link", name="Watch 15-Second Demo").click()
+            assert page.locator("#demo").is_visible()
+            assert page.locator(".dashboard-screenshot").evaluate("image => image.complete && image.naturalWidth > 0")
             page.get_by_role("link", name="Send Feedback").click()
             page.wait_for_url(f"{base_url}/feedback")
             page.get_by_label("Name").fill(f"Feedback User {browser_name}")
@@ -111,8 +118,8 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.goto(f"{base_url}/buyers")
             assert urlparse(page.url).path == "/login"
             page.goto(f"{base_url}/")
-            assert page.get_by_role("link", name="Start Free").get_attribute("href") == "/register"
-            assert page.get_by_role("link", name="View Demo").first.get_attribute("href") == "/demo"
+            assert page.get_by_role("link", name="Start Free").first.get_attribute("href") == "/register"
+            assert page.get_by_role("heading", name="Ready to simplify export documentation?").is_visible()
 
             for protected_path in ["/buyers", "/invoice", "/admin/founding-beta", "/admin/feedback"]:
                 page.goto(f"{base_url}{protected_path}")
@@ -176,13 +183,16 @@ def test_authentication_browser_flow(auth_server, browser_name):
 
             page.get_by_label("Password").fill("Test1234")
             page.get_by_role("button", name="Login").click()
-            page.wait_for_url(f"{base_url}/company?setup=1&next=%2Fbuyers")
+            page.wait_for_url(re.compile(rf"{base_url}/company\?setup=1&next=%2Fonboarding"))
             assert page.get_by_role("heading", name="Company Setup").is_visible()
             assert page.locator("#name").input_value() == "Browser Test Company"
             page.locator("#address").fill(f"{browser_name} account address")
             page.locator("#email").fill(email)
             page.locator("#phone").fill("010-0000-0000")
             page.get_by_role("button", name="Save Company").click()
+            page.wait_for_url(re.compile(rf"{base_url}/onboarding\?next=%2Fbuyers"))
+            assert page.get_by_role("progressbar").get_attribute("aria-valuenow") == "25"
+            page.get_by_role("button", name="Skip for now").click()
             page.wait_for_url(f"{base_url}/buyers")
             assert page.locator(".tp-auth-user", has_text="Browser Test Company").is_visible()
             assert page.locator(".tp-auth-user", has_text=email).is_visible()
@@ -199,6 +209,21 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.wait_for_url(f"{base_url}/subscription")
             assert page.get_by_role("heading", name="Starter", exact=True).is_visible()
             assert page.locator(".badge", has_text="Trial").is_visible()
+            page.goto(f"{base_url}/admin/dashboard")
+            assert page.get_by_role("heading", name="Admin Dashboard 2.0", exact=True).is_visible()
+            assert page.get_by_role("heading", name="Overview", exact=True).is_visible()
+            assert page.get_by_role("link", name="Create Invoice", exact=True).is_visible()
+            users = json.loads((data_dir / "users.json").read_text(encoding="utf-8"))
+            account_id = next(user["account_id"] for user in users if user.get("email") == email)
+            page.goto(f"{base_url}/admin/backups?account_id={account_id}")
+            assert page.get_by_role("heading", name="Backup & Restore", exact=True).is_visible()
+            page.get_by_role("button", name="Create Manual Backup").click()
+            page.wait_for_url(f"{base_url}/admin/backups?account_id={account_id}")
+            page.locator("tr", has_text="Manual").get_by_role("link", name="Restore").click()
+            assert page.get_by_role("heading", name="Confirm Restore", exact=True).is_visible()
+            page.get_by_label("I understand and want to restore this backup.").check()
+            page.get_by_role("button", name="Restore Backup").click()
+            assert page.get_by_role("status").get_by_text("Backup restored successfully.").is_visible()
             page.goto(f"{base_url}/admin/feedback?search=Browser%20feedback%20{browser_name}")
             assert page.get_by_role("heading", name="Feedback Admin", exact=True).is_visible()
             assert page.get_by_text(f"Browser feedback {browser_name}", exact=True).is_visible()
@@ -289,8 +314,16 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert buyer_a_edit_path
             page.goto(f"{base_url}{buyer_a_edit_path}")
             page.locator('input[name="address"]').fill("Buyer A updated address")
+            page.locator('select[name="status"]').select_option(label="Prospect")
             page.get_by_role("button", name="Update Buyer").click()
             page.wait_for_url(f"{base_url}/buyers")
+            buyer_workspace_path = page.locator(f'tr:has-text("{buyer_a_name}") a', has_text="View").get_attribute("href")
+            assert buyer_workspace_path
+            page.goto(f"{base_url}{buyer_workspace_path}")
+            assert page.get_by_role("heading", name=buyer_a_name, exact=True).is_visible()
+            assert page.get_by_text("Prospect", exact=True).count() >= 1
+            assert page.get_by_text("Transactions", exact=True).is_visible()
+            page.goto(f"{base_url}/buyers")
             buyer_a_data = page.evaluate("fetch('/buyer-data').then(response => response.json())")
             assert buyer_a_data == [{
                 "name": buyer_a_name,
@@ -329,6 +362,14 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert page.get_by_text(product_a_name).is_visible()
             page.goto(f"{base_url}/search?q={product_a_name}")
             assert page.get_by_role("heading", name=product_a_name, exact=True).is_visible()
+            assert page.locator("#tp-global-search-input").is_visible()
+            page.locator("#tp-global-search-input").fill(product_a_name[:12])
+            page.locator("#tp-global-search-suggestions option").first.wait_for(state="attached")
+            assert product_a_name in page.locator("#tp-global-search-suggestions option").first.get_attribute("value")
+            page.locator("#tp-global-search-input").fill(product_a_name)
+            page.locator(".tp-global-search").evaluate("form => form.submit()")
+            page.wait_for_url(f"{base_url}/search?q={product_a_name}")
+            page.locator("#recent-searches").get_by_text(product_a_name, exact=True).wait_for(state="visible")
             page.goto(f"{base_url}/invoice?demo=1")
             page.get_by_text("Demo Preview", exact=True).wait_for(state="visible")
             assert page.locator("#seller").input_value() == "Busan Comfort Trading"
@@ -373,6 +414,33 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.wait_for_url(f"{base_url}/invoice-list")
             invoice_a_data = page.evaluate("fetch('/invoice-data').then(response => response.json())")
             assert invoice_a_data[0]["buyer"] == f"{buyer_a_name} Updated"
+            page.goto(f"{base_url}/audit-log?document={invoice_a_no}")
+            assert page.get_by_role("heading", name="Account Audit Log").is_visible()
+            assert page.get_by_role("cell", name="Create", exact=True).is_visible()
+            assert page.get_by_role("cell", name="Update", exact=True).is_visible()
+            assert page.get_by_role("cell", name="Commercial Invoice", exact=True).count() == 2
+            assert page.get_by_role("cell", name=invoice_a_no, exact=True).count() == 2
+            page.goto(f"{base_url}{product_a_edit_path}")
+            page.locator('input[name="hs_code"]').fill("222222")
+            page.locator('input[name="origin"]').fill("JP")
+            page.get_by_role("button", name="Update Product").click()
+            page.wait_for_url(f"{base_url}/products")
+            page.get_by_role("link", name="History").click()
+            page.wait_for_url(f"{base_url}/audit-log?document=Product")
+            assert page.get_by_role("cell", name="Update", exact=True).count() >= 2
+            page.goto(f"{base_url}{invoice_a_edit_path}")
+            assert page.locator("#hs1").input_value() == "111111"
+            assert page.locator("#origin1").input_value() == "KR"
+            page.goto(f"{base_url}/invoice")
+            page.locator("#product1").select_option(label=product_a_name)
+            assert page.locator("#hs1").input_value() == "222222"
+            assert page.locator("#origin1").input_value() == "JP"
+            page.goto(f"{base_url}{product_a_edit_path}")
+            page.locator('input[name="hs_code"]').fill("111111")
+            page.locator('input[name="origin"]').fill("KR")
+            page.get_by_role("button", name="Update Product").click()
+            page.wait_for_url(f"{base_url}/products")
+            page.goto(f"{base_url}/invoice-list")
             invoice_a_pdf = page.request.get(invoice_a_pdf_url)
             assert invoice_a_pdf.ok
             assert invoice_a_pdf.headers["content-type"].startswith("application/pdf")
@@ -433,6 +501,20 @@ def test_authentication_browser_flow(auth_server, browser_name):
             shipment_a_data_path = f"/shipment-data/{shipment_a_no}"
             shipment_a_delete_path = page.locator("tbody tr").first.locator('a', has_text="Delete").get_attribute("href")
             assert shipment_a_delete_path
+            page.goto(f"{base_url}{shipment_a_detail_path}")
+            page.get_by_role("button", name="Duplicate Shipment").click()
+            page.wait_for_url(re.compile(rf"{base_url}/edit-shipment/SHP-\d+"))
+            duplicate_no = page.locator('input[name="shipment_no"]').input_value()
+            assert duplicate_no != shipment_a_no
+            assert page.locator('input[name="shipment_date"]').input_value() == time.strftime("%Y-%m-%d")
+            assert page.locator('input[name="buyer"]').input_value() == buyer_a_name
+            assert page.locator('input[name="shipper"]').input_value() == "Browser Test Company"
+            assert page.get_by_text(product_a_name, exact=True).is_visible()
+            assert page.locator('input[name="invoice_no"]').input_value() == invoice_a_no
+            assert page.locator('input[name="packing_no"]').input_value() == packing_a_no
+            assert page.locator('input[name="si_no"]').input_value() == si_a_no
+            duplicate_delete = page.request.post(f"{base_url}/delete-shipment/{duplicate_no}")
+            assert duplicate_delete.ok
             page.goto(f"{base_url}/booking-form?shipment_no={shipment_a_no}&si_no={si_a_no}&packing_no={packing_a_no}")
             page.locator('input[name="booking_reference"]').fill(f"CODEX-BOOK-A-{browser_name}")
             page.locator('input[name="carrier"]').fill("CODEX Booking Carrier A")
@@ -495,7 +577,7 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert not any(cookie["name"] == "trade_paper_session" for cookie in page.context.cookies())
             page.goto(f"{base_url}/")
             assert urlparse(page.url).path == "/"
-            assert page.get_by_role("link", name="Start Free").is_visible()
+            assert page.get_by_role("link", name="Start Free").first.is_visible()
 
             for unsafe_next in ["https%3A%2F%2Fexample.com", "%2F%2Fexample.com"]:
                 page.goto(f"{base_url}/login?next={unsafe_next}")
@@ -530,9 +612,11 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.get_by_label("Email").fill(second_email)
             page.get_by_label("Password").fill("Test5678")
             page.get_by_role("button", name="Login").click()
-            page.wait_for_url(f"{base_url}/company?setup=1&next=%2F")
+            page.wait_for_url(re.compile(rf"{base_url}/company\?setup=1&next=%2Fonboarding"))
             page.locator("#address").fill("Account B address")
             page.get_by_role("button", name="Save Company").click()
+            page.wait_for_url(re.compile(rf"{base_url}/onboarding\?next=%2F"))
+            page.get_by_role("button", name="Skip for now").click()
             page.wait_for_url(f"{base_url}/")
             company_b = page.evaluate("fetch('/company-data').then(response => response.json())")
             assert company_b["name"] == "Isolated Company B"
@@ -546,6 +630,8 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert page.evaluate("fetch('/product-data').then(response => response.json())") == []
             assert page.evaluate("fetch('/invoice-data').then(response => response.json())") == []
             assert page.evaluate("fetch('/customer-data').then(response => response.json())") == []
+            denied_admin = page.goto(f"{base_url}/admin/dashboard")
+            assert denied_admin is not None and denied_admin.status == 403
             page.goto(f"{base_url}/customer")
             assert page.get_by_text(customer_a_name).count() == 0
             denied = page.goto(f"{base_url}{customer_a_edit_path}")
@@ -740,31 +826,31 @@ def test_authentication_browser_flow(auth_server, browser_name):
             denied = page.goto(f"{base_url}{booking_b_edit_path.replace('/edit-booking/', '/delete-booking/')}")
             assert denied is not None and denied.status == 404
             page.goto(f"{base_url}{booking_a_edit_path.replace('/edit-booking/', '/delete-booking/')}")
-            page.get_by_role("button", name="Delete", exact=True).click()
-            page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
+            page.get_by_role("button", name="Archive", exact=True).click()
+            page.locator(".tp-confirm-dialog").get_by_role("button", name="Archive", exact=True).click()
             page.wait_for_url(f"{base_url}/booking-list")
             assert page.get_by_text(booking_a_no).count() == 0
             page.goto(f"{base_url}/delete-container/{container_a_no}")
-            page.get_by_role("button", name="Delete", exact=True).click()
-            page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
+            page.get_by_role("button", name="Archive", exact=True).click()
+            page.locator(".tp-confirm-dialog").get_by_role("button", name="Archive", exact=True).click()
             page.wait_for_url(f"{base_url}/container-list")
             assert page.get_by_text(container_a_no).count() == 0
             page.goto(f"{base_url}{shipment_a_delete_path}")
-            page.get_by_role("button", name="Delete", exact=True).click()
-            page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
+            page.get_by_role("button", name="Archive", exact=True).click()
+            page.locator(".tp-confirm-dialog").get_by_role("button", name="Archive", exact=True).click()
             page.wait_for_url(f"{base_url}/shipment-list")
             page.goto(f"{base_url}{si_a_edit_path.replace('/edit-si/', '/delete-si/')}")
-            page.get_by_role("button", name="Delete", exact=True).click()
-            page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
+            page.get_by_role("button", name="Archive", exact=True).click()
+            page.locator(".tp-confirm-dialog").get_by_role("button", name="Archive", exact=True).click()
             page.wait_for_url(f"{base_url}/si-list")
             assert page.get_by_text(si_a_no).count() == 0
             page.goto(f"{base_url}/delete-bl/{bl_a_no}")
-            page.get_by_role("button", name="Delete", exact=True).click()
-            page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
+            page.get_by_role("button", name="Archive", exact=True).click()
+            page.locator(".tp-confirm-dialog").get_by_role("button", name="Archive", exact=True).click()
             page.wait_for_url(f"{base_url}/bl-list")
             page.goto(f"{base_url}{packing_a_edit_path.replace('/edit-packing/', '/packing-delete/')}")
-            page.get_by_role("button", name="Delete", exact=True).click()
-            page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
+            page.get_by_role("button", name="Archive", exact=True).click()
+            page.locator(".tp-confirm-dialog").get_by_role("button", name="Archive", exact=True).click()
             page.wait_for_url(f"{base_url}/packing-list")
             assert page.get_by_text(packing_a_no).count() == 0
             page.goto(f"{base_url}{buyer_a_edit_path.replace('/edit-buyer/', '/delete-buyer/')}")
@@ -778,8 +864,8 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.wait_for_url(f"{base_url}/products")
             assert page.evaluate("fetch('/product-data').then(response => response.json())") == []
             page.goto(f"{base_url}{invoice_a_edit_path.replace('/edit-invoice/', '/delete-invoice/')}")
-            page.get_by_role("button", name="Delete", exact=True).click()
-            page.locator(".tp-confirm-dialog").get_by_role("button", name="Delete", exact=True).click()
+            page.get_by_role("button", name="Archive", exact=True).click()
+            page.locator(".tp-confirm-dialog").get_by_role("button", name="Archive", exact=True).click()
             page.wait_for_url(f"{base_url}/invoice-list")
             assert page.evaluate("fetch('/invoice-data').then(response => response.json())") == []
         finally:
@@ -814,12 +900,14 @@ def test_buyer_and_product_stored_xss_browser_rendering(auth_server, browser_nam
             page.get_by_label("Email").fill(email)
             page.get_by_label("Password").fill("Test1234")
             page.get_by_role("button", name="Login").click()
-            page.wait_for_url(f"{base_url}/company?setup=1&next=%2Fbuyers")
+            page.wait_for_url(re.compile(rf"{base_url}/company\?setup=1&next=%2Fonboarding"))
             page.locator("#name").fill("XSS Browser Company")
             page.locator("#address").fill("Seoul")
             page.locator("#email").fill(email)
             page.locator("#phone").fill("010-0000-0000")
             page.get_by_role("button", name="Save Company").click()
+            page.wait_for_url(re.compile(rf"{base_url}/onboarding\?next=%2Fbuyers"))
+            page.get_by_role("button", name="Skip for now").click()
             page.wait_for_url(f"{base_url}/buyers")
 
             page.goto(f"{base_url}/buyer-form")

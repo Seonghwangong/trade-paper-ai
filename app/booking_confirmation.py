@@ -67,6 +67,7 @@ def owned_booking_records(account_id):
         record for record in load_booking_records()
         if isinstance(record, dict)
         and str(record.get("account_id", "") or "").strip() == owner
+        and not record.get("archived_at")
     ]
 
 
@@ -751,6 +752,8 @@ def save_booking(
         records.append(record)
         saved.update(record)
     locked_json_mutation(BOOKING_FILE, [], add_booking, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Booking Confirmation", saved["booking_record_no"], path=BOOKING_FILE.with_name("audit_log.json"))
     shipment_url = shipment_detail_redirect_url(shipment_no, account_id, "/booking-list")
     return booking_success_response(saved, shipment_url)
 
@@ -807,6 +810,8 @@ def update_booking(
             return
         raise HTTPException(status_code=404, detail="Booking not found")
     locked_json_mutation(BOOKING_FILE, [], replace_booking, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update", "Booking Confirmation", booking_record_no, path=BOOKING_FILE.with_name("audit_log.json"))
     return RedirectResponse(
         shipment_detail_redirect_url(shipment_no, account_id, "/booking-list"), status_code=303,
     )
@@ -815,11 +820,14 @@ def update_booking(
 @router.get("/delete-booking/{booking_record_no}")
 def delete_booking(booking_record_no: str, request: Request):
     _owned_booking(booking_record_no, _account_id(request))
-    return render_delete_page("Booking Confirmation", booking_record_no, f"/delete-booking/{booking_record_no}", "/booking-list", find_dependencies("Booking Confirmation", booking_record_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Booking Confirmation", booking_record_no, f"/delete-booking/{booking_record_no}", "/booking-list")
 
 @router.post("/delete-booking/{booking_record_no}")
 def confirm_delete_booking(booking_record_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "booking", booking_record_no, "/booking-list")
     _owned_booking(booking_record_no, account_id)
     dependencies = find_dependencies("Booking Confirmation", booking_record_no, account_id)
     if dependencies:

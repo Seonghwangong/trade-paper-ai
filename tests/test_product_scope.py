@@ -86,10 +86,10 @@ def test_product_crud_search_and_direct_access_are_account_scoped(tmp_path, monk
     assert [record["account_id"] for record in raw] == ["account-a", "account-b"]
 
     assert product.product_data(_request("account-a")) == [{
-        "name": "Product A", "hs_code": "100", "unit_price": "10", "origin": "KR",
+        "name": "Product A", "hs_code": "100", "unit_price": "10", "origin": "KR", "unit": "",
     }]
     assert product.product_data(_request("account-b")) == [{
-        "name": "Product B", "hs_code": "200", "unit_price": "20", "origin": "US",
+        "name": "Product B", "hs_code": "200", "unit_price": "20", "origin": "US", "unit": "",
     }]
     assert "account_id" not in product.product_data(_request("account-a"))[0]
     assert "Product A" in product.product_list(_request("account-a")).body.decode()

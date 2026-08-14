@@ -49,6 +49,7 @@ def owned_packing_records(account_id):
         record for record in load_packing_records()
         if isinstance(record, dict)
         and str(record.get("account_id", "") or "").strip() == owner
+        and not record.get("archived_at")
     ]
 
 
@@ -130,6 +131,8 @@ def create_packing_list(request: Request, payload: dict = Body(...)):
         record["packing_no"] = next_identifier(records, "packing_no", "PK")
         records.append(record)
     locked_json_mutation(PACKING_FILE, [], add_packing, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Packing List", record["packing_no"], path=PACKING_FILE.with_name("audit_log.json"))
     link_direct_document(shipment_no, "packing_no", record["packing_no"])
     return public_packing(record)
 
@@ -223,6 +226,7 @@ def save_packing(
     from app import product as product_module
     product_module.enrich_items_from_products(items, account_id)
     assign_item_ids(items, item_id)
+    saved = {}
     def add_packing(packing_lists):
         packing = {
         "account_id": account_id,
@@ -238,7 +242,10 @@ def save_packing(
         "items": items,
         }
         packing_lists.append(packing)
+        saved["packing_no"] = packing["packing_no"]
     locked_json_mutation(PACKING_FILE, [], add_packing, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Packing List", saved["packing_no"], path=PACKING_FILE.with_name("audit_log.json"))
 
     return RedirectResponse(url="/packing-list", status_code=303)
 
@@ -387,6 +394,8 @@ def update_packing(
             return
         raise HTTPException(status_code=404, detail="Packing List not found")
     locked_json_mutation(PACKING_FILE, [], replace_packing, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update", "Packing List", packing_no, path=PACKING_FILE.with_name("audit_log.json"))
 
     shipment_no = direct_document_shipment_no("packing_no", packing_no, account_id)
     return RedirectResponse(
@@ -397,11 +406,14 @@ def update_packing(
 @router.get("/packing-delete/{packing_no}")
 def delete_packing(packing_no: str, request: Request):
     _owned_packing(packing_no, _account_id(request))
-    return render_delete_page("Packing List", packing_no, f"/packing-delete/{packing_no}", "/packing-list", find_dependencies("Packing List", packing_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Packing List", packing_no, f"/packing-delete/{packing_no}", "/packing-list")
 
 @router.post("/packing-delete/{packing_no}")
 def confirm_delete_packing(packing_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "packing", packing_no, "/packing-list")
     _owned_packing(packing_no, account_id)
     dependencies = find_dependencies("Packing List", packing_no, account_id)
     if dependencies:

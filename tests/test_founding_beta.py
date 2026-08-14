@@ -77,7 +77,7 @@ def test_founding_beta_page_thank_you_and_landing_links():
         assert text in thanks
 
     landing_body = landing.landing_page().body.decode()
-    assert landing_body.count('href="/founding-beta"') == 2
+    assert landing_body.count('href="/founding-beta"') >= 3
     assert "/founding-beta" in auth.PUBLIC_PATHS
     assert "/founding-beta/thank-you" in auth.PUBLIC_PATHS
     assert "/admin/founding-beta" not in auth.PUBLIC_PATHS

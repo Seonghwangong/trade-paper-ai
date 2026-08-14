@@ -201,6 +201,7 @@ def owned_shipment_records(account_id):
         record for record in load_shipment_records()
         if isinstance(record, dict)
         and str(record.get("account_id", "") or "").strip() == owner
+        and not record.get("archived_at")
     ]
 
 
@@ -1257,6 +1258,7 @@ def shipment_list(request: Request, search: str = ""):
 <td><a class="link" href="/shipment/{html_attr(shipment_no)}">View</a></td>
 <td><a class="link" href="/shipment/{html_attr(shipment_no)}/package">Package</a></td>
 <td><a class="link" href="/edit-shipment/{html_attr(shipment_no)}">Edit</a></td>
+<td><form method="post" action="/shipment/{html_attr(shipment_no)}/duplicate"><button class="link" type="submit">Duplicate</button></form></td>
 <td><a class="danger" href="/delete-shipment/{html_attr(shipment_no)}">Delete</a></td>
 </tr>
 """
@@ -1308,7 +1310,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 <table>
 <thead>
 <tr>
-<th>Shipment No</th><th>Shipment Name</th><th>Buyer / Customer</th><th>Status</th><th>Linked Direct Documents</th><th>View</th><th>Package</th><th>Edit</th><th>Delete</th>
+<th>Shipment No</th><th>Shipment Name</th><th>Buyer / Customer</th><th>Status</th><th>Linked Direct Documents</th><th>View</th><th>Package</th><th>Edit</th><th>Duplicate</th><th>Delete</th>
 </tr>
 </thead>
 <tbody>{rows}</tbody>
@@ -1421,6 +1423,8 @@ def update_shipment_tracking(
                 return
         raise HTTPException(status_code=404, detail="Shipment not found")
     locked_json_mutation(SHIPMENT_FILE, [], replace, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update", "Shipment", shipment_no, path=SHIPMENT_FILE.with_name("audit_log.json"))
     return RedirectResponse(f"/shipment/{quote(shipment_no, safe='')}", status_code=303)
 
 
@@ -1518,6 +1522,8 @@ def save_shipment(
         shipments.append(record)
         saved.update({"shipment_no": record["shipment_no"], "si_no": si_no, "packing_no": packing_no})
     locked_json_mutation(SHIPMENT_FILE, [], add_shipment, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Shipment", saved["shipment_no"], path=SHIPMENT_FILE.with_name("audit_log.json"))
     return shipment_success_response(saved["shipment_no"], saved["si_no"], saved["packing_no"])
 
 
@@ -1762,6 +1768,7 @@ button,.btn{{display:inline-block;padding:13px 18px;background:#111827;color:whi
 <a class="btn" href="/">Dashboard</a>
 <a class="btn" href="/shipment-list">Shipment List</a>
 <a class="btn" href="/edit-shipment/{html_attr(shipment_no)}">Edit Shipment</a>
+<form method="post" action="/shipment/{html_attr(shipment_no)}/duplicate"><button class="btn" type="submit">Duplicate Shipment</button></form>
 <a class="btn" href="/shipment-pdf/{html_attr(shipment_no)}">PDF</a>
 <a class="btn" href="/shipment/{html_attr(shipment_no)}/package">Document Package</a>
 <a class="btn" href="/send-email/document-package/{html_attr(shipment_no)}">Send Package</a>
@@ -1782,7 +1789,7 @@ button,.btn{{display:inline-block;padding:13px 18px;background:#111827;color:whi
 <div class="remarks"><div class="label">Remarks</div><div>{html_text(shipment.get("remarks", ""))}</div></div>
 </div>
 <section class="tracking"><div class="tracking-head"><div><h2>Tracking Information</h2><div class="tracking-status">{html_text(shipment.get("status", "Draft"))}</div></div><a class="btn" href="/shipment/{html_attr(shipment_no)}/tracking">Edit Tracking</a></div><div class="tracking-grid">{tracking_rows}</div><div class="tracking-memo"><div class="label">Tracking Memo</div>{html_text(shipment.get("tracking_memo", "") or "-")}</div></section>
-<section class="email-history"><h2>Email Delivery History</h2><table><thead><tr><th>Sent At</th><th>Document</th><th>Recipient</th><th>Subject</th><th>Result</th></tr></thead><tbody>{email_history_rows}</tbody></table></section>
+<section class="email-history" id="email-history"><h2>Email Delivery History</h2><table><thead><tr><th>Sent At</th><th>Document</th><th>Recipient</th><th>Subject</th><th>Result</th></tr></thead><tbody>{email_history_rows}</tbody></table></section>
 {next_step_card}
 {workflow_timeline}
 {relationship_graph}
@@ -1794,6 +1801,36 @@ button,.btn{{display:inline-block;padding:13px 18px;background:#111827;color:whi
 </html>
 """
     return HTMLResponse(html)
+
+
+@router.post("/shipment/{shipment_no}/duplicate")
+def duplicate_shipment(shipment_no: str, request: Request):
+    account_id = _account_id(request)
+    source = find_shipment(shipment_no, account_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    saved = {}
+
+    def add_duplicate(records):
+        duplicate = deepcopy(source)
+        duplicate["shipment_no"] = next_identifier(records, "shipment_no", "SHP")
+        duplicate["shipment_date"] = datetime.now().strftime("%Y-%m-%d")
+        duplicate["status"] = "Draft"
+        duplicate["account_id"] = account_id
+        for field in ("bl_no", "co_no", "inspection_no", "insurance_no", "weight_no"):
+            duplicate[field] = ""
+        for field in TRACKING_FIELDS:
+            duplicate[field] = ""
+        records.append(duplicate)
+        saved["shipment_no"] = duplicate["shipment_no"]
+
+    locked_json_mutation(SHIPMENT_FILE, [], add_duplicate, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(
+        request, "Create", "Shipment", saved["shipment_no"],
+        path=SHIPMENT_FILE.with_name("audit_log.json"),
+    )
+    return RedirectResponse(f'/edit-shipment/{quote(saved["shipment_no"], safe="")}', status_code=303)
 
 
 def draw_pdf_text(pdf, text, x, y, max_width=390, font=TP_UNICODE, size=10):
@@ -2050,6 +2087,8 @@ def update_shipment(
             return
         raise HTTPException(status_code=404, detail="Shipment not found")
     locked_json_mutation(SHIPMENT_FILE, [], replace_shipment, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update", "Shipment", shipment_no, path=SHIPMENT_FILE.with_name("audit_log.json"))
     return RedirectResponse("/shipment-list", status_code=303)
 
 
@@ -2058,14 +2097,14 @@ def delete_shipment(shipment_no: str, request: Request):
     account_id = _account_id(request)
     if find_shipment(shipment_no, account_id) is None:
         raise HTTPException(status_code=404, detail="Shipment not found")
-    return render_delete_page(
-        "Shipment", shipment_no, f"/delete-shipment/{shipment_no}",
-        "/shipment-list", shipment_dependencies(shipment_no, account_id),
-    )
+    from app.archive import render_archive_page
+    return render_archive_page("Shipment", shipment_no, f"/delete-shipment/{shipment_no}", "/shipment-list")
 
 @router.post("/delete-shipment/{shipment_no}")
 def confirm_delete_shipment(shipment_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "shipment", shipment_no, "/shipment-list")
     if find_shipment(shipment_no, account_id) is None:
         raise HTTPException(status_code=404, detail="Shipment not found")
     dependencies = shipment_dependencies(shipment_no, account_id)

@@ -1,31 +1,30 @@
 from app.landing import landing_page
 from app.release import APP_VERSION, RELEASE_STAGE
+from pathlib import Path
+from PIL import Image
 
 
 def test_landing_matches_required_first_document_workflow_and_conversion_ctas():
     html = landing_page().body.decode()
-    workflow = ("Company", "Buyer", "Product", "Invoice", "Packing List", "PDF")
-    positions = [html.index(f'<div class="step">{step}</div>') for step in workflow]
+    workflow = ("Company", "Buyer", "Product", "Invoice", "Packing", "SI", "Shipment", "Booking", "B/L", "CO", "Email", "Done")
+    positions = [html.index(f"<li>{step}</li>") for step in workflow]
 
     assert positions == sorted(positions)
-    assert 'aria-label="Company, Buyer, Product, Invoice, Packing List, PDF"' in html
-    assert "Complete the required setup first" in html
-    assert '<a class="secondary" href="/register">Start Free</a>' in html
-    assert '<a class="primary" href="/founding-beta">Apply for Founding Beta</a>' in html
-    assert html.count('href="/demo">View Demo</a>') == 2
-    assert '<a class="primary" href="/register">Create Your First Invoice</a>' in html
+    assert 'aria-label="Company, Buyer, Product, Invoice, Packing, SI, Shipment, Booking, B/L, CO, Email, Done"' in html
+    assert '<a class="primary" href="/register">Start Free</a>' in html
+    assert '<a class="secondary" href="#demo">Watch 15-Second Demo</a>' in html
+    assert '<a class="secondary" href="/founding-beta">Join Founding Beta</a>' in html
     assert '<a class="nav-link" href="/login">Sign in</a>' in html
 
 
 def test_landing_hero_communicates_comfort_first_and_current_trust_values():
     html = landing_page().body.decode()
-    assert "Comfort First trade documentation" in html
-    assert "Enter once.<br>Reuse across documents." in html
-    assert "Reuse Company, Buyer, and Product data." in html
-    assert "Preserve stable document snapshots." in html
-    assert "Create Unicode PDFs." in html
-    assert "Follow a shipment-guided workflow." in html
-    assert "Enter your information once. Reuse it across your export documents." in html
+    assert "Founding Beta · Export operations workspace" in html
+    assert "Create Export Documents<br>in Minutes, Not Hours." in html
+    assert "Create, manage and send Commercial Invoice, Packing List," in html
+    assert "Shipping Instruction, Bill of Lading and more" in html
+    assert "in one connected workflow." in html
+    assert "Enter your information once. Keep every export document connected." in html
     assert 'aria-label="Product trust highlights"' in html
     for trust_value in (
         "✓ Unicode PDF",
@@ -40,14 +39,23 @@ def test_landing_hero_communicates_comfort_first_and_current_trust_values():
 def test_landing_describes_only_implemented_conversion_values():
     html = landing_page().body.decode()
     for text in (
-        "Reusable Master Data",
-        "Guided Next Steps",
-        "Stable Snapshots",
-        "Shipment Hub",
-        "Unicode PDF",
-        "Search",
+        "Why Trade Paper AI",
+        "No duplicate work",
+        "Connected documents",
+        "Built for exporters",
         "Founding Beta",
         "Frequently Asked Questions",
+        "Export Wizard",
+        "Customer Logos",
+        "Coming Soon",
+        "There are no customer testimonials yet.",
+        "Subscription plans",
+        "Account Isolation",
+        "Audit Log",
+        "Backup",
+        "Email Security",
+        "Ready to simplify export documentation?",
+        "Contact Trade Paper AI",
         "Nothing is saved until you choose Save.",
     ):
         assert text in html
@@ -57,7 +65,8 @@ def test_landing_describes_only_implemented_conversion_values():
         "Does Trade Paper AI support Unicode?",
         "Is my company data isolated?",
         "What happens in Demo Mode?",
-        "Can I delete my data?",
+        "Can I archive a document?",
+        "Is payment active?",
     ):
         assert f"<summary>{question}</summary>" in html
 
@@ -78,3 +87,14 @@ def test_landing_footer_exposes_beta_and_support_navigation():
         ("Sign In", "/login"),
     ):
         assert f'<a href="{path}">{label}</a>' in html
+
+
+def test_landing_demo_gif_is_exactly_fifteen_seconds():
+    path = Path(__file__).parents[1] / "app" / "static" / "trade-paper-demo-15s.gif"
+    image = Image.open(path)
+    duration = 0
+    for frame in range(image.n_frames):
+        image.seek(frame)
+        duration += image.info["duration"]
+    assert duration == 15_000
+    assert 'src="/static/trade-paper-demo-15s.gif"' in landing_page().body.decode()

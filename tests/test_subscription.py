@@ -44,6 +44,9 @@ def test_default_free_trial_plan_change_and_account_billing_isolation(tmp_path, 
         "account_id": "A", "created_at": history[0]["created_at"], "plan": "Starter",
         "status": "Trial", "amount": 0, "event": "Plan Change",
     }]
+    audit = json.loads((tmp_path / "audit_log.json").read_text(encoding="utf-8"))
+    assert audit[0]["action"] == "Change" and audit[0]["document_type"] == "Subscription"
+    assert audit[0]["document_no"] == "Starter" and audit[0]["account_id"] == "A"
     own_html = subscription.subscription_page(_request("A")).body.decode()
     other_html = subscription.subscription_page(_request("B")).body.decode()
     assert "Starter" in own_html and "Plan Change" not in own_html

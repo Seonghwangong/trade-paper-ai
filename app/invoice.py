@@ -11,6 +11,7 @@ import os
 from typing import Annotated, Optional
 
 from app.storage import data_path, load_json_strict, locked_json_mutation, next_identifier
+from app.audit_log import record_request_audit
 from app.validation import DataValidationError, require_existing_reference, require_items, require_text
 from app.referential_integrity import find_dependencies, render_delete_page
 from app.shipment import link_direct_document
@@ -21,6 +22,7 @@ from app.account_company import load_account_company
 from app.routers.company import ACCOUNT_COMPANIES_FILE
 from app import proforma as proforma_module
 from app import product as product_module
+from app import buyer as buyer_module
 from app.export import set_pdf_export_record
 
 COMPANY_FILE = data_path("company.json")
@@ -43,7 +45,7 @@ def owned_invoice_records(account_id):
     return [
         record
         for record in load_invoice_records()
-        if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner
+        if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner and not record.get("archived_at")
     ]
 
 
@@ -81,6 +83,19 @@ def create_invoice(request: Request, payload: dict = Body(...)):
     shipment_no = str(record.pop("shipment_no", "") or "").strip()
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
+    company = load_account_company(_account_id(request), ACCOUNT_COMPANIES_FILE)
+    buyer = next(
+        (item for item in buyer_module.load_buyers(_account_id(request))
+         if str(item.get("name", "") or "").strip().casefold() == record["buyer"].strip().casefold()),
+        {},
+    )
+    for field, value in {
+        "seller_address": company.get("address", ""), "seller_email": company.get("email", ""),
+        "seller_phone": company.get("phone", ""), "buyer_address": buyer.get("address", ""),
+        "buyer_email": buyer.get("email", ""),
+    }.items():
+        if not str(record.get(field, "") or "").strip():
+            record[field] = value
     require_items(record.get("items", []))
     product_module.enrich_items_from_products(record.get("items", []), _account_id(request))
     require_existing_reference("Proforma Invoice", record.get("pi_no", ""), load_proformas(_account_id(request)), "pi_no")
@@ -89,6 +104,7 @@ def create_invoice(request: Request, payload: dict = Body(...)):
         invoices.append(record)
     locked_json_mutation(INVOICE_FILE, [], add_invoice, list)
     link_direct_document(shipment_no, "invoice_no", record["invoice_no"])
+    record_request_audit(request, "Create", "Commercial Invoice", record["invoice_no"], path=INVOICE_FILE.with_name("audit_log.json"))
     return public_invoice(record)
 
 @router.get("/invoice-data")
@@ -127,9 +143,9 @@ def create_invoice_pdf(payload, company=None):
     buyer_email = payload.get("buyer_email", "sales@abctrading.com")
 
     seller = payload.get("seller") or company.get("name") or "Unknown Seller"
-    seller_address = payload.get("seller_address") or company.get("address") or "Seoul, Korea"
-    seller_email = payload.get("seller_email") or company.get("email") or "contact@tradepaper.ai"
-    seller_phone = payload.get("seller_phone") or company.get("phone") or ""
+    seller_address = payload.get("seller_address") if "seller_address" in payload else company.get("address") or "Seoul, Korea"
+    seller_email = payload.get("seller_email") if "seller_email" in payload else company.get("email") or "contact@tradepaper.ai"
+    seller_phone = payload.get("seller_phone") if "seller_phone" in payload else company.get("phone") or ""
 
     items = require_items(payload.get("items", []))
     if any(not isinstance(item, dict) for item in items):
@@ -335,9 +351,9 @@ def edit_invoice(invoice_no: str, request: Request):
 {section_card("Invoice Information", metadata([
     ("Currency", f'<input type="text" name="currency" value="{inv.get("currency", "USD")}" placeholder="Currency">'),
     ("Seller", f'<input type="text" name="seller" value="{inv.get("seller", "")}" placeholder="Seller Name">'),
-    ("Seller Address", f'<input type="text" name="seller_address" value="{inv.get("seller_address") or company.get("address", "")}" placeholder="Seller Address">'),
-    ("Seller Email", f'<input type="text" name="seller_email" value="{inv.get("seller_email") or company.get("email", "")}" placeholder="Seller Email">'),
-    ("Seller Phone", f'<input type="text" name="seller_phone" value="{inv.get("seller_phone") or company.get("phone", "")}" placeholder="Seller Phone">'),
+    ("Seller Address", f'<input type="text" name="seller_address" value="{inv.get("seller_address", company.get("address", ""))}" placeholder="Seller Address">'),
+    ("Seller Email", f'<input type="text" name="seller_email" value="{inv.get("seller_email", company.get("email", ""))}" placeholder="Seller Email">'),
+    ("Seller Phone", f'<input type="text" name="seller_phone" value="{inv.get("seller_phone", company.get("phone", ""))}" placeholder="Seller Phone">'),
     ("Buyer", f'<input type="text" name="buyer" value="{inv.get("buyer", "")}" placeholder="Buyer Name">'),
     ("Buyer Address", f'<input type="text" name="buyer_address" value="{inv.get("buyer_address", "")}" placeholder="Buyer Address">'),
     ("Buyer Email", f'<input type="text" name="buyer_email" value="{inv.get("buyer_email", "")}" placeholder="Buyer Email">'),
@@ -483,23 +499,21 @@ def update_invoice(
             return
         raise HTTPException(status_code=404, detail="Invoice not found")
     locked_json_mutation(INVOICE_FILE, [], replace_invoice, list)
+    record_request_audit(request, "Update", "Commercial Invoice", invoice_no, path=INVOICE_FILE.with_name("audit_log.json"))
 
     return RedirectResponse(url="/invoice-list", status_code=303)     
 @router.get("/delete-invoice/{invoice_no}")
 
 def delete_invoice(invoice_no: str, request: Request):
     _owned_invoice(invoice_no, _account_id(request))
-    return render_delete_page(
-        "Commercial Invoice",
-        invoice_no,
-        f"/delete-invoice/{invoice_no}",
-        "/invoice-list",
-        find_dependencies("Commercial Invoice", invoice_no, _account_id(request)),
-    )
+    from app.archive import render_archive_page
+    return render_archive_page("Commercial Invoice", invoice_no, f"/delete-invoice/{invoice_no}", "/invoice-list")
 
 @router.post("/delete-invoice/{invoice_no}")
 def confirm_delete_invoice(invoice_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "invoice", invoice_no, "/invoice-list")
     dependencies = find_dependencies("Commercial Invoice", invoice_no, account_id)
     if dependencies:
         return render_delete_page(

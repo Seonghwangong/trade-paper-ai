@@ -139,6 +139,8 @@ button{
 <input class="item" placeholder="Item Name">
 <input class="quantity" type="number" placeholder="Quantity">
 <input class="hs_code" placeholder="HS Code">
+<input class="origin" placeholder="Country of Origin">
+<input class="unit" placeholder="Unit">
 <input class="carton" type="number" placeholder="Carton">
 <input class="net_weight" placeholder="Net Weight">
 <input class="gross_weight" placeholder="Gross Weight">
@@ -243,6 +245,8 @@ function addItem(){
 <input class="item" placeholder="Item Name">
 <input class="quantity" type="number" placeholder="Quantity">
 <input class="hs_code" placeholder="HS Code">
+<input class="origin" placeholder="Country of Origin">
+<input class="unit" placeholder="Unit">
 <input class="carton" type="number" placeholder="Carton">
 <input class="net_weight" placeholder="Net Weight">
 <input class="gross_weight" placeholder="Gross Weight">
@@ -271,6 +275,8 @@ function selectProduct(select){
 
     card.querySelector(".item").value = product.name || "";
     card.querySelector(".hs_code").value = product.hs_code || "";
+    card.querySelector(".origin").value = product.origin || "";
+    card.querySelector(".unit").value = product.unit || "";
 }
 
 async function loadInvoiceOptions(){
@@ -323,6 +329,8 @@ async function loadInvoiceData(){
             card.querySelector(".item").value = item.name || "";
             card.querySelector(".quantity").value = item.quantity !== undefined ? item.quantity : "";
             card.querySelector(".hs_code").value = item.hs_code || (index >= 0 ? products[index].hs_code || "" : "");
+            card.querySelector(".origin").value = item.origin || (index >= 0 ? products[index].origin || "" : "");
+            card.querySelector(".unit").value = item.unit || (index >= 0 ? products[index].unit || "" : "");
 
             if(index >= 0){
                 card.querySelector(".productSelect").value = index;
@@ -343,6 +351,8 @@ function getPackingData(){
                 name: name,
                 quantity: Number(card.querySelector(".quantity").value || 0),
                 hs_code: card.querySelector(".hs_code").value,
+                origin: card.querySelector(".origin").value,
+                unit: card.querySelector(".unit").value,
                 carton: Number(card.querySelector(".carton").value || 0),
                 net_weight: card.querySelector(".net_weight").value,
                 gross_weight: card.querySelector(".gross_weight").value

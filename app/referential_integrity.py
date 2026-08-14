@@ -239,7 +239,7 @@ def render_delete_page(
     heading = blocked_message or ("This record is currently referenced." if protected else "Confirm deletion")
     explanation = (
         "Deletion is blocked to protect linked records."
-        if protected else "This operation permanently removes one record and does not cascade."
+        if protected else "This action permanently removes the selected record."
     )
     dependent_section = ""
     if dependencies:

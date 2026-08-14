@@ -53,6 +53,10 @@ def test_send_attaches_pdf_and_records_result(tmp_path, monkeypatch, delivered, 
     rows = json.loads(history.read_text(encoding="utf-8"))
     assert rows[0]["status"] == expected and rows[0]["shipment_no"] == "SHP-001"
     assert "body" not in rows[0] and "attachment" not in rows[0]
+    audit = json.loads((tmp_path / "audit_log.json").read_text(encoding="utf-8"))
+    assert audit[0]["action"] == "Send Email"
+    assert audit[0]["document_type"] == "Commercial Invoice" and audit[0]["document_no"] == "INV-001"
+    assert "recipient" not in audit[0] and "subject" not in audit[0] and "body" not in audit[0]
 
 
 def test_invalid_recipient_does_not_send_or_write(tmp_path, monkeypatch):

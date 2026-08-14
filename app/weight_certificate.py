@@ -48,7 +48,7 @@ def load_weight_records():
 def owned_weight_records(account_id):
     owner = str(account_id or "").strip()
     return [record for record in load_weight_records()
-            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner and not record.get("archived_at")]
 
 
 def load_weights(account_id):
@@ -944,11 +944,14 @@ def update_weight(
 @router.get("/delete-weight/{weight_no}")
 def delete_weight(weight_no: str, request: Request):
     _owned_weight(weight_no, _account_id(request))
-    return render_delete_page("Weight Certificate", weight_no, f"/delete-weight/{weight_no}", "/weight-list", find_dependencies("Weight Certificate", weight_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Weight Certificate", weight_no, f"/delete-weight/{weight_no}", "/weight-list")
 
 @router.post("/delete-weight/{weight_no}")
 def confirm_delete_weight(weight_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "weight", weight_no, "/weight-list")
     _owned_weight(weight_no, account_id)
     dependencies = find_dependencies("Weight Certificate", weight_no, account_id)
     if dependencies:

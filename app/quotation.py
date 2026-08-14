@@ -42,7 +42,7 @@ def load_quotation_records():
 def owned_quotation_records(account_id):
     owner = str(account_id or "").strip()
     return [record for record in load_quotation_records()
-            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner and not record.get("archived_at")]
 
 
 def load_quotations(account_id):
@@ -548,11 +548,14 @@ def update_quotation(
 @router.get("/delete-quotation/{quotation_no}")
 def delete_quotation(quotation_no: str, request: Request):
     _owned_quotation(quotation_no, _account_id(request))
-    return render_delete_page("Quotation", quotation_no, f"/delete-quotation/{quotation_no}", "/quotation-list", find_dependencies("Quotation", quotation_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Quotation", quotation_no, f"/delete-quotation/{quotation_no}", "/quotation-list")
 
 @router.post("/delete-quotation/{quotation_no}")
 def confirm_delete_quotation(quotation_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "quotation", quotation_no, "/quotation-list")
     _owned_quotation(quotation_no, account_id)
     dependencies = find_dependencies("Quotation", quotation_no, account_id)
     if dependencies:

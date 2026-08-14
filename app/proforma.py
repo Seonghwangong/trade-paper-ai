@@ -45,7 +45,7 @@ def load_proforma_records():
 def owned_proforma_records(account_id):
     owner = str(account_id or "").strip()
     return [record for record in load_proforma_records()
-            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner and not record.get("archived_at")]
 
 
 def load_proformas(account_id):
@@ -672,11 +672,14 @@ def update_proforma(
 @router.get("/delete-proforma/{pi_no}")
 def delete_proforma(pi_no: str, request: Request):
     _owned_proforma(pi_no, _account_id(request))
-    return render_delete_page("Proforma Invoice", pi_no, f"/delete-proforma/{pi_no}", "/proforma-list", find_dependencies("Proforma Invoice", pi_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Proforma Invoice", pi_no, f"/delete-proforma/{pi_no}", "/proforma-list")
 
 @router.post("/delete-proforma/{pi_no}")
 def confirm_delete_proforma(pi_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "proforma", pi_no, "/proforma-list")
     _owned_proforma(pi_no, account_id)
     dependencies = find_dependencies("Proforma Invoice", pi_no, account_id)
     if dependencies:

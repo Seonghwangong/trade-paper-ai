@@ -1,8 +1,10 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query, Request, Response as FastAPIResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import html as html_lib
+import hashlib
+import json
 import logging
 import os
 from pathlib import Path
@@ -31,17 +33,25 @@ from app.routers.company import router as company_router
 from app.product import router as product_router
 from app.buyer import router as buyer_router
 from app.customer import router as customer_router
+from app.export_wizard import router as export_wizard_router
+from app.onboarding import router as onboarding_router
+from app.team import router as team_router
 from app import customer as customer_module
 from app.release_pages import router as release_pages_router
 from app.founding_beta import router as founding_beta_router
 from app.feedback import router as feedback_router
 from app.document_email import router as document_email_router
 from app.subscription import router as subscription_router
+from app.admin_dashboard import router as admin_dashboard_router
+from app.audit_log import router as audit_log_router
+from app.backup_restore import router as backup_restore_router
+from app.archive import router as archive_router
 from app import founding_beta as founding_beta_module
 from app import feedback as feedback_module
 from app import subscription as subscription_module
 from app.auth import AuthenticationMiddleware, router as auth_router
 from app import email_delivery
+from app import analytics as analytics_module
 from app.account_company import load_account_company
 from app.routers import company as company_module
 from app import buyer as buyer_module
@@ -134,7 +144,106 @@ app.add_middleware(
 app.add_middleware(ReleaseFooterMiddleware)
 app.add_middleware(AuthenticationMiddleware)
 
+
+class ProductAnalyticsMiddleware:
+    """Record successful allow-listed product-flow events without request data."""
+
+    def __init__(self, application):
+        self.app = application
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        method = str(scope.get("method", "GET") or "GET").upper()
+        path = str(scope.get("path", "") or "")
+        status = {"code": 500}
+        email_success_before = None
+        if method == "POST" and path.startswith("/send-email/"):
+            email_success_before = sum(
+                isinstance(row, dict) and row.get("status") == "Success"
+                for row in load_json_strict(data_path("email_history.json"), [], list)
+            )
+
+        async def analytics_send(message):
+            if message.get("type") == "http.response.start":
+                status["code"] = int(message.get("status", 500))
+            await send(message)
+
+        await self.app(scope, receive, analytics_send)
+        if not 200 <= status["code"] < 400:
+            return
+        identity = scope.get("trade_paper_user") or {}
+        account_id = str(identity.get("account_id", "") or "")
+        event_specs = []
+        if method == "POST" and path == "/register": event_specs.append(("Signup", "", False))
+        if method == "POST" and path == "/login": event_specs.append(("Login", "", False))
+        if method == "GET" and path == "/onboarding": event_specs.append(("Onboarding Started", account_id, True))
+        if method == "GET" and path == "/export-wizard": event_specs.append(("Export Wizard Started", account_id, False))
+        if method == "POST" and path == "/export-wizard":
+            event_specs.extend((("Export Wizard Completed", account_id, False), ("Invoice Created", account_id, False), ("Onboarding Completed", account_id, True)))
+        if method == "POST" and path == "/invoice": event_specs.append(("Invoice Created", account_id, False))
+        if method == "POST" and path == "/team/invite": event_specs.append(("Team Invite", account_id, False))
+        if method == "POST" and path == "/feedback": event_specs.append(("Feedback Submitted", account_id, False))
+        if email_success_before is not None:
+            email_success_after = sum(
+                isinstance(row, dict) and row.get("status") == "Success"
+                for row in load_json_strict(data_path("email_history.json"), [], list)
+            )
+            if email_success_after > email_success_before:
+                event_specs.append(("Email Sent", account_id, False))
+        for event, owner, once in event_specs:
+            try:
+                analytics_module.record_event(event, owner, once=once)
+            except Exception:
+                logger.exception("Product analytics event could not be recorded: %s", event)
+        if method == "GET" and status["code"] == 200 and not account_id and path in {"/", "/register"}:
+            headers = {key.decode("latin-1").casefold(): value.decode("latin-1") for key, value in scope.get("headers", [])}
+            page = "Landing" if path == "/" else "Signup"
+            source = analytics_module.classify_source(headers.get("referer", ""), bytes(scope.get("query_string", b"")).decode("latin-1"))
+            try:
+                analytics_module.record_visit(page, source)
+            except Exception:
+                logger.exception("Visitor analytics could not be recorded: %s", page)
+
+
+app.add_middleware(ProductAnalyticsMiddleware)
+
+
+@app.post("/analytics/visit", status_code=204, include_in_schema=False)
+def analytics_visit(page: str = Query(""), source: str = Query("Direct")):
+    try:
+        analytics_module.record_visit(page, source)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid visitor analytics value") from exc
+    return FastAPIResponse(status_code=204)
+
 logger = logging.getLogger("trade-paper-ai")
+
+
+def seo_public_base_url(request=None, environment=None):
+    source = os.environ if environment is None else environment
+    try:
+        return email_delivery.public_base_url(source)
+    except email_delivery.EmailConfigurationError:
+        deployment = str(source.get("TRADE_PAPER_ENV", "") or "").strip().casefold()
+        if deployment in _PRODUCTION_ENVIRONMENTS or request is None:
+            raise
+        return str(request.base_url).rstrip("/")
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
+def robots_txt(request: Request):
+    base_url = seo_public_base_url(request)
+    template = (BASE_DIR / "static" / "robots.txt").read_text(encoding="utf-8")
+    return PlainTextResponse(template.replace("__PUBLIC_BASE_URL__", base_url), media_type="text/plain")
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml(request: Request):
+    base_url = seo_public_base_url(request)
+    template = (BASE_DIR / "static" / "sitemap.xml").read_text(encoding="utf-8")
+    return Response(template.replace("__PUBLIC_BASE_URL__", base_url), media_type="application/xml")
 
 
 def deployment_readiness(environment=None, data_dir=None):
@@ -561,11 +670,18 @@ app.include_router(company_router)
 app.include_router(product_router)
 app.include_router(buyer_router)
 app.include_router(customer_router)
+app.include_router(export_wizard_router)
+app.include_router(onboarding_router)
+app.include_router(team_router)
 app.include_router(release_pages_router)
 app.include_router(founding_beta_router)
 app.include_router(feedback_router)
 app.include_router(document_email_router)
 app.include_router(subscription_router)
+app.include_router(admin_dashboard_router)
+app.include_router(audit_log_router)
+app.include_router(backup_restore_router)
+app.include_router(archive_router)
 app.include_router(auth_router)
 def load_packing_lists():
     return load_json_strict(PACKING_FILE, [], list)
@@ -597,7 +713,9 @@ def save_invoice(invoice_data, account_id):
 @app.post("/save-invoice")
 def create_invoice(request: Request, invoice: dict):
     user = request.scope.get("trade_paper_user") or {}
-    save_invoice(invoice, user.get("account_id", ""))
+    saved = save_invoice(invoice, user.get("account_id", ""))
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Commercial Invoice", saved["invoice_no"], path=DATA_FILE.with_name("audit_log.json"))
     return {"message": "✓ Invoice saved successfully."}
 @app.get("/invoices")
 def get_invoices(request: Request):
@@ -682,6 +800,7 @@ def _search_source(definition):
         source["detail"] = definition.detail_route
     else:
         source["list"] = definition.list_route
+    source["edit"] = definition.edit_route
     if definition.key == "company":
         source["single"] = True
     return source
@@ -690,11 +809,17 @@ def _search_source(definition):
 SEARCH_SOURCES = [_search_source(definition) for definition in DOCUMENT_DEFINITIONS]
 
 
-def search_result_url(source, identifier):
+def search_result_url(source, identifier, record_index=None):
+    if source["module"] == "Buyers" and record_index is not None:
+        return f"/buyer/{record_index}"
+    if source["module"] == "Products" and record_index is not None:
+        return f"/edit-product/{record_index}"
     if source.get("url"):
         return source["url"]
     if source.get("detail"):
         return source["detail"].format(value=quote(identifier, safe=""))
+    if source.get("edit"):
+        return source["edit"].format(value=quote(identifier, safe=""))
     query = urlencode({"search": identifier}) if identifier else ""
     return f'{source["list"]}?{query}' if query else source["list"]
 
@@ -992,8 +1117,10 @@ def global_search_results(query, company=None, customers=None, buyers=None, prod
         records = [loaded] if source.get("single") and isinstance(loaded, dict) else loaded
         if not isinstance(records, list):
             continue
-        for record in records:
+        for record_index, record in enumerate(records):
             if not isinstance(record, dict):
+                continue
+            if record.get("archived_at"):
                 continue
             identifier = str(record.get(source["identifier"], "") or "")
             title = str(record.get(source["title"], "") or "")
@@ -1019,7 +1146,7 @@ def global_search_results(query, company=None, customers=None, buyers=None, prod
                 "title": title or identifier,
                 "subtitle": " · ".join(subtitle_values[:3]),
                 "search_text": " ".join([identifier, title, *other_values]),
-                "url": search_result_url(source, identifier),
+                "url": search_result_url(source, identifier, record_index),
                 "match_rank": rank,
                 "module_order": module_order,
             })
@@ -1029,30 +1156,44 @@ def global_search_results(query, company=None, customers=None, buyers=None, prod
     return results
 
 
+def _account_search_records(account_id):
+    return (
+        load_account_company(account_id, company_module.ACCOUNT_COMPANIES_FILE),
+        customer_module.load_customers(account_id), buyer_module.load_buyers(account_id),
+        product_module.load_products(account_id), invoice_module.load_invoices(account_id),
+        packing_module.load_packing_lists(account_id), shipping_instruction_module.load_shipping_instructions(account_id),
+        booking_module.load_bookings(account_id), shipment_module.load_shipments(account_id),
+        container_module.load_containers(account_id), bill_of_lading_module.load_bills_of_lading(account_id),
+        customs_module.load_customs(account_id), certificate_of_origin_module.load_certificates(account_id),
+        inspection_module.load_inspections(account_id), insurance_module.load_insurances(account_id),
+        weight_module.load_weights(account_id), quotation_module.load_quotations(account_id),
+        proforma_module.load_proformas(account_id),
+    )
+
+
+@app.get("/search-suggestions", response_class=JSONResponse)
+def global_search_suggestions(request: Request, q: str = ""):
+    query = str(q or "").strip()
+    if not query:
+        return []
+    user = request.scope.get("trade_paper_user") or {}
+    results = global_search_results(query, *_account_search_records(user.get("account_id", "")))[:10]
+    return [{"value": result["identifier"] or result["title"], "label": f'{result["module"]} · {result["title"]}'} for result in results]
+
+
 @app.get("/search", response_class=HTMLResponse)
-def global_search(request: Request, q: str = ""):
+def global_search(request: Request, q: str = "", include_archived: bool = False):
     query = str(q or "").strip()
     user = request.scope.get("trade_paper_user") or {}
-    company = load_account_company(user.get("account_id", ""), company_module.ACCOUNT_COMPANIES_FILE)
-    customers = customer_module.load_customers(user.get("account_id", ""))
-    buyers = buyer_module.load_buyers(user.get("account_id", ""))
-    products = product_module.load_products(user.get("account_id", ""))
-    invoices = invoice_module.load_invoices(user.get("account_id", ""))
-    packing_lists = packing_module.load_packing_lists(user.get("account_id", ""))
-    shipping_instructions = shipping_instruction_module.load_shipping_instructions(user.get("account_id", ""))
-    bookings = booking_module.load_bookings(user.get("account_id", ""))
-    shipments = shipment_module.load_shipments(user.get("account_id", ""))
-    containers = container_module.load_containers(user.get("account_id", ""))
-    bills_of_lading = bill_of_lading_module.load_bills_of_lading(user.get("account_id", ""))
-    customs = customs_module.load_customs(user.get("account_id", ""))
-    certificates_of_origin = certificate_of_origin_module.load_certificates(user.get("account_id", ""))
-    inspections = inspection_module.load_inspections(user.get("account_id", ""))
-    insurances = insurance_module.load_insurances(user.get("account_id", ""))
-    weights = weight_module.load_weights(user.get("account_id", ""))
-    quotations = quotation_module.load_quotations(user.get("account_id", ""))
-    proformas = proforma_module.load_proformas(user.get("account_id", ""))
+    recent_search_key = "trade-paper-recent-searches-" + hashlib.sha256(str(user.get("account_id", "")).encode()).hexdigest()[:16]
+    company, customers, buyers, products, invoices, packing_lists, shipping_instructions, bookings, shipments, containers, bills_of_lading, customs, certificates_of_origin, inspections, insurances, weights, quotations, proformas = _account_search_records(user.get("account_id", ""))
     all_results = global_search_results("", company, customers, buyers, products, invoices, packing_lists, shipping_instructions, bookings, shipments, containers, bills_of_lading, customs, certificates_of_origin, inspections, insurances, weights, quotations, proformas)
     matched_results = global_search_results(query, company, customers, buyers, products, invoices, packing_lists, shipping_instructions, bookings, shipments, containers, bills_of_lading, customs, certificates_of_origin, inspections, insurances, weights, quotations, proformas) if query else all_results
+    if include_archived:
+        from app.archive import archived_records
+        additions = [{"module": f'{item["label"]} (Archived)', "identifier": item["identifier"], "title": item["identifier"], "subtitle": "Archived", "search_text": item["identifier"], "url": "/archive", "match_rank": 0, "module_order": 99} for item in archived_records(user.get("account_id", ""), query)]
+        all_results.extend(additions)
+        matched_results.extend(additions)
     matched_keys = {(result["module"], result["identifier"], result["url"]) for result in matched_results}
     if not all_results:
         content = '<div id="search-empty" class="empty">No documents yet. Create your first document to start searching.</div>'
@@ -1079,7 +1220,7 @@ def global_search(request: Request, q: str = ""):
 .sub{{text-align:center;color:#6B7280;margin:0 0 28px}}.toolbar{{display:flex;gap:12px;max-width:900px;margin:0 auto 34px}}.search-field{{position:relative;display:flex;flex:1;min-width:0}}
 .toolbar input{{width:100%;min-width:0;padding:14px 48px 14px 16px;border:1px solid #D1D5DB;border-radius:11px;font-size:16px}}.clear-button{{position:absolute;right:6px;top:50%;width:38px;height:38px;transform:translateY(-50%);border:0;border-radius:9px;background:transparent;color:#64748B;font-size:20px;cursor:pointer}}.clear-button:hover{{background:#E5E7EB;color:#111827}}
 .button,.open-button{{display:inline-block;padding:14px 18px;border:0;border-radius:11px;background:#111827;color:white;text-decoration:none;font-weight:bold;cursor:pointer}}
-.dashboard-button{{background:#374151}}.count{{font-weight:bold;margin-bottom:14px;color:#374151}}.results{{display:grid;gap:14px}}
+.dashboard-button{{background:#374151}}.recent-searches{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:900px;margin:-20px auto 30px;color:#64748B;font-size:13px}}.recent-searches a{{padding:6px 9px;border-radius:999px;background:#E5E7EB;color:#374151;text-decoration:none;font-weight:bold}}.count{{font-weight:bold;margin-bottom:14px;color:#374151}}.results{{display:grid;gap:14px}}
 .result-card{{display:flex;align-items:center;justify-content:space-between;gap:20px;background:white;border:1px solid #E5E7EB;border-radius:16px;padding:22px;box-shadow:0 8px 22px rgba(17,24,39,.06)}}
 .module-badge{{display:inline-block;background:#E5E7EB;color:#374151;padding:6px 9px;border-radius:999px;font-size:12px;font-weight:bold}}
 .identifier{{font-weight:bold;color:#6B7280;margin:11px 0 4px}}.result-card h2{{font-size:21px;margin:0}}.result-card p{{color:#6B7280;margin:7px 0 0}}
@@ -1087,9 +1228,13 @@ def global_search(request: Request, q: str = ""):
 @media(max-width:640px){{.page{{padding-top:28px}}h1{{font-size:36px}}.toolbar,.result-card{{align-items:stretch;flex-direction:column}}.search-field{{width:100%}}.button,.open-button{{min-height:46px;text-align:center}}}}
 </style></head><body><main class="page"><h1>Global Search</h1><p class="sub">Search across the complete Trade Paper AI workflow</p>
 <form class="toolbar" method="get" action="/search"><div class="search-field"><input id="global-search-input" name="q" value="{dashboard_text(query)}" placeholder="Search Buyer, Seller, Company, Invoice No, Packing No..." autocomplete="off"><button id="search-clear" class="clear-button" type="button" aria-label="Clear search">✕</button></div>
-<button class="button" type="submit">Search</button><a class="button dashboard-button" href="/">Dashboard</a></form>{content}<script>
+<label><input type="checkbox" name="include_archived" value="true"{' checked' if include_archived else ''}> Include Archived</label><button class="button" type="submit">Search</button><a class="button dashboard-button" href="/">Dashboard</a></form><nav id="recent-searches" class="recent-searches" aria-label="Recent searches"></nav>{content}<script>
 (function(){{
   const input=document.getElementById('global-search-input');const clear=document.getElementById('search-clear');const cards=Array.from(document.querySelectorAll('.result-card'));const count=document.getElementById('search-count');const empty=document.getElementById('search-empty');
+  const recent=document.getElementById('recent-searches');const recentKey={json.dumps(recent_search_key)};const submitted=(input.value||'').trim();
+  function loadRecent(){{try{{const value=JSON.parse(localStorage.getItem(recentKey)||'[]');return Array.isArray(value)?value.filter(item=>typeof item==='string').slice(0,5):[]}}catch(error){{return []}}}}
+  function renderRecent(){{const values=loadRecent();recent.replaceChildren();if(!values.length)return;const label=document.createElement('strong');label.textContent='Recent searches';recent.append(label,...values.map(function(value){{const link=document.createElement('a');link.href='/search?q='+encodeURIComponent(value);link.textContent=value;return link}}))}}
+  if(submitted){{const values=[submitted,...loadRecent().filter(value=>value.toLocaleLowerCase()!==submitted.toLocaleLowerCase())].slice(0,5);localStorage.setItem(recentKey,JSON.stringify(values))}}renderRecent();
   function filterResults(){{const query=(input.value||'').trim().toLocaleLowerCase();let visible=0;cards.forEach(function(card){{const matches=!query||(card.dataset.search||'').toLocaleLowerCase().includes(query);card.hidden=!matches;if(matches)visible++;}});if(count)count.textContent='Total Results: '+visible;if(empty)empty.hidden=visible!==0;}}
   input.addEventListener('input',filterResults);clear.addEventListener('click',function(){{input.value='';filterResults();input.focus();if(window.history&&window.history.replaceState)window.history.replaceState(null,'','/search');}});filterResults();
 }})();
@@ -1288,8 +1433,7 @@ def home(request: Request):
         ("Company Information", bool(company_count), "/company"),
         ("Buyer", bool(buyers), "/buyer-form"),
         ("Product", bool(products), "/product-form"),
-        ("Invoice", bool(invoices), "/invoice"),
-        ("Packing List", bool(packing_lists), "/packing-page"),
+        ("Export Wizard", bool(shipments), "/export-wizard"),
     ]
     setup_completed = sum(1 for _, complete, _ in setup_steps if complete)
     setup_percentage = round(setup_completed * 100 / len(setup_steps))
@@ -1535,7 +1679,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 {welcome_html}
 {subscription_html}
 
-<section class="section"><div class="getting-started"><div class="setup-heading"><h2>Getting Started</h2><strong>{setup_percentage}% Complete</strong></div><div class="setup-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{setup_percentage}"><span style="width:{setup_percentage}%"></span></div><div class="setup-steps">{setup_steps_html}</div></div></section>
+<section class="section"><div class="getting-started"><div class="setup-heading"><h2>Getting Started</h2><strong>{setup_percentage}% Complete</strong></div><div class="setup-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{setup_percentage}"><span style="width:{setup_percentage}%"></span></div><div class="setup-steps">{setup_steps_html}</div><p><a href="/onboarding?replay=1">View setup guide again</a></p></div></section>
 {completion_html}
 
 <section class="section"><h2 class="section-title">Dashboard Statistics</h2><div class="dashboard-stat-grid">
@@ -1588,10 +1732,12 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 <section class="section"><h2 class="section-title">Notification Center</h2><div class="notification-list">{notification_rows}</div></section>
 
 <section class="section"><h2 class="section-title">Quick Actions</h2><div class="action-row">
+<a class="action-link" href="/export-wizard"><span class="action-icon" aria-hidden="true">⚡</span><span class="action-copy"><b>Export Wizard</b><small>Create the core document chain.</small></span></a>
 <a class="action-link" href="/invoice"><span class="action-icon" aria-hidden="true">＋</span><span class="action-copy"><b>New Invoice</b><small>Create an export invoice.</small></span></a>
 <a class="action-link" href="/packing-page"><span class="action-icon" aria-hidden="true">＋</span><span class="action-copy"><b>New Packing List</b><small>Generate packing documents.</small></span></a>
 <a class="action-link" href="/buyer-form"><span class="action-icon" aria-hidden="true">＋</span><span class="action-copy"><b>New Buyer</b><small>Manage your customers.</small></span></a>
 <a class="action-link" href="/product-form"><span class="action-icon" aria-hidden="true">＋</span><span class="action-copy"><b>New Product</b><small>Manage your products.</small></span></a>
+<a class="action-link" href="/team"><span class="action-icon" aria-hidden="true">👥</span><span class="action-copy"><b>Team</b><small>Invite users and manage roles.</small></span></a>
 </div></section>
 
 <section class="section"><h2 class="section-title">Today's Next Actions</h2><div class="next-actions-grid">{next_actions_html}</div></section>

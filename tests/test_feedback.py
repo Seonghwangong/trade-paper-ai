@@ -1,10 +1,22 @@
 import json
+from io import BytesIO
+from pathlib import Path
+import re
 
 import pytest
+from fastapi import HTTPException, UploadFile
+from PIL import Image
+from playwright.sync_api import sync_playwright
+from starlette.requests import Request
 
 from app import auth, feedback, landing
 from app.ui import release_footer
 from app.validation import DataValidationError
+from tests.test_auth_browser import auth_server
+
+
+def _request(account_id="account-a", admin=True):
+    return Request({"type": "http", "method": "GET", "path": "/admin/feedback", "headers": [], "trade_paper_user": {"account_id": account_id, "is_admin": admin}})
 
 
 def test_feedback_submit_saves_separately_and_creates_backup(tmp_path, monkeypatch):
@@ -23,9 +35,9 @@ def test_feedback_submit_saves_separately_and_creates_backup(tmp_path, monkeypat
     assert first[0] == {
         "submitted_at": first[0]["submitted_at"], "name": "Kim",
         "email": "kim@example.com", "rating": "5", "category": "Workflow",
-        "feedback": "The workflow is clear.",
+        "feedback": "The workflow is clear.", "account_id": "", "status": "New",
+        "reply_note": "", "screenshot_id": "",
     }
-    assert "account_id" not in first[0]
 
     feedback.submit_feedback("Please add a shortcut.", "", "", "", "Feature Request")
     backup = tmp_path / "feedback.backup.json"
@@ -51,7 +63,7 @@ def test_feedback_form_thank_you_and_footer_links():
     form = feedback.feedback_page().body.decode()
     for text in (
         "Name", "Email", "Rating", "Feedback", "Category", "Bug",
-        "Feature Request", "UI/UX", "Workflow", "Performance", "Other",
+        "Feature Request", "UI/UX", "Workflow", "Performance", "Other", "Screenshot",
     ):
         assert text in form
     for rating in range(1, 6):
@@ -74,7 +86,7 @@ def test_feedback_admin_lists_latest_first_and_searches(tmp_path, monkeypatch):
         {"submitted_at": "2026-07-23", "name": "Lee", "email": "lee@example.com", "rating": "3", "category": "Performance", "feedback": "Faster lists please"},
     ]), encoding="utf-8")
     monkeypatch.setattr(feedback, "FEEDBACK_FILE", feedback_file)
-    body = feedback.feedback_admin().body.decode()
+    body = feedback.feedback_admin(_request()).body.decode()
     assert body.index("Faster lists please") < body.index("Clear workflow")
     for heading in ("Submitted", "Name", "Email", "Rating", "Category", "Feedback"):
         assert heading in body
@@ -84,6 +96,88 @@ def test_feedback_admin_lists_latest_first_and_searches(tmp_path, monkeypatch):
         ("Performance", "Faster lists please", "Clear workflow"),
         ("clear", "Clear workflow", "Faster lists please"),
     ):
-        result = feedback.feedback_admin(query).body.decode()
+        result = feedback.feedback_admin(_request(), query).body.decode()
         assert visible in result
         assert hidden not in result
+
+
+def test_feedback_screenshot_status_reply_and_admin_isolation(tmp_path, monkeypatch):
+    feedback_file = tmp_path / "feedback.json"
+    monkeypatch.setattr(feedback, "FEEDBACK_FILE", feedback_file)
+    image = Image.new("RGB", (20, 20), "red")
+    payload = BytesIO()
+    image.save(payload, format="JPEG", exif=b"private-metadata")
+    upload = UploadFile(filename="customer-name.jpg", file=BytesIO(payload.getvalue()), headers={"content-type": "image/jpeg"})
+    feedback.submit_feedback("Screenshot feedback", rating="4", category="UI/UX", screenshot=upload, request=_request("account-a", False))
+    record = json.loads(feedback_file.read_text(encoding="utf-8"))[0]
+    assert record["account_id"] == "account-a"
+    assert record["status"] == "New"
+    assert record["screenshot_id"].endswith(".png")
+    assert "customer-name" not in record["screenshot_id"]
+    saved = feedback._upload_dir() / record["screenshot_id"]
+    clean = Image.open(saved)
+    assert clean.format == "PNG"
+    assert not clean.getexif()
+
+    response = feedback.update_feedback(0, _request(), "Planned", "Review with the product team")
+    assert response.status_code == 303
+    updated = json.loads(feedback_file.read_text(encoding="utf-8"))[0]
+    assert updated["status"] == "Planned"
+    assert updated["reply_note"] == "Review with the product team"
+    assert updated["feedback"] == "Screenshot feedback"
+    screenshot = feedback.feedback_screenshot(0, _request())
+    assert screenshot.media_type == "image/png"
+    with pytest.raises(HTTPException) as denied:
+        feedback.feedback_admin(_request(admin=False))
+    assert denied.value.status_code == 403
+
+
+@pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
+def test_feedback_in_app_browser_flow(auth_server, browser_name):
+    base_url, _ = auth_server
+    with sync_playwright() as playwright:
+        browser_type = getattr(playwright, browser_name)
+        if not Path(browser_type.executable_path).exists():
+            pytest.fail(f"{browser_name} browser binary is not installed")
+        browser = browser_type.launch(headless=True)
+        page = browser.new_page()
+        email = f"browser-{browser_name}@example.com"
+        screenshot = BytesIO()
+        Image.new("RGB", (32, 24), "blue").save(screenshot, format="PNG")
+        try:
+            page.goto(f"{base_url}/register")
+            page.get_by_label("Company Name").fill("Feedback Company")
+            page.get_by_label("Email").fill(email)
+            page.get_by_label("Password", exact=True).fill("Test1234")
+            page.get_by_label("Confirm Password").fill("Test1234")
+            page.get_by_role("button", name="Register").click()
+            page.goto(f"{base_url}/login")
+            page.get_by_label("Email").fill(email)
+            page.get_by_label("Password").fill("Test1234")
+            page.get_by_role("button", name="Login").click()
+            page.wait_for_url(re.compile(rf"{base_url}/company\?setup=1&next=%2Fonboarding"))
+            page.locator("#address").fill("Seoul")
+            page.get_by_role("button", name="Save Company").click()
+            page.wait_for_url(re.compile(rf"{base_url}/onboarding"))
+            page.goto(f"{base_url}/")
+            page.get_by_role("link", name="Feedback", exact=True).click()
+            page.get_by_role("radio", name="5 star rating").check()
+            page.get_by_label("Category").select_option("Bug")
+            page.locator("#feedback").fill(f"In-app feedback {browser_name}")
+            page.get_by_label("Screenshot").set_input_files({"name": "screen.png", "mimeType": "image/png", "buffer": screenshot.getvalue()})
+            page.get_by_role("button", name="Send Feedback").click()
+            page.wait_for_url(f"{base_url}/feedback/thank-you")
+            page.goto(f"{base_url}/admin/feedback?search=In-app%20feedback%20{browser_name}")
+            row = page.locator("tr", has_text=f"In-app feedback {browser_name}")
+            assert row.get_by_text(f"In-app feedback {browser_name}", exact=True).is_visible()
+            assert row.get_by_role("link", name="View Screenshot").is_visible()
+            row.locator('select[name="status"]').select_option("Reviewing")
+            row.locator('textarea[name="reply_note"]').fill("Internal follow-up")
+            row.get_by_role("button", name="Save", exact=True).click()
+            page.wait_for_url(f"{base_url}/admin/feedback?updated=1")
+            assert page.get_by_role("status").get_by_text("Feedback updated.").is_visible()
+            updated_row = page.locator("tr", has_text=f"In-app feedback {browser_name}")
+            assert updated_row.locator('select[name="status"]').input_value() == "Reviewing"
+            assert updated_row.locator('textarea[name="reply_note"]').input_value() == "Internal follow-up"
+        finally:
+            browser.close()

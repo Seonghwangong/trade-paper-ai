@@ -13,10 +13,11 @@ import secrets
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 
 from urllib.parse import quote, urlsplit
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.release import APP_NAME
@@ -49,6 +50,8 @@ PUBLIC_PATHS = frozenset({
     "/privacy", "/terms", "/status", "/health", "/healthz",
     "/founding-beta", "/founding-beta/thank-you",
     "/feedback", "/feedback/thank-you",
+    "/robots.txt", "/sitemap.xml",
+    "/analytics/visit",
 })
 COMPANY_SETUP_PATHS = frozenset({
     "/company", "/company-data", "/save-company", "/logout",
@@ -112,6 +115,32 @@ def load_users():
 
 def _normalized_email(value):
     return str(value or "").strip().casefold()
+
+
+def _admin_emails(environment=None):
+    source = os.environ if environment is None else environment
+    return {
+        _normalized_email(value)
+        for value in str(source.get("TRADE_PAPER_ADMIN_EMAILS", "") or "").split(",")
+        if _normalized_email(value)
+    }
+
+
+def user_is_admin(record, environment=None):
+    return bool(
+        isinstance(record, dict)
+        and (
+            str(record.get("role", "") or "").strip().casefold() == "admin"
+            or _normalized_email(record.get("email")) in _admin_emails(environment)
+        )
+    )
+
+
+def require_admin(request):
+    user = request.scope.get("trade_paper_user") or {}
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return user
 
 
 def _integer(value, default=0):
@@ -323,11 +352,15 @@ def current_user(request):
         return None
     if token_session_version != current_session_version:
         return None
-    return {
+    identity = {
         "account_id": str(record.get("account_id", "")).strip(),
         "company": str(record.get("company", "")).strip(),
         "email": email,
+        "role": str(record.get("role", "Owner") or "Owner").title(),
     }
+    if user_is_admin(record):
+        identity["is_admin"] = True
+    return identity
 
 
 def safe_next_path(value):
@@ -397,6 +430,10 @@ class AuthenticationMiddleware:
                     f"/company?setup=1&next={quote(requested, safe='')}",
                     status_code=303,
                 )
+                await response(scope, receive, send)
+                return
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"} and user.get("role") == "Viewer" and path != "/logout":
+                response = HTMLResponse("Viewer role is read-only.", status_code=403)
                 await response(scope, receive, send)
                 return
         if user is not None:
@@ -481,7 +518,13 @@ def login(email: str = Form(""), password: str = Form(""), next_path: str = Form
     if not _password_is_pbkdf2(user.get("password", "")):
         _upgrade_legacy_password(normalized_email, password)
     _clear_login_failures(rate_key)
-    response = RedirectResponse(url=safe_next_path(next_path), status_code=303)
+    destination = safe_next_path(next_path)
+    from app.onboarding import mark, should_auto_show
+    onboarding_file = USERS_FILE.with_name("onboarding.json")
+    if should_auto_show(user.get("account_id", ""), onboarding_file):
+        mark(user.get("account_id", ""), "started_at", onboarding_file)
+        destination = f"/onboarding?next={quote(destination, safe='')}"
+    response = RedirectResponse(url=destination, status_code=303)
     response.set_cookie(
         SESSION_COOKIE,
         _session_token(normalized_email, user.get("session_version", 0)),
@@ -491,11 +534,16 @@ def login(email: str = Form(""), password: str = Form(""), next_path: str = Form
         secure=session_cookie_secure(request),
         path="/",
     )
+    from app.audit_log import record_audit
+    record_audit(user.get("account_id"), normalized_email, "Login", "Account", "", path=USERS_FILE.with_name("audit_log.json"))
     return response
 
 
 @router.post("/logout")
 def logout(request: Request = None):
+    if request is not None:
+        from app.audit_log import record_request_audit
+        record_request_audit(request, "Logout", "Account", "", path=USERS_FILE.with_name("audit_log.json"))
     response = RedirectResponse(url="/login", status_code=303)
     response.delete_cookie(
         SESSION_COOKIE,
@@ -714,6 +762,8 @@ def register(
             "session_version": 0,
             "plan": "Free",
             "subscription_status": "Trial",
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+            "role": "Owner",
         })
 
     locked_json_mutation(USERS_FILE, [], add_user, list)

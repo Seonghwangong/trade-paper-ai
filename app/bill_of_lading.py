@@ -47,6 +47,7 @@ def owned_bill_of_lading_records(account_id):
         record for record in load_bill_of_lading_records()
         if isinstance(record, dict)
         and str(record.get("account_id", "") or "").strip() == owner
+        and not record.get("archived_at")
     ]
 
 
@@ -625,6 +626,8 @@ def save_bl(
         records.append(record)
         saved.update(record)
     locked_json_mutation(BL_FILE, [], add_bl, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Bill of Lading", saved["bl_no"], path=BL_FILE.with_name("audit_log.json"))
     shipment_context_redirect_url(shipment_no, "bl_no", saved["bl_no"], "/bl-list")
     return bl_success_response(saved)
 
@@ -712,6 +715,8 @@ def update_bl(
                 return
         raise HTTPException(status_code=404, detail="Bill of Lading not found")
     locked_json_mutation(BL_FILE, [], replace_bl, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update", "Bill of Lading", bl_no, path=BL_FILE.with_name("audit_log.json"))
     shipment_no = direct_document_shipment_no("bl_no", bl_no, account_id)
     return RedirectResponse(
         url=shipment_detail_redirect_url(shipment_no, account_id, "/bl-list"), status_code=303,
@@ -721,11 +726,14 @@ def update_bl(
 @router.get("/delete-bl/{bl_no}")
 def delete_bl(bl_no: str, request: Request):
     _owned_bl(bl_no, _account_id(request))
-    return render_delete_page("Bill of Lading", bl_no, f"/delete-bl/{bl_no}", "/bl-list", find_dependencies("Bill of Lading", bl_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Bill of Lading", bl_no, f"/delete-bl/{bl_no}", "/bl-list")
 
 @router.post("/delete-bl/{bl_no}")
 def confirm_delete_bl(bl_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "bill_of_lading", bl_no, "/bl-list")
     _owned_bl(bl_no, account_id)
     dependencies = find_dependencies("Bill of Lading", bl_no, account_id)
     if dependencies:

@@ -21,6 +21,7 @@ def _base_form():
         "transport_details": "Vessel V-1", "port_of_loading": "Busan",
         "port_of_discharge": "LA", "remarks": "Snapshot", "item_name": ["Cargo"],
         "hs_code": ["847130"], "quantity": ["4"], "origin": ["KR"],
+        "unit": ["PCS"],
         "carton": ["2"], "net_weight": ["40"], "gross_weight": ["44"],
     }
 
@@ -37,10 +38,11 @@ def test_co_snapshot_create_edit_update_pdf_legacy_and_account_isolation(tmp_pat
         "consignee_email": "consignee@example.com",
     }
     items = [{"name": "Cargo", "hs_code": "847130", "quantity": "4", "carton": "2",
-              "net_weight": "40", "gross_weight": "44", "origin": "KR"}]
+              "net_weight": "40", "gross_weight": "44", "origin": "KR", "unit": "PCS"}]
     shipment = {"shipment_no": "SHP-001", "bl_no": "BL-001", "packing_no": "PK-001",
                 "invoice_no": "INV-001", **party, "items": items}
-    bill = {"bl_no": "BL-001", "packing_no": "PK-001", "invoice_no": "INV-001",
+    bill = {"bl_no": "BL-001", "booking_record_no": "BK-001", "shipment_no": "SHP-001",
+            "si_no": "SI-001", "packing_no": "PK-001", "invoice_no": "INV-001",
             "shipper": "B/L Exporter", "consignee": "B/L Consignee", "place_of_delivery": "US",
             "items": [{**items[0], "name": "B/L Cargo"}]}
     packing = {"packing_no": "PK-001", "invoice_no": "INV-001", "seller_address": "Packing Address"}
@@ -61,15 +63,28 @@ def test_co_snapshot_create_edit_update_pdf_legacy_and_account_isolation(tmp_pat
     assert 'name="exporter_name" value="Shipment Exporter"' in form
     assert 'name="exporter_address" value="Exporter Address"' in form
     assert 'name="consignee_email" value="consignee@example.com"' in form
+    assert 'name="bl_no" required' in form
+    assert 'name="booking_record_no" value="BK-001"' in form
+    assert 'name="si_no" value="SI-001"' in form
+    assert 'name="invoice_no" value="INV-001" placeholder="Commercial Invoice" readonly' in form
+    assert 'name="unit" value="PCS"' in form
+    assert "BL-001" not in certificate.co_form(_request("B")).body.decode()
     assert all(value in form for value in ("Cargo", "847130", "2", "40", "44"))
 
     payload = _base_form()
-    payload.update({"exporter": party["shipper"], "consignee": party["consignee"]})
-    certificate.save_co(_request("A"), **payload)
+    payload.update({"exporter": "User Exporter", "consignee": "User Importer",
+                    "booking_record_no": "BK-001", "si_no": "SI-001",
+                    "issuing_authority": "Busan Chamber", "certificate_type": "Preferential"})
+    success = certificate.save_co(_request("A"), **payload).body.decode()
+    assert "View Certificate" in success and "Back to Dashboard" in success
     stored = json.loads(co_file.read_text())[0]
     assert stored["shipment_no"] == "SHP-001"
     assert stored["exporter_address"] == "Exporter Address"
     assert stored["consignee_email"] == "consignee@example.com"
+    assert stored["exporter"] == "User Exporter" and stored["consignee"] == "User Importer"
+    assert stored["booking_record_no"] == "BK-001" and stored["si_no"] == "SI-001"
+    assert stored["issuing_authority"] == "Busan Chamber"
+    assert stored["certificate_type"] == "Preferential"
     assert {k: v for k, v in stored["items"][0].items() if k != "item_id"} == items[0]
     assert stored["items"][0]["item_id"].startswith("ITEM-")
     edit = certificate.edit_co("CO-001", _request("A")).body.decode()

@@ -52,6 +52,7 @@ def owned_shipping_instruction_records(account_id):
         record for record in load_shipping_instruction_records()
         if isinstance(record, dict)
         and str(record.get("account_id", "") or "").strip() == owner
+        and not record.get("archived_at")
     ]
 
 
@@ -776,6 +777,8 @@ def save_si(
         records.append(record)
         saved["si_no"] = si_number
     locked_json_mutation(SI_FILE, [], add_si, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Create", "Shipping Instruction", saved["si_no"], path=SI_FILE.with_name("audit_log.json"))
     shipment_context = valid_shipment_context(shipment_no)
     if shipment_context:
         return RedirectResponse(
@@ -895,6 +898,8 @@ def update_si(
             return
         raise HTTPException(status_code=404, detail="Shipping instruction not found")
     locked_json_mutation(SI_FILE, [], replace_si, list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update", "Shipping Instruction", si_no, path=SI_FILE.with_name("audit_log.json"))
     return RedirectResponse(
         shipment_detail_redirect_url(effective_shipment_no, account_id, "/si-list"), status_code=303,
     )
@@ -903,11 +908,14 @@ def update_si(
 @router.get("/delete-si/{si_no}")
 def delete_si(si_no: str, request: Request):
     _owned_shipping_instruction(si_no, _account_id(request))
-    return render_delete_page("Shipping Instruction", si_no, f"/delete-si/{si_no}", "/si-list", find_dependencies("Shipping Instruction", si_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Shipping Instruction", si_no, f"/delete-si/{si_no}", "/si-list")
 
 @router.post("/delete-si/{si_no}")
 def confirm_delete_si(si_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "shipping_instruction", si_no, "/si-list")
     _owned_shipping_instruction(si_no, account_id)
     dependencies = find_dependencies("Shipping Instruction", si_no, account_id)
     if dependencies:

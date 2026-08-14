@@ -132,6 +132,8 @@ def change_plan(request: Request, plan: str = Form("")):
     locked_json_mutation(USERS_FILE, [], update, list)
     entry = {"account_id": account_id, "created_at": datetime.now(timezone.utc).isoformat(), "plan": plan, "status": status, "amount": 0, "event": "Plan Change"}
     locked_json_mutation(BILLING_HISTORY_FILE, [], lambda rows: rows.append(entry), list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Change", "Subscription", plan, path=USERS_FILE.with_name("audit_log.json"))
     return RedirectResponse("/subscription", status_code=303)
 
 
@@ -158,4 +160,7 @@ def update_subscription_status(account_id: str, request: Request, status: str = 
             raise HTTPException(status_code=404, detail="Account not found")
         record["subscription_status"] = status
     locked_json_mutation(USERS_FILE, [], update, list)
+    from app.audit_log import record_audit
+    actor = request.scope.get("trade_paper_user") or {}
+    record_audit(account_id, actor.get("email"), "Change", "Subscription", status, path=USERS_FILE.with_name("audit_log.json"))
     return RedirectResponse("/admin/subscriptions", status_code=303)

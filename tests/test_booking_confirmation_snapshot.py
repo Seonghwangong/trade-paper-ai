@@ -80,7 +80,7 @@ def test_booking_snapshot_create_edit_update_pdf_legacy_and_isolation(tmp_path, 
     response = booking.save_booking(_request("A"), booking_reference="CARRIER-REF-001", **payload)
     success = response.body.decode()
     assert "Continue to Bill of Lading →" in success
-    assert "/bl-form?packing_no=PK-001&amp;shipment_no=SHP-001" in success
+    assert "/bl-form?booking_record_no=BK-001&amp;packing_no=PK-001&amp;shipment_no=SHP-001" in success
     stored = json.loads(booking_file.read_text())[0]
     assert stored["booking_no"] == "BK-001" and stored["shipment_no"] == "SHP-001"
     assert stored["booking_reference"] == "CARRIER-REF-001"

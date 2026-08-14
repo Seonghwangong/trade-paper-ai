@@ -82,11 +82,12 @@ def test_registration_and_login_use_temporary_storage(tmp_path, monkeypatch):
 
     logged_in = auth.login("OWNER@test.com", "secret12", "")
     assert logged_in.status_code == 303
-    assert logged_in.headers["location"] == "/"
+    assert logged_in.headers["location"] == "/onboarding?next=%2F"
     assert "trade_paper_session=" in logged_in.headers["set-cookie"]
     assert "HttpOnly" in logged_in.headers["set-cookie"]
     assert "SameSite=lax" in logged_in.headers["set-cookie"]
     assert "Secure" not in logged_in.headers["set-cookie"]
+    assert auth.login("owner@test.com", "secret12", "/buyers").headers["location"] == "/buyers"
 
 
 def test_registration_password_policy_and_existing_login_compatibility(tmp_path, monkeypatch):
@@ -146,17 +147,19 @@ def test_session_identity_safe_redirects_and_plaintext_compatibility(tmp_path, m
     assert companies[0]["setup_complete"] is False
 
     logged_in = auth.login("LEGACY@example.com", "legacy-pass", "/buyers")
-    assert logged_in.headers["location"] == "/buyers"
+    assert logged_in.headers["location"] == "/onboarding?next=%2Fbuyers"
     upgraded = json.loads(users_file.read_text(encoding="utf-8"))[0]
     assert upgraded["password"].startswith("pbkdf2_sha256$")
     assert upgraded["password"] != "legacy-pass"
-    assert auth.login("legacy@example.com", "legacy-pass", "/buyers").status_code == 303
+    second_login = auth.login("legacy@example.com", "legacy-pass", "/buyers")
+    assert second_login.status_code == 303 and second_login.headers["location"] == "/buyers"
     cookie = logged_in.headers["set-cookie"].split(";", 1)[0].split("=", 1)[1]
     user = auth.current_user(_request_with_cookie(cookie))
     assert user == {
         "account_id": account_id,
         "company": "Legacy Company",
         "email": "legacy@example.com",
+        "role": "Owner",
     }
     assert "password" not in user
     assert auth.current_user(_request_with_cookie(cookie + "tampered")) is None
@@ -188,7 +191,7 @@ def test_plaintext_password_upgrade_is_atomic_and_preserves_identity(tmp_path, m
     response = auth.login("UPGRADE@example.com", "legacy-password", "/buyers")
 
     assert response.status_code == 303
-    assert response.headers["location"] == "/buyers"
+    assert response.headers["location"] == "/onboarding?next=%2Fbuyers"
     upgraded = json.loads(users_file.read_text(encoding="utf-8"))[0]
     assert upgraded["password"].startswith("pbkdf2_sha256$")
     assert upgraded["password"] != "legacy-password"

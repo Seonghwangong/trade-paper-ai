@@ -1,4 +1,5 @@
 import app.main as main
+from starlette.requests import Request
 
 
 def test_global_search_only_uses_explicit_scoped_datasets(monkeypatch):
@@ -60,3 +61,21 @@ def test_global_search_uninjected_and_unknown_sources_fail_closed(monkeypatch):
     )
     assert [result["title"] for result in account_a] == ["Shared Customer A"]
     assert [result["title"] for result in account_b] == ["Shared Customer B"]
+
+
+def test_global_search_direct_links_and_account_scoped_autocomplete(monkeypatch):
+    records = ({"name": "ABC Trading"}, [], [{"name": "Samsung Buyer"}], [{"name": "Laptop", "hs_code": "847130"}], [{"invoice_no": "INV-016", "buyer": "Samsung Buyer", "items": []}], [{"packing_no": "PK-028", "buyer": "Samsung Buyer"}], [{"si_no": "SI-001", "consignee": "Samsung Buyer"}], [], [], [], [], [], [], [], [], [], [], [])
+    monkeypatch.setattr(main, "_account_search_records", lambda account_id: records if account_id == "A" else ({}, [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []))
+    request = Request({"type": "http", "method": "GET", "path": "/search-suggestions", "headers": [], "trade_paper_user": {"account_id": "A"}})
+    suggestions = main.global_search_suggestions(request, "847130")
+    assert suggestions == [{"value": "Laptop", "label": "Products · Laptop"}]
+    other = Request({"type": "http", "method": "GET", "path": "/search-suggestions", "headers": [], "trade_paper_user": {"account_id": "B"}})
+    assert main.global_search_suggestions(other, "847130") == []
+
+    results = main.global_search_results("", *records)
+    urls = {(item["module"], item["identifier"]): item["url"] for item in results}
+    assert urls[("Buyers", "Samsung Buyer")] == "/buyer/0"
+    assert urls[("Products", "Laptop")] == "/edit-product/0"
+    assert urls[("Commercial Invoice", "INV-016")] == "/edit-invoice/INV-016"
+    assert urls[("Packing List", "PK-028")] == "/edit-packing/PK-028"
+    assert urls[("Shipping Instruction", "SI-001")] == "/edit-si/SI-001"

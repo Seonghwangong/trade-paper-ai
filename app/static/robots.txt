@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+Disallow: /search
+Disallow: /subscription
+
+Sitemap: __PUBLIC_BASE_URL__/sitemap.xml

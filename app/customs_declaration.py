@@ -62,7 +62,7 @@ def load_customs_records():
 def owned_customs_records(account_id):
     owner = str(account_id or "").strip()
     return [record for record in load_customs_records()
-            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner and not record.get("archived_at")]
 
 
 def load_customs(account_id):
@@ -1150,11 +1150,14 @@ def update_customs(
 @router.get("/delete-customs/{customs_record_no}")
 def delete_customs(customs_record_no: str, request: Request):
     _owned_customs(customs_record_no, _account_id(request))
-    return render_delete_page("Customs Declaration", customs_record_no, f"/delete-customs/{customs_record_no}", "/customs-list", [])
+    from app.archive import render_archive_page
+    return render_archive_page("Customs Declaration", customs_record_no, f"/delete-customs/{customs_record_no}", "/customs-list")
 
 @router.post("/delete-customs/{customs_record_no}")
 def confirm_delete_customs(customs_record_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "customs", customs_record_no, "/customs-list")
     _owned_customs(customs_record_no, account_id)
     def remove(records):
         index = next((index for index, record in enumerate(records)

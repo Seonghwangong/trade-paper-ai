@@ -155,6 +155,8 @@ def send_document_email(document_type: str, document_no: str, request: Request, 
     shipment_no = _linked_shipment_no(record, document_type, account_id)
     entry = {"account_id": account_id, "sent_at": datetime.now(timezone.utc).isoformat(), "document_type": document_type, "document_no": document_no, "shipment_no": shipment_no, "recipient": recipient, "subject": subject, "status": "Success" if success else "Failed"}
     locked_json_mutation(HISTORY_FILE, [], lambda rows: rows.append(entry), list)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Send Email", label, document_no, path=HISTORY_FILE.with_name("audit_log.json"))
     status, detail = ("Success", "The email was sent successfully.") if success else ("Failed", "The email could not be sent. Check the email delivery configuration and try again.")
     return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Email {status}</title><style>body{{margin:0;background:#F3F4F6;font-family:Arial;color:#111827}}main{{min-height:100vh;display:grid;place-items:center}}section{{max-width:580px;padding:34px;background:#fff;border-radius:18px;text-align:center}}a{{display:inline-block;margin-top:16px;padding:12px 16px;background:#111827;color:#fff;text-decoration:none;border-radius:9px;font-weight:bold}}</style></head><body><main><section><h1>{status}</h1><p>{html_text(detail)}</p><a href="/shipment/{html_attr(shipment_no)}"{' style="display:none"' if not shipment_no else ''}>View Shipment</a><a href="/">Dashboard</a></section></main></body></html>''')
 

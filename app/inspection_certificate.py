@@ -50,7 +50,7 @@ def load_inspection_records():
 def owned_inspection_records(account_id):
     owner = str(account_id or "").strip()
     return [record for record in load_inspection_records()
-            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner]
+            if isinstance(record, dict) and str(record.get("account_id", "") or "").strip() == owner and not record.get("archived_at")]
 
 
 def load_inspections(account_id):
@@ -855,11 +855,14 @@ def update_inspection(
 @router.get("/delete-inspection/{inspection_no}")
 def delete_inspection(inspection_no: str, request: Request):
     _owned_inspection(inspection_no, _account_id(request))
-    return render_delete_page("Inspection Certificate", inspection_no, f"/delete-inspection/{inspection_no}", "/inspection-list", find_dependencies("Inspection Certificate", inspection_no, _account_id(request)))
+    from app.archive import render_archive_page
+    return render_archive_page("Inspection Certificate", inspection_no, f"/delete-inspection/{inspection_no}", "/inspection-list")
 
 @router.post("/delete-inspection/{inspection_no}")
 def confirm_delete_inspection(inspection_no: str, request: Request):
     account_id = _account_id(request)
+    from app.archive import archive_document
+    return archive_document(request, "inspection", inspection_no, "/inspection-list")
     _owned_inspection(inspection_no, account_id)
     dependencies = find_dependencies("Inspection Certificate", inspection_no, account_id)
     if dependencies:

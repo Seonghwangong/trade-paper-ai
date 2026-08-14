@@ -46,4 +46,11 @@ def public_buyer(record):
         "address": _text(record.get("address")),
         "email": _text(record.get("email")),
         "country": _text(record.get("country")),
+        "default_currency": _text(record.get("default_currency")),
+        "default_trade_term": _text(record.get("default_trade_term")),
+        "default_payment_term": _text(record.get("default_payment_term")),
+        "preferred_carrier": _text(record.get("preferred_carrier")),
+        "preferred_loading_port": _text(record.get("preferred_loading_port")),
+        "preferred_destination_port": _text(record.get("preferred_destination_port")),
+        "default_remarks": _text(record.get("default_remarks")),
     }

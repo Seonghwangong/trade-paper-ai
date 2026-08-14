@@ -20,6 +20,8 @@ def get_company_data(request: Request):
 
 @router.post("/save-company")
 def save_company(request: Request, payload: dict = Body(...)):
+    account_id = _account_id(request)
+    existed = bool(load_account_company(account_id, ACCOUNT_COMPANIES_FILE).get("name"))
     name = require_text("Company name", payload.get("name", ""))
     data = {
         "name": name,
@@ -28,6 +30,8 @@ def save_company(request: Request, payload: dict = Body(...)):
         "phone": payload.get("phone", "")
     }
 
-    saved = save_account_company(_account_id(request), data, ACCOUNT_COMPANIES_FILE)
+    saved = save_account_company(account_id, data, ACCOUNT_COMPANIES_FILE)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Update" if existed else "Create", "Company", name, path=ACCOUNT_COMPANIES_FILE.with_name("audit_log.json"))
     saved["redirect_to"] = safe_local_path(payload.get("next", "/"))
     return saved

@@ -67,8 +67,12 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 <option value="">Select Product Master</option>
 </select>
 
-<input id="item1" placeholder="Product Name">
+<input id="item1" list="product-name-options" autocomplete="off" placeholder="Product Name">
+<datalist id="product-name-options"></datalist>
+<div id="product-suggestions" role="status" aria-live="polite"></div>
 <input id="hs1" placeholder="HS Code">
+<input id="origin1" placeholder="Country of Origin">
+<input id="unit1" placeholder="Unit">
 <input id="qty1" type="number" placeholder="Quantity" oninput="calculateTotal()">
 <input id="price1" type="number" placeholder="Unit Price" oninput="calculateTotal()">
 </div>
@@ -103,18 +107,38 @@ async function loadProducts(){
         option.textContent = product.name;
         select.appendChild(option);
     });
+    const list = document.getElementById("product-name-options");
+    list.replaceChildren(...products.map(product => {
+        const option = document.createElement("option"); option.value = product.name || ""; return option;
+    }));
 }
+
+let productSuggestTimer;
+function applyProduct(product){
+    document.getElementById("item1").value = product.name || "";
+    document.getElementById("price1").value = product.unit_price || 0;
+    document.getElementById("hs1").value = product.hs_code || "";
+    document.getElementById("origin1").value = product.origin || "";
+    document.getElementById("unit1").value = product.unit || "";
+    document.getElementById("product-suggestions").replaceChildren(); calculateTotal();
+}
+async function suggestProducts(){
+    const query = document.getElementById("item1").value.trim();
+    const area = document.getElementById("product-suggestions"); area.replaceChildren();
+    if(!query) return;
+    const response = await fetch('/product-suggestions?q=' + encodeURIComponent(query));
+    const matches = await response.json();
+    matches.forEach(product => { const button=document.createElement('button'); button.type='button';
+        button.textContent=(product.name||'') + (product.name.toLowerCase()===query.toLowerCase()?'':' — suggestion');
+        button.addEventListener('click',()=>applyProduct(product)); area.appendChild(button); });
+}
+document.getElementById("item1").addEventListener("input",()=>{clearTimeout(productSuggestTimer);productSuggestTimer=setTimeout(suggestProducts,180);});
 
 function selectProduct(number){
     const index = document.getElementById("product" + number).value;
     if(index === "") return;
 
-    const product = products[index];
-
-    document.getElementById("item" + number).value = product.name || "";
-    document.getElementById("price" + number).value = product.unit_price || 0;
-    document.getElementById("hs" + number).value = product.hs_code || "";
-    calculateTotal();
+    applyProduct(products[index]);
 }
 
 function getItems(){
@@ -126,6 +150,8 @@ function getItems(){
     return [{
     name: name,
     hs_code: document.getElementById("hs1").value,
+    origin: document.getElementById("origin1").value,
+    unit: document.getElementById("unit1").value,
     quantity: quantity,
     unit_price: unit_price
 }];

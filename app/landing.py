@@ -1,14 +1,65 @@
+import html
+import json
+import os
+
 from fastapi.responses import HTMLResponse
 
+from app import email_delivery
 from app.release import APP_VERSION, RELEASE_STAGE
 
 
+FAQ_ENTRIES = (
+    ("What documents are supported?", "Trade Paper AI supports Quotations, Proforma and Commercial Invoices, Packing Lists, Shipments, Shipping Instructions, Booking Confirmations, Bills of Lading, Container records, Customs Declarations, and origin, inspection, insurance, and weight certificates."),
+    ("Are previous PDFs affected?", "Snapshot-enabled documents use their saved values first, so later changes to related master or upstream records do not replace the values preserved in an existing document."),
+    ("Does Trade Paper AI support Unicode?", "Yes. The current PDF workflow supports mixed English, Korean, Japanese, and Chinese text across the implemented document PDFs."),
+    ("Is my company data isolated?", "Yes. Authenticated business records are loaded and validated within the current account ownership scope."),
+    ("What happens in Demo Mode?", "Demo Mode guides you through the real workflow with temporary form prefills. Nothing is saved until you choose Save."),
+    ("Can I archive a document?", "Yes. Supported documents can be archived, restored, and excluded from active search and document packages. Permanent deletion is restricted to administrators."),
+    ("Is payment active?", "No. Free, Starter, and Professional plan structures are available, but external payment processing is planned for a later stage."),
+)
+
+
+def _public_base_url():
+    try:
+        return email_delivery.public_base_url(os.environ)
+    except email_delivery.EmailConfigurationError:
+        return ""
+
+
+def _json_ld(value):
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
+
+
 def landing_page():
+    base_url = _public_base_url()
+    canonical_url = f"{base_url}/" if base_url else "/"
+    hero_url = f"{base_url}/static/product-hunt/hero.png" if base_url else "/static/product-hunt/hero.png"
+    structured_data = (
+        {"@context": "https://schema.org", "@type": "Organization", "name": "Trade Paper AI", "url": canonical_url, "logo": f"{base_url}/static/product-hunt/logo.png" if base_url else "/static/product-hunt/logo.png"},
+        {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Trade Paper AI", "applicationCategory": "BusinessApplication", "operatingSystem": "Web", "url": canonical_url, "description": "Create and manage export documents in one connected workflow.", "softwareVersion": APP_VERSION, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Free plan with up to five documents per month."}},
+        {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": question, "acceptedAnswer": {"@type": "Answer", "text": answer}} for question, answer in FAQ_ENTRIES]},
+    )
+    json_ld = "".join(f'<script type="application/ld+json">{_json_ld(item)}</script>' for item in structured_data)
+    faq_html = "".join(f"<details><summary>{html.escape(question)}</summary><p>{html.escape(answer)}</p></details>" for question, answer in FAQ_ENTRIES)
     return HTMLResponse("""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Create and manage export documents in one connected workflow.">
+<link rel="canonical" href="__CANONICAL_URL__">
+<link rel="manifest" href="/static/site.webmanifest">
+<meta name="theme-color" content="#2563eb">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Trade Paper AI">
+<meta property="og:description" content="Create and manage export documents in one connected workflow.">
+<meta property="og:url" content="__CANONICAL_URL__">
+<meta property="og:image" content="__HERO_URL__">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Trade Paper AI">
+<meta name="twitter:description" content="Create and manage export documents in one connected workflow.">
+<meta name="twitter:image" content="__HERO_URL__">
+__JSON_LD__
 <title>Trade Paper AI</title>
 <style>
 *{box-sizing:border-box}
@@ -41,6 +92,7 @@ h1{margin:0;font-size:clamp(58px,9vw,104px);font-weight:760;letter-spacing:-.065
 .browser-dot{width:10px;height:10px;border-radius:50%;background:#cbd5e1}
 .browser-address{flex:1;max-width:520px;margin:0 auto;padding:8px 18px;border:1px solid #e2e8f0;border-radius:999px;background:#fff;color:#94a3b8;font-size:12px;text-align:center}
 .dashboard-screenshot{display:block;width:100%;height:auto}
+.demo-caption{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:18px;color:#64748b}.demo-caption strong{color:#0f172a}.demo-caption a{font-weight:750;color:#2563eb;text-decoration:none}
 .value-highlights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:22px}
 .value-highlight{padding:22px;border:1px solid #e2e8f0;border-radius:20px;background:#f8fafc}
 .value-highlight strong{display:block;margin-bottom:8px;font-size:17px}.value-highlight span{color:#64748b;line-height:1.55}
@@ -52,9 +104,15 @@ h1{margin:0;font-size:clamp(58px,9vw,104px);font-weight:760;letter-spacing:-.065
 .feature{min-height:170px;padding:30px;border:1px solid #e2e8f0;border-radius:24px;background:#fff;box-shadow:0 14px 38px rgba(15,23,42,.055)}
 .feature-icon{display:grid;width:42px;height:42px;place-items:center;border-radius:12px;background:#eff6ff;color:#2563eb;font-size:18px;font-weight:800}
 .feature h3{margin:24px 0 8px;font-size:19px;letter-spacing:-.02em}.feature p{margin:0;color:#64748b;line-height:1.55}
+.showcase{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.showcase-card{padding:34px;border:1px solid #e2e8f0;border-radius:26px;background:linear-gradient(145deg,#fff,#f8fafc)}.showcase-card .number{display:grid;width:42px;height:42px;place-items:center;border-radius:12px;background:#0f172a;color:#fff;font-weight:800}.showcase-card h3{margin:24px 0 10px;font-size:25px}.showcase-card p{margin:0;color:#64748b;line-height:1.65}.showcase-card a{display:inline-block;margin-top:20px;color:#2563eb;font-weight:750;text-decoration:none}
+.pricing{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.price-card{display:flex;min-height:290px;flex-direction:column;padding:30px;border:1px solid #e2e8f0;border-radius:24px;background:#fff}.price-card.featured{border:2px solid #2563eb;box-shadow:0 18px 44px rgba(37,99,235,.12)}.price-card h3{margin:0;font-size:25px}.price{margin:18px 0 6px;font-size:32px;font-weight:800}.price-note{min-height:42px;color:#64748b}.price-card ul{padding-left:20px;color:#475569;line-height:1.9}.price-card a{margin-top:auto;text-align:center}
+.contact-card{max-width:860px;margin:0 auto;padding:38px;border-radius:28px;background:#0f172a;color:#fff;text-align:center}.contact-card h2{font-size:clamp(32px,4vw,48px)}.contact-card p{color:#cbd5e1;font-size:18px;line-height:1.6}
 .workflow{display:flex;align-items:center;justify-content:center;gap:24px}
 .step{display:grid;width:170px;min-height:116px;place-items:center;padding:22px;border:1px solid #e2e8f0;border-radius:22px;background:#f8fafc;text-align:center;font-size:18px;font-weight:730}
 .arrow{color:#94a3b8;font-size:28px}
+.export-flow{display:grid;max-width:540px;margin:0 auto;padding:0;list-style:none}.export-flow li{position:relative;display:grid;place-items:center;min-height:60px;padding:12px 22px;border:1px solid #dbe3ee;border-radius:16px;background:#f8fafc;font-size:17px;font-weight:750}.export-flow li:not(:last-child){margin-bottom:34px}.export-flow li:not(:last-child)::after{position:absolute;top:calc(100% + 7px);content:"↓";color:#2563eb;font-size:20px}
+.coming-soon{max-width:760px;margin:0 auto;padding:46px;border:1px dashed #94a3b8;border-radius:26px;background:#f8fafc;text-align:center}.coming-soon strong{display:block;font-size:28px}.coming-soon p{margin:12px 0 0;color:#64748b;line-height:1.6}
+.security-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.security-item{padding:26px;border:1px solid #dbe3ee;border-radius:20px;background:#fff;font-size:17px;font-weight:750;text-align:center}.security-item span{display:block;margin-bottom:10px;color:#16a34a;font-size:22px}
 .section-actions{margin-top:42px}
 .beta-card{max-width:780px;margin:0 auto;padding:34px;border:1px solid #bfdbfe;border-radius:26px;background:#eff6ff;text-align:center}.beta-card h2{font-size:clamp(32px,4vw,46px)}.beta-card p{margin:16px 0 0;color:#475569;font-size:18px;line-height:1.6}
 .faq{display:grid;max-width:860px;margin:0 auto;gap:12px}.faq details{border:1px solid #e2e8f0;border-radius:16px;background:#fff;padding:0 22px}.faq summary{cursor:pointer;padding:20px 0;font-weight:750;list-style-position:inside}.faq details p{margin:0;padding:0 0 20px;color:#64748b;line-height:1.65}
@@ -65,7 +123,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   .hero{min-height:540px;padding:72px 0 64px}
   .product-preview{padding-top:20px}
   .product-preview{padding-bottom:90px}
-  .features{grid-template-columns:1fr 1fr}.value-highlights{grid-template-columns:1fr}
+  .features{grid-template-columns:1fr 1fr}.value-highlights{grid-template-columns:1fr}.showcase,.pricing{grid-template-columns:1fr}.security-list{grid-template-columns:1fr 1fr}
   .workflow{flex-direction:column}
   .arrow{transform:rotate(90deg)}
 }
@@ -80,7 +138,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   .browser-address{padding:6px 10px;font-size:10px}
   .subtitle{margin-top:24px}
   .section{padding:78px 0}
-  .features{grid-template-columns:1fr}
+  .features{grid-template-columns:1fr}.security-list{grid-template-columns:1fr}
   .feature{min-height:145px}
   .step{width:100%}
   .footer-inner{align-items:flex-start;flex-direction:column}.footer-links{justify-content:flex-start}
@@ -95,85 +153,74 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
 <main>
   <section class="hero">
     <div class="wrap hero-inner">
-      <p class="eyebrow">Comfort First trade documentation</p>
-      <h1>Enter once.<br>Reuse across documents.</h1>
-      <p class="subtitle">Reuse Company, Buyer, and Product data. Preserve stable document snapshots. Create Unicode PDFs. Follow a shipment-guided workflow.</p>
-      <div class="hero-actions"><a class="primary" href="/founding-beta">Apply for Founding Beta</a><a class="secondary" href="/register">Start Free</a><a class="secondary" href="/demo">View Demo</a></div>
-      <p class="hero-comfort">Enter your information once. Reuse it across your export documents.</p>
+      <p class="eyebrow">Founding Beta · Export operations workspace</p>
+      <h1>Create Export Documents<br>in Minutes, Not Hours.</h1>
+      <p class="subtitle">Create, manage and send Commercial Invoice, Packing List,<br>Shipping Instruction, Bill of Lading and more<br>in one connected workflow.</p>
+      <div class="hero-actions"><a class="primary" href="/register">Start Free</a><a class="secondary" href="#demo">Watch 15-Second Demo</a></div>
+      <p class="hero-comfort">Enter your information once. Keep every export document connected.</p>
       <div class="trust-row" aria-label="Product trust highlights"><span>✓ Unicode PDF</span><span>✓ Stable Snapshots</span><span>✓ Account Isolation</span><span>✓ Guided Workflow</span><span>✓ Founding Beta</span></div>
     </div>
   </section>
-  <section class="product-preview" aria-label="Product preview">
+  <section class="product-preview" id="demo" aria-labelledby="demo-title">
     <div class="wrap">
+      <header class="section-heading"><h2 id="demo-title">Export Wizard in 15 Seconds</h2><p>See Buyer and Product data become a connected, editable export workflow.</p></header>
       <div class="browser-frame">
         <div class="browser-bar" aria-hidden="true">
           <div class="browser-dots"><span class="browser-dot"></span><span class="browser-dot"></span><span class="browser-dot"></span></div>
           <div class="browser-address">app.tradepaper.ai/dashboard</div>
         </div>
-        <img class="dashboard-screenshot" src="/static/dashboard.png" alt="Trade Paper AI dashboard showing document workflow, statistics, and quick actions">
+        <img class="dashboard-screenshot" src="/static/trade-paper-demo-15s.gif" alt="15-second Trade Paper AI demo showing Buyer and Product selection, Export Wizard, Shipment Tracking, and Document Package">
       </div>
-      <div class="value-highlights" aria-label="Product value highlights">
-        <article class="value-highlight"><strong>Reusable Master Data</strong><span>Save company, buyer, and product details once, then reuse them in future trade documents.</span></article>
-        <article class="value-highlight"><strong>Guided Next Steps</strong><span>Dashboard guidance and Shipment Hub recommendations show the next useful action.</span></article>
-        <article class="value-highlight"><strong>Stable Snapshots</strong><span>Saved document values stay consistent even when related master data changes later.</span></article>
-      </div>
+      <div class="demo-caption"><span><strong>15-second product tour.</strong> See the connected export workflow at a glance.</span><a href="/demo">Open interactive demo →</a></div>
     </div>
   </section>
   <section class="section" aria-labelledby="features-title">
     <div class="wrap">
       <header class="section-heading">
-        <h2 id="features-title">Everything you need.</h2>
-        <p>Build and manage essential export documents from one comfortable workspace.</p>
+        <h2 id="features-title">Why Trade Paper AI</h2>
+        <p>Spend less time copying the same export information between documents.</p>
       </header>
       <div class="features">
-        <article class="feature"><span class="feature-icon">C</span><h3>Company Management</h3><p>Keep exporter details ready for use across your documents.</p></article>
-        <article class="feature"><span class="feature-icon">B</span><h3>Buyer Management</h3><p>Save once and reuse buyer details across future trade documents.</p></article>
-        <article class="feature"><span class="feature-icon">P</span><h3>Product Management</h3><p>Reuse product names, HS Codes, origins, and unit prices.</p></article>
-        <article class="feature"><span class="feature-icon">I</span><h3>Commercial Invoice</h3><p>Generate invoices using your saved company, buyer, and product data.</p></article>
-        <article class="feature"><span class="feature-icon">L</span><h3>Packing List</h3><p>Carry Invoice information forward without typing everything again.</p></article>
-        <article class="feature"><span class="feature-icon">S</span><h3>Shipment Hub</h3><p>See linked documents, workflow progress, health, and the recommended next step.</p></article>
-        <article class="feature"><span class="feature-icon">PDF</span><h3>Unicode PDF</h3><p>Create ready-to-share PDFs with English, Korean, Japanese, and Chinese text.</p></article>
-        <article class="feature"><span class="feature-icon">⌕</span><h3>Search</h3><p>Find account-owned master data and trade documents from one search.</p></article>
-        <article class="feature"><span class="feature-icon">D</span><h3>Trade Documents</h3><p>Create shipping, customs, and certificate documents from the same workflow.</p></article>
+        <article class="feature"><span class="feature-icon">✓</span><h3>No duplicate work</h3><p>Reuse Company, Buyer, and Product details instead of typing them into every document.</p></article>
+        <article class="feature"><span class="feature-icon">✓</span><h3>Connected documents</h3><p>Carry document references and snapshots through one shipment workflow.</p></article>
+        <article class="feature"><span class="feature-icon">✓</span><h3>Built for exporters</h3><p>Create, track, package, and send the documents used in day-to-day export operations.</p></article>
       </div>
     </div>
   </section>
   <section class="section" aria-labelledby="workflow-title">
     <div class="wrap">
       <header class="section-heading">
-        <h2 id="workflow-title">How It Works</h2>
-        <p>Complete the required setup first, then create and export your trade documents.</p>
+        <h2 id="workflow-title">One Connected Export Workflow</h2>
+        <p>Move from reusable master data to completed documents and delivery.</p>
       </header>
-      <div class="workflow" aria-label="Company, Buyer, Product, Invoice, Packing List, PDF">
-        <div class="step">Company</div><span class="arrow" aria-hidden="true">→</span>
-        <div class="step">Buyer</div><span class="arrow" aria-hidden="true">→</span>
-        <div class="step">Product</div><span class="arrow" aria-hidden="true">→</span>
-        <div class="step">Invoice</div><span class="arrow" aria-hidden="true">→</span>
-        <div class="step">Packing List</div><span class="arrow" aria-hidden="true">→</span>
-        <div class="step">PDF</div>
-      </div>
-      <div class="section-actions"><a class="primary" href="/register">Create Your First Invoice</a><a class="secondary" href="/demo">View Demo</a></div>
+      <ol class="export-flow" aria-label="Company, Buyer, Product, Invoice, Packing, SI, Shipment, Booking, B/L, CO, Email, Done"><li>Company</li><li>Buyer</li><li>Product</li><li>Invoice</li><li>Packing</li><li>SI</li><li>Shipment</li><li>Booking</li><li>B/L</li><li>CO</li><li>Email</li><li>Done</li></ol>
+      <div class="section-actions"><a class="primary" href="/register">Start Free</a></div>
     </div>
+  </section>
+  <section class="section" aria-labelledby="customers-title"><div class="wrap"><header class="section-heading"><h2 id="customers-title">Customer Logos</h2></header><div class="coming-soon"><strong>Coming Soon</strong><p>We are currently welcoming our first Founding Beta companies. No customer logos are shown until we have permission to share them.</p></div></div></section>
+  <section class="section" aria-labelledby="stories-title"><div class="wrap"><header class="section-heading"><h2 id="stories-title">Founding Beta Stories</h2><p>There are no customer testimonials yet. We are recruiting our first Founding Beta companies and will publish feedback only from real customers.</p></header><div class="section-actions"><a class="primary" href="/founding-beta">Join Founding Beta</a></div></div></section>
+  <section class="section" aria-labelledby="security-title"><div class="wrap"><header class="section-heading"><h2 id="security-title">Security Built Into the Workspace</h2><p>Practical controls protect account-owned data and important operations.</p></header><div class="security-list"><div class="security-item"><span>✓</span>Account Isolation</div><div class="security-item"><span>✓</span>Audit Log</div><div class="security-item"><span>✓</span>Backup</div><div class="security-item"><span>✓</span>Email Security</div></div></div></section>
+  <section class="section" id="pricing" aria-labelledby="pricing-title">
+    <div class="wrap"><header class="section-heading"><h2 id="pricing-title">Subscription plans</h2><p>Start with the implemented MVP plan structure. Payment integration is not active yet.</p></header><div class="pricing"><article class="price-card"><h3>Free</h3><div class="price">$0</div><p class="price-note">Up to 5 documents per month.</p><ul><li>Core document workflow</li><li>Account-isolated workspace</li></ul><a class="secondary" href="/register">Start Free</a></article><article class="price-card featured"><h3>Starter</h3><div class="price">Founding Beta</div><p class="price-note">Unlimited documents. Pricing confirmed during onboarding.</p><ul><li>Unlimited document usage</li><li>Direct onboarding</li></ul><a class="primary" href="/founding-beta">Apply for Beta</a></article><article class="price-card"><h3>Professional</h3><div class="price">Contact</div><p class="price-note">Professional workflow plan; payment integration is not active.</p><ul><li>Professional workflow structure</li><li>Priority support during beta</li></ul><a class="secondary" href="/contact">Contact</a></article></div></div>
   </section>
   <section class="section" aria-labelledby="beta-title">
-    <div class="wrap"><div class="beta-card"><h2 id="beta-title">Founding Beta</h2><p>Trade Paper AI is currently available as a Founding Beta. Features may continue to improve during the beta period.</p></div></div>
+    <div class="wrap"><div class="beta-card"><h2 id="beta-title">Founding Beta</h2><p>Join the first 10 companies for six months of founding pricing, direct onboarding, and priority support.</p><div class="section-actions"><a class="primary" href="/founding-beta">Apply for Founding Beta</a></div></div></div>
   </section>
-  <section class="section" aria-labelledby="faq-title">
+  <section class="section" id="faq" aria-labelledby="faq-title">
     <div class="wrap">
       <header class="section-heading"><h2 id="faq-title">Frequently Asked Questions</h2><p>Clear answers about the workflow, documents, and your saved data.</p></header>
-      <div class="faq">
-        <details><summary>What documents are supported?</summary><p>Trade Paper AI supports Quotations, Proforma and Commercial Invoices, Packing Lists, Shipments, Shipping Instructions, Booking Confirmations, Bills of Lading, Container records, Customs Declarations, and origin, inspection, insurance, and weight certificates.</p></details>
-        <details><summary>Are previous PDFs affected?</summary><p>Snapshot-enabled documents use their saved values first, so later changes to related master or upstream records do not replace the values preserved in an existing document.</p></details>
-        <details><summary>Does Trade Paper AI support Unicode?</summary><p>Yes. The current PDF workflow supports mixed English, Korean, Japanese, and Chinese text across the implemented document PDFs.</p></details>
-        <details><summary>Is my company data isolated?</summary><p>Yes. Authenticated business records are loaded and validated within the current account ownership scope.</p></details>
-        <details><summary>What happens in Demo Mode?</summary><p>Demo Mode guides you through the real workflow with temporary form prefills. Nothing is saved until you choose Save.</p></details>
-        <details><summary>Can I delete my data?</summary><p>Supported business records can be deleted when related-document integrity rules allow it. Account deletion requests are handled through the Contact page.</p></details>
-      </div>
+      <div class="faq">__FAQ_HTML__</div>
     </div>
   </section>
+  <section class="section" aria-labelledby="contact-title"><div class="wrap"><div class="contact-card"><h2 id="contact-title">Questions before you start?</h2><p>Use the deployment's configured Contact channel for product questions, Founding Beta onboarding, privacy, or account requests.</p><div class="section-actions"><a class="primary" href="/contact">Contact Trade Paper AI</a><a class="secondary" href="/founding-beta">Apply for Founding Beta</a></div></div></div></section>
+  <section class="section" aria-labelledby="final-cta-title"><div class="wrap"><div class="contact-card"><h2 id="final-cta-title">Ready to simplify export documentation?</h2><p>Start your connected export workflow today.</p><div class="section-actions"><a class="primary" href="/register">Start Free</a><a class="secondary" href="/founding-beta">Join Founding Beta</a></div></div></div></section>
 </main>
 <footer>
   <div class="wrap footer-inner"><div class="footer-brand"><strong>Trade Paper AI</strong><span>Version __APP_VERSION__ · __RELEASE_STAGE__ · Built for Exporters.</span></div><nav class="footer-links" aria-label="Footer navigation"><a href="/founding-beta">Apply for Founding Beta</a><a href="/feedback">Send Feedback</a><a href="/demo">Demo</a><a href="/about">About</a><a href="/release-notes">Release Notes</a><a href="/version-history">Version History</a><a href="/contact">Contact</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/login">Sign In</a></nav></div>
 </footer>
+<script>(function(){
+  function source(){const value=((new URLSearchParams(location.search).get('utm_source')||'')+' '+(document.referrer||'')).toLowerCase();if(value.includes('producthunt')||value.includes('product hunt'))return 'Product Hunt';if(value.includes('reddit'))return 'Reddit';if(value.includes('google'))return 'Google';if(!value.trim())return 'Direct';return 'Other'}
+  const seen=new Set();const observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(!entry.isIntersecting)return;const page=entry.target.id==='pricing'?'Pricing':'FAQ';if(seen.has(page))return;seen.add(page);fetch('/analytics/visit?page='+encodeURIComponent(page)+'&source='+encodeURIComponent(source()),{method:'POST',credentials:'omit',keepalive:true}).catch(function(){})})},{threshold:.25});['pricing','faq'].forEach(function(id){const node=document.getElementById(id);if(node)observer.observe(node)})
+})();</script>
 </body>
-</html>""".replace("__APP_VERSION__", APP_VERSION).replace("__RELEASE_STAGE__", RELEASE_STAGE))
+</html>""".replace("__APP_VERSION__", APP_VERSION).replace("__RELEASE_STAGE__", RELEASE_STAGE).replace("__CANONICAL_URL__", html.escape(canonical_url, quote=True)).replace("__HERO_URL__", html.escape(hero_url, quote=True)).replace("__JSON_LD__", json_ld).replace("__FAQ_HTML__", faq_html))
