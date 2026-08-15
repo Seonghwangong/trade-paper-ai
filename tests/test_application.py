@@ -10,12 +10,12 @@ from starlette.requests import Request
 from tests.helpers import normalize_html, route_snapshot_digest
 
 
-EXPECTED_ROUTE_DIGEST = "6e810f089c636f1808e5f05113487c74124f62d0cecdba08b69620a94dc181fc"
+EXPECTED_ROUTE_DIGEST = "9bf5ee4d84671db8d2f58bc3c8c6428d6dc8d0b900aa22a74bba8a75e850739b"
 
 
 def test_application_import_and_route_order():
     assert main.app is not None
-    assert len(main.app.routes) == 259
+    assert len(main.app.routes) == 262
     assert route_snapshot_digest(main.app) == EXPECTED_ROUTE_DIGEST
 
 
@@ -23,6 +23,14 @@ def test_email_readiness_route_reuses_admin_dashboard_authorization():
     route = next(
         route for route in main.app.routes
         if route.path == "/admin/email-readiness" and "GET" in (route.methods or set())
+    )
+    assert "auth.require_admin(request)" in inspect.getsource(route.endpoint)
+
+
+def test_payment_readiness_route_reuses_admin_dashboard_authorization():
+    route = next(
+        route for route in main.app.routes
+        if route.path == "/admin/payment-readiness" and "GET" in (route.methods or set())
     )
     assert "auth.require_admin(request)" in inspect.getsource(route.endpoint)
 

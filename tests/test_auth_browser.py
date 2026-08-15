@@ -206,7 +206,8 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.goto(f"{base_url}/pricing")
             assert page.get_by_role("heading", name="Free", exact=True).is_visible()
             assert page.get_by_role("button", name="Choose Starter").count() == 0
-            assert page.get_by_text("Online payment coming soon").count() == 2
+            assert page.get_by_role("link", name="Purchase details").is_visible()
+            assert page.get_by_text("Contact us", exact=True).is_visible()
             users = json.loads((data_dir / "users.json").read_text(encoding="utf-8"))
             next(user for user in users if user.get("email") == email).update({"plan": "Starter", "subscription_status": "Active"})
             (data_dir / "users.json").write_text(json.dumps(users), encoding="utf-8")
@@ -625,7 +626,7 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert "account_id" not in company_b
             page.goto(f"{base_url}/pricing")
             assert page.get_by_role("button", name="Choose Starter").count() == 0
-            assert page.get_by_text("Online payment coming soon").count() == 2
+            assert page.get_by_role("link", name="Purchase details").is_visible()
             users = json.loads((data_dir / "users.json").read_text(encoding="utf-8"))
             next(user for user in users if user.get("email") == second_email).update({"plan": "Starter", "subscription_status": "Active"})
             (data_dir / "users.json").write_text(json.dumps(users), encoding="utf-8")

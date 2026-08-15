@@ -20,7 +20,7 @@ BACKUP_ROOT = data_path("admin_backups")
 ACCOUNT_FILES = tuple(dict.fromkeys([
     "account_companies.json", "buyers.json", "products.json", "customers.json",
     *(definition.storage_filename for definition in DOCUMENT_DEFINITIONS if definition.key != "company"),
-    "email_history.json", "billing_history.json", "usage_events.json",
+    "email_history.json", "billing_history.json", "usage_events.json", "payment_orders.json",
 ]))
 
 

@@ -236,6 +236,11 @@ def terms_page():
             "<p>You may not use the service to break the law, submit false or misleading trade information, infringe another person&apos;s rights, distribute malware, interfere with security or availability, probe for vulnerabilities, bypass access controls or rate limits, or access data without authorization.</p>",
         )
         + section_card(
+            "Paid Plans, Cancellation, and Refunds",
+            "<p>The Starter plan is listed at ₩29,000 per month. Online payment processing is not active yet, so applying for or viewing Starter does not collect payment or activate a paid plan.</p>"
+            "<p>Final online cancellation and refund terms must be published before checkout activation. Until then, billing questions and Founding Beta arrangements are handled through the <a href=\"/contact\">Contact page</a>.</p>",
+        )
+        + section_card(
             "Availability and Changes",
             "<p>We may maintain, update, limit, suspend, or discontinue beta features when reasonably necessary for security, reliability, legal compliance, or product development. We will try to provide reasonable notice of material changes when practical, but uninterrupted availability is not guaranteed.</p>",
         )

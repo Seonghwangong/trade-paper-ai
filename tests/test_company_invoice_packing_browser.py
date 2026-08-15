@@ -120,7 +120,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert page.get_by_role("heading", name="Free", exact=True).is_visible()
             page.get_by_role("link", name="Upgrade", exact=True).click()
             assert page.get_by_role("button", name="Choose Starter").count() == 0
-            assert page.get_by_text("Online payment coming soon").count() == 2
+            assert page.get_by_role("link", name="Purchase details").is_visible()
             users = json.loads((data_dir / "users.json").read_text(encoding="utf-8"))
             next(user for user in users if user.get("email") == email).update({"plan": "Starter", "subscription_status": "Active"})
             (data_dir / "users.json").write_text(json.dumps(users), encoding="utf-8")

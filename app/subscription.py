@@ -116,7 +116,7 @@ def pricing(request: Request):
         if name == current["plan"]:
             return '<span class="badge">Current Plan</span>'
         if name != "Free":
-            return '<span class="badge">Online payment coming soon</span>'
+            return '<a class="button" href="/subscription/checkout?plan=Starter">Purchase details</a>' if name == "Starter" else '<span class="badge">Contact us</span>'
         return f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(name)}"><button type="submit">Choose {_text(name)}</button></form>'
     cards = "".join(
         f'''<article class="card{' current' if name == current['plan'] else ''}"><h2>{_text(name)}</h2><p><strong>{_text(plan_price_label(name))}</strong></p><p>{_text(config['summary'])}</p>{action(name)}</article>'''

@@ -42,6 +42,7 @@ from app.founding_beta import router as founding_beta_router
 from app.feedback import router as feedback_router
 from app.document_email import router as document_email_router
 from app.subscription import router as subscription_router
+from app.toss_payments import router as toss_payments_router
 from app.admin_dashboard import router as admin_dashboard_router
 from app.audit_log import router as audit_log_router
 from app.backup_restore import router as backup_restore_router
@@ -679,6 +680,7 @@ app.include_router(founding_beta_router)
 app.include_router(feedback_router)
 app.include_router(document_email_router)
 app.include_router(subscription_router)
+app.include_router(toss_payments_router)
 app.include_router(admin_dashboard_router)
 app.include_router(audit_log_router)
 app.include_router(backup_restore_router)

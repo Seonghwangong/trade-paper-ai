@@ -123,4 +123,5 @@ def test_pricing_and_dashboard_plan_markup(tmp_path, monkeypatch):
     assert subscription.plan_price_label("Professional") == "Contact"
     assert subscription.PAID_PLAN_NOTICE in pricing
     assert "Choose Starter" not in pricing and "Choose Professional" not in pricing
-    assert pricing.count("Online payment coming soon") == 2
+    assert 'href="/subscription/checkout?plan=Starter">Purchase details</a>' in pricing
+    assert "Contact us" in pricing

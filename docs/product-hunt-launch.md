@@ -36,7 +36,7 @@ Exporters and export operations teams that prepare and manage recurring trade do
 
 ### Is there a free plan?
 
-Yes. The current Free plan supports up to five documents per month. Starter and Professional plan structures are implemented, but external payment processing is not active yet and unconfirmed prices are not published.
+Yes. The current Free plan supports up to five documents per month. Starter is listed at ₩29,000 per month, and Professional remains contact-based. Online payment processing is not active yet.
 
 ### Which export documents are supported?
 
@@ -54,7 +54,7 @@ I started Trade Paper AI after seeing how much export work still depends on copy
 
 - [ ] Hero 확인 — confirm the production Open Graph image and landing Hero render correctly.
 - [ ] GIF 확인 — confirm the 15-second GIF plays once loaded and is exactly 15 seconds.
-- [ ] Pricing 확인 — confirm Free, Starter, and Professional copy matches the current deployment; do not publish unconfirmed prices.
+- [ ] Pricing 확인 — confirm Free, Starter ₩29,000/month, and Professional Contact copy matches the current deployment.
 - [ ] Contact 확인 — confirm the production Contact configuration is available.
 - [ ] Beta 신청 확인 — submit one production Founding Beta application and confirm the Thank You page and stored application.
 

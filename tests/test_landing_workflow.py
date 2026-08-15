@@ -89,6 +89,7 @@ def test_landing_starter_offer_matches_plan_catalog_and_json_ld():
     }
     assert plan_price_label("Starter") == "₩29,000 / month"
     assert '<h3>Starter</h3><div class="price">₩29,000 / month</div>' in html
+    assert '<a class="primary" href="/starter">View Starter</a>' in html
     assert "Online payment processing is not active yet." in html
     assert '<h3>Professional</h3><div class="price">Contact</div>' in html
 
