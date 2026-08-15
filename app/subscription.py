@@ -16,9 +16,9 @@ BILLING_HISTORY_FILE = data_path("billing_history.json")
 USAGE_EVENTS_FILE = data_path("usage_events.json")
 
 PLANS = {
-    "Free": {"monthly_document_limit": 5, "summary": "Up to 5 documents per month"},
-    "Starter": {"monthly_document_limit": None, "summary": "Unlimited documents"},
-    "Professional": {"monthly_document_limit": None, "summary": "Unlimited documents and professional workflow"},
+    "Free": {"monthly_document_limit": 5, "summary": "Up to 5 documents per month", "price": 0, "currency": "USD", "billing_cycle": None},
+    "Starter": {"monthly_document_limit": None, "summary": "Unlimited documents", "price": 29_000, "currency": "KRW", "billing_cycle": "Monthly"},
+    "Professional": {"monthly_document_limit": None, "summary": "Unlimited documents and professional workflow", "price": None, "currency": None, "billing_cycle": None},
 }
 SUBSCRIPTION_STATUSES = ("Trial", "Active", "Expired", "Cancelled")
 PLAN_ORDER = tuple(PLANS)
@@ -35,6 +35,16 @@ def _text(value):
 
 def _attr(value):
     return html.escape(str(value or ""), quote=True)
+
+
+def plan_price_label(plan_name):
+    plan = PLANS[plan_name]
+    price = plan["price"]
+    if price is None:
+        return "Contact"
+    amount = f"₩{price:,.0f}" if plan["currency"] == "KRW" else f"${price:,.0f}"
+    cycle = {"Monthly": "month"}.get(plan.get("billing_cycle"), str(plan.get("billing_cycle") or "").casefold())
+    return f"{amount} / {cycle}" if cycle else amount
 
 
 def _account_id(request: Request):
@@ -102,7 +112,7 @@ def pricing(request: Request):
     account_id = _account_id(request)
     current = subscription_for_account(account_id)
     cards = "".join(
-        f'''<article class="card{' current' if name == current['plan'] else ''}"><h2>{_text(name)}</h2><p>{_text(config['summary'])}</p>{'<span class="badge">Current Plan</span>' if name == current['plan'] else f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(name)}"><button type="submit">Choose { _text(name) }</button></form>'}</article>'''
+        f'''<article class="card{' current' if name == current['plan'] else ''}"><h2>{_text(name)}</h2><p><strong>{_text(plan_price_label(name))}</strong></p><p>{_text(config['summary'])}</p>{'<span class="badge">Current Plan</span>' if name == current['plan'] else f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(name)}"><button type="submit">Choose { _text(name) }</button></form>'}</article>'''
         for name, config in PLANS.items()
     )
     return _page("Pricing", f'<h1>Pricing</h1><p>Payment integration will be added in a future release.</p><section class="grid">{cards}</section>')

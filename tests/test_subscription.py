@@ -110,4 +110,8 @@ def test_pricing_and_dashboard_plan_markup(tmp_path, monkeypatch):
     _files(tmp_path, monkeypatch)
     pricing = subscription.pricing(_request()).body.decode()
     assert all(plan in pricing for plan in ("Free", "Starter", "Professional"))
+    assert subscription.plan_price_label("Starter") == "₩29,000 / month"
+    assert "₩29,000 / month" in pricing
+    assert subscription.PLANS["Free"]["monthly_document_limit"] == 5
+    assert subscription.plan_price_label("Professional") == "Contact"
     assert "Payment integration will be added" in pricing

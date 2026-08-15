@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 
 from app import email_delivery
 from app.release import APP_VERSION, RELEASE_STAGE
+from app.subscription import PLANS, plan_price_label
 
 
 FAQ_ENTRIES = (
@@ -15,7 +16,7 @@ FAQ_ENTRIES = (
     ("Is my company data isolated?", "Yes. Authenticated business records are loaded and validated within the current account ownership scope."),
     ("What happens in Demo Mode?", "Demo Mode guides you through the real workflow with temporary form prefills. Nothing is saved until you choose Save."),
     ("Can I archive a document?", "Yes. Supported documents can be archived, restored, and excluded from active search and document packages. Permanent deletion is restricted to administrators."),
-    ("Is payment active?", "No. Free, Starter, and Professional plan structures are available, but external payment processing is planned for a later stage."),
+    ("Is payment active?", "No. Starter is offered at ₩29,000 per month, but online payment processing is not active yet. Apply for Founding Beta to discuss onboarding. Professional remains contact-based."),
 )
 
 
@@ -34,9 +35,13 @@ def landing_page():
     base_url = _public_base_url()
     canonical_url = f"{base_url}/" if base_url else "/"
     hero_url = f"{base_url}/static/product-hunt/hero.png" if base_url else "/static/product-hunt/hero.png"
+    starter = PLANS["Starter"]
     structured_data = (
         {"@context": "https://schema.org", "@type": "Organization", "name": "Trade Paper AI", "url": canonical_url, "logo": f"{base_url}/static/product-hunt/logo.png" if base_url else "/static/product-hunt/logo.png"},
-        {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Trade Paper AI", "applicationCategory": "BusinessApplication", "operatingSystem": "Web", "url": canonical_url, "description": "Create and manage export documents in one connected workflow.", "softwareVersion": APP_VERSION, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Free plan with up to five documents per month."}},
+        {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Trade Paper AI", "applicationCategory": "BusinessApplication", "operatingSystem": "Web", "url": canonical_url, "description": "Create and manage export documents in one connected workflow.", "softwareVersion": APP_VERSION, "offers": [
+            {"@type": "Offer", "name": "Free", "price": str(PLANS["Free"]["price"]), "priceCurrency": PLANS["Free"]["currency"], "description": "Free plan with up to five documents per month."},
+            {"@type": "Offer", "name": "Starter", "price": str(starter["price"]), "priceCurrency": starter["currency"], "description": f"Starter plan billed {str(starter['billing_cycle']).casefold()}."},
+        ]},
         {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": question, "acceptedAnswer": {"@type": "Answer", "text": answer}} for question, answer in FAQ_ENTRIES]},
     )
     json_ld = "".join(f'<script type="application/ld+json">{_json_ld(item)}</script>' for item in structured_data)
@@ -202,7 +207,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   <section class="section" aria-labelledby="stories-title"><div class="wrap"><header class="section-heading"><h2 id="stories-title">Founding Beta Stories</h2><p>There are no customer testimonials yet. We are recruiting our first Founding Beta companies and will publish feedback only from real customers.</p></header><div class="section-actions"><a class="primary" href="/founding-beta">Join Founding Beta</a></div></div></section>
   <section class="section" aria-labelledby="security-title"><div class="wrap"><header class="section-heading"><h2 id="security-title">Security Built Into the Workspace</h2><p>Practical controls protect account-owned data and important operations.</p></header><div class="security-list"><div class="security-item"><span>✓</span>Account Isolation</div><div class="security-item"><span>✓</span>Audit Log</div><div class="security-item"><span>✓</span>Backup</div><div class="security-item"><span>✓</span>Email Security</div></div></div></section>
   <section class="section" id="pricing" aria-labelledby="pricing-title">
-    <div class="wrap"><header class="section-heading"><h2 id="pricing-title">Subscription plans</h2><p>Start with the implemented MVP plan structure. Payment integration is not active yet.</p></header><div class="pricing"><article class="price-card"><h3>Free</h3><div class="price">$0</div><p class="price-note">Up to 5 documents per month.</p><ul><li>Core document workflow</li><li>Account-isolated workspace</li></ul><a class="secondary" href="/register">Start Free</a></article><article class="price-card featured"><h3>Starter</h3><div class="price">Founding Beta</div><p class="price-note">Unlimited documents. Pricing confirmed during onboarding.</p><ul><li>Unlimited document usage</li><li>Direct onboarding</li></ul><a class="primary" href="/founding-beta">Apply for Beta</a></article><article class="price-card"><h3>Professional</h3><div class="price">Contact</div><p class="price-note">Professional workflow plan; payment integration is not active.</p><ul><li>Professional workflow structure</li><li>Priority support during beta</li></ul><a class="secondary" href="/contact">Contact</a></article></div></div>
+    <div class="wrap"><header class="section-heading"><h2 id="pricing-title">Subscription plans</h2><p>Starter is available at a published monthly price. Online payment processing is not active yet.</p></header><div class="pricing"><article class="price-card"><h3>Free</h3><div class="price">$0</div><p class="price-note">Up to 5 documents per month.</p><ul><li>Core document workflow</li><li>Account-isolated workspace</li></ul><a class="secondary" href="/register">Start Free</a></article><article class="price-card featured"><h3>Starter</h3><div class="price">__STARTER_PRICE__</div><p class="price-note">Unlimited documents on a monthly plan.</p><ul><li>Unlimited document usage</li><li>Direct onboarding</li></ul><a class="primary" href="/founding-beta">Apply for Beta</a></article><article class="price-card"><h3>Professional</h3><div class="price">Contact</div><p class="price-note">Professional workflow plan; contact us for availability.</p><ul><li>Professional workflow structure</li><li>Priority support during beta</li></ul><a class="secondary" href="/contact">Contact</a></article></div></div>
   </section>
   <section class="section" aria-labelledby="beta-title">
     <div class="wrap"><div class="beta-card"><h2 id="beta-title">Founding Beta</h2><p>Join the first 10 companies for six months of founding pricing, direct onboarding, and priority support.</p><div class="section-actions"><a class="primary" href="/founding-beta">Apply for Founding Beta</a></div></div></div>
@@ -224,4 +229,4 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   const seen=new Set();const observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(!entry.isIntersecting)return;const page=entry.target.id==='pricing'?'Pricing':'FAQ';if(seen.has(page))return;seen.add(page);fetch('/analytics/visit?page='+encodeURIComponent(page)+'&source='+encodeURIComponent(source()),{method:'POST',credentials:'omit',keepalive:true}).catch(function(){})})},{threshold:.25});['pricing','faq'].forEach(function(id){const node=document.getElementById(id);if(node)observer.observe(node)})
 })();</script>
 </body>
-</html>""".replace("__APP_VERSION__", APP_VERSION).replace("__RELEASE_STAGE__", RELEASE_STAGE).replace("__CANONICAL_URL__", html.escape(canonical_url, quote=True)).replace("__HERO_URL__", html.escape(hero_url, quote=True)).replace("__JSON_LD__", json_ld).replace("__FAQ_HTML__", faq_html))
+</html>""".replace("__APP_VERSION__", APP_VERSION).replace("__RELEASE_STAGE__", RELEASE_STAGE).replace("__CANONICAL_URL__", html.escape(canonical_url, quote=True)).replace("__HERO_URL__", html.escape(hero_url, quote=True)).replace("__JSON_LD__", json_ld).replace("__FAQ_HTML__", faq_html).replace("__STARTER_PRICE__", html.escape(plan_price_label("Starter"))))

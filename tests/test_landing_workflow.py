@@ -2,10 +2,13 @@ from app.landing import landing_page
 from app.release import APP_VERSION, RELEASE_STAGE
 from pathlib import Path
 from PIL import Image
+import json
+import re
 import pytest
 from playwright.sync_api import sync_playwright
 
 from tests.test_auth_browser import auth_server
+from app.subscription import PLANS, plan_price_label
 
 
 def test_landing_matches_required_first_document_workflow_and_conversion_ctas():
@@ -73,6 +76,28 @@ def test_landing_describes_only_implemented_conversion_values():
         "Is payment active?",
     ):
         assert f"<summary>{question}</summary>" in html
+
+
+def test_landing_starter_offer_matches_plan_catalog_and_json_ld():
+    html = landing_page().body.decode()
+    assert PLANS["Starter"] == {
+        "monthly_document_limit": None,
+        "summary": "Unlimited documents",
+        "price": 29_000,
+        "currency": "KRW",
+        "billing_cycle": "Monthly",
+    }
+    assert plan_price_label("Starter") == "₩29,000 / month"
+    assert '<h3>Starter</h3><div class="price">₩29,000 / month</div>' in html
+    assert "Online payment processing is not active yet." in html
+    assert '<h3>Professional</h3><div class="price">Contact</div>' in html
+
+    payloads = [json.loads(value) for value in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html)]
+    application = next(item for item in payloads if item.get("@type") == "SoftwareApplication")
+    starter = next(item for item in application["offers"] if item["name"] == "Starter")
+    assert starter["price"] == "29000"
+    assert starter["priceCurrency"] == "KRW"
+    assert starter["description"] == "Starter plan billed monthly."
 
 
 def test_landing_footer_exposes_beta_and_support_navigation():
