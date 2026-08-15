@@ -93,7 +93,7 @@ def test_export_wizard_shows_only_owned_buyer_defaults_and_keeps_overrides(tmp_p
 
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_export_wizard_browser_flow(auth_server, browser_name):
-    base_url, _ = auth_server
+    base_url, data_dir = auth_server
     with sync_playwright() as playwright:
         browser_type = getattr(playwright, browser_name)
         if not Path(browser_type.executable_path).exists():
@@ -117,9 +117,10 @@ def test_export_wizard_browser_flow(auth_server, browser_name):
             page.get_by_role("button", name="Save Company").click()
             page.wait_for_url(re.compile(rf"{base_url}/onboarding\?next=%2Fexport-wizard"))
             page.get_by_role("button", name="Skip for now").click()
-            page.goto(f"{base_url}/pricing")
-            page.get_by_role("button", name="Choose Professional").click()
-            page.wait_for_url(f"{base_url}/subscription")
+            page.wait_for_url(f"{base_url}/export-wizard")
+            users = json.loads((data_dir / "users.json").read_text(encoding="utf-8"))
+            next(user for user in users if user.get("email") == email).update({"plan": "Professional", "subscription_status": "Active"})
+            (data_dir / "users.json").write_text(json.dumps(users), encoding="utf-8")
             page.goto(f"{base_url}/team")
             invited_email = f"invited-{browser_name}@example.test"
             page.get_by_label("Email").fill(invited_email)

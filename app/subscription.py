@@ -22,6 +22,7 @@ PLANS = {
 }
 SUBSCRIPTION_STATUSES = ("Trial", "Active", "Expired", "Cancelled")
 PLAN_ORDER = tuple(PLANS)
+PAID_PLAN_NOTICE = "Online payment is being prepared. Starter and Professional cannot be activated yet."
 DOCUMENT_CREATION_PATHS = frozenset({
     "/save-invoice", "/invoice", "/packing-list", "/packing", "/si",
     "/shipment", "/booking", "/bl", "/co", "/quotation", "/proforma",
@@ -111,11 +112,17 @@ def _page(title, body):
 def pricing(request: Request):
     account_id = _account_id(request)
     current = subscription_for_account(account_id)
+    def action(name):
+        if name == current["plan"]:
+            return '<span class="badge">Current Plan</span>'
+        if name != "Free":
+            return '<span class="badge">Online payment coming soon</span>'
+        return f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(name)}"><button type="submit">Choose {_text(name)}</button></form>'
     cards = "".join(
-        f'''<article class="card{' current' if name == current['plan'] else ''}"><h2>{_text(name)}</h2><p><strong>{_text(plan_price_label(name))}</strong></p><p>{_text(config['summary'])}</p>{'<span class="badge">Current Plan</span>' if name == current['plan'] else f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(name)}"><button type="submit">Choose { _text(name) }</button></form>'}</article>'''
+        f'''<article class="card{' current' if name == current['plan'] else ''}"><h2>{_text(name)}</h2><p><strong>{_text(plan_price_label(name))}</strong></p><p>{_text(config['summary'])}</p>{action(name)}</article>'''
         for name, config in PLANS.items()
     )
-    return _page("Pricing", f'<h1>Pricing</h1><p>Payment integration will be added in a future release.</p><section class="grid">{cards}</section>')
+    return _page("Pricing", f'<h1>Pricing</h1><p>{_text(PAID_PLAN_NOTICE)}</p><section class="grid">{cards}</section>')
 
 
 @router.get("/subscription")
@@ -125,15 +132,11 @@ def subscription_page(request: Request):
     history = billing.account_billing_history(account_id, BILLING_HISTORY_FILE)
     rows = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("event"))}</td><td>{_text(item.get("plan"))}</td><td>{_text(item.get("status"))}</td><td>${float(item.get("amount", 0) or 0):.2f}</td></tr>' for item in history) or '<tr><td colspan="5">No billing history.</td></tr>'
     limit = "Unlimited" if summary["limit"] is None else str(summary["limit"])
-    current_index = PLAN_ORDER.index(summary["plan"])
-    actions = "".join(
-        f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(plan)}"><button type="submit">{"Upgrade to" if index > current_index else "Downgrade to"} {_text(plan)}</button></form>'
-        for index, plan in enumerate(PLAN_ORDER) if plan != summary["plan"]
-    )
+    actions = '' if summary["plan"] == "Free" else '<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="Free"><button type="submit">Downgrade to Free</button></form>'
     cancel = '' if summary["status"] == "Cancelled" else '<form method="post" action="/subscription/cancel"><button class="danger" type="submit">Cancel Subscription</button></form>'
     invoice_rows = billing.account_invoice_history(account_id, BILLING_HISTORY_FILE)
     invoices = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("invoice_no"))}</td><td>${float(item.get("amount", 0) or 0):.2f}</td></tr>' for item in invoice_rows) or '<tr><td colspan="3">Payment integration is not active. Invoices will appear here after a payment provider is connected.</td></tr>'
-    body = f'''<h1>My Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Documents this month: {summary['used']} / {limit}</p><div>{actions}{cancel}</div><p class="muted">Payments are not processed in this MVP. Plan changes update workspace access only.</p></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Event</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table><h2>Invoice History</h2><table><thead><tr><th>Date</th><th>Invoice</th><th>Amount</th></tr></thead><tbody>{invoices}</tbody></table>'''
+    body = f'''<h1>My Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Documents this month: {summary['used']} / {limit}</p><div>{actions}{cancel}</div><p class="muted">{_text(PAID_PLAN_NOTICE)}</p></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Event</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table><h2>Invoice History</h2><table><thead><tr><th>Date</th><th>Invoice</th><th>Amount</th></tr></thead><tbody>{invoices}</tbody></table>'''
     return _page("My Subscription", body)
 
 
@@ -142,7 +145,9 @@ def change_plan(request: Request, plan: str = Form("")):
     account_id = _account_id(request)
     if plan not in PLANS:
         raise HTTPException(status_code=400, detail="Invalid plan")
-    status = "Active" if plan == "Free" else "Trial"
+    if plan != "Free":
+        return HTMLResponse(f'<h1>Online payment coming soon</h1><p>{_text(PAID_PLAN_NOTICE)}</p><a href="/pricing">Back to Pricing</a>', status_code=403)
+    status = "Active"
     def update(users):
         record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
         if record is None:

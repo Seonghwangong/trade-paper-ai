@@ -43,20 +43,20 @@ def test_my_subscription_upgrade_downgrade_cancel_usage_and_isolation(tmp_path, 
     users, history = _files(tmp_path, monkeypatch)
     page = subscription.subscription_page(_request()).body.decode()
     assert "My Subscription" in page and "Documents this month: 1 / 5" in page
-    assert "Upgrade to Starter" in page and "Upgrade to Professional" in page
+    assert subscription.PAID_PLAN_NOTICE in page
+    assert "Upgrade to Starter" not in page and "Upgrade to Professional" not in page
     assert "Cancel Subscription" in page and "Invoice History" in page
     assert "Payment integration is not active" in page
     assert "BILL-B" not in page and "$99.00" not in page
 
-    subscription.change_plan(_request(method="POST", path="/subscription/plan"), "Professional")
-    upgraded = subscription.subscription_page(_request()).body.decode()
-    assert "Professional" in upgraded and "Trial" in upgraded and "Downgrade to Free" in upgraded
-    subscription.change_plan(_request(method="POST", path="/subscription/plan"), "Starter")
-    assert subscription.subscription_for_account("A")["plan"] == "Starter"
-    subscription.cancel_subscription(_request(method="POST", path="/subscription/cancel"))
-    assert subscription.subscription_for_account("A") == {"plan": "Starter", "status": "Cancelled"}
-    cancelled = subscription.subscription_page(_request()).body.decode()
-    assert "Cancelled" in cancelled and "Cancel Subscription" not in cancelled
+    before_users = users.read_text(encoding="utf-8")
+    before_history = history.read_text(encoding="utf-8")
+    assert subscription.change_plan(_request(method="POST", path="/subscription/plan"), "Professional").status_code == 403
+    assert subscription.change_plan(_request(method="POST", path="/subscription/plan"), "Starter").status_code == 403
+    assert users.read_text(encoding="utf-8") == before_users
+    assert history.read_text(encoding="utf-8") == before_history
+    existing_paid = subscription.subscription_page(_request("B")).body.decode()
+    assert "Professional" in existing_paid and "Downgrade to Free" in existing_paid
     assert all(row["account_id"] == "A" for row in billing.account_billing_history("A", history))
     assert all(row.get("invoice_no") != "BILL-B" for row in billing.account_invoice_history("A", history))
     stored = json.loads(users.read_text(encoding="utf-8"))
@@ -97,13 +97,13 @@ def test_billing_portal_browser_flow(auth_server, browser_name):
             page.get_by_role("button", name="Skip for now").click()
             page.goto(f"{base_url}/subscription")
             assert page.get_by_role("heading", name="My Subscription").is_visible()
-            with page.expect_navigation(url=f"{base_url}/subscription"):
-                page.get_by_role("button", name="Upgrade to Starter").click()
-            assert page.locator(".summary h2").text_content() == "Starter"
+            assert page.get_by_text(subscription.PAID_PLAN_NOTICE).is_visible()
+            assert page.get_by_role("button", name="Upgrade to Starter").count() == 0
+            status = page.evaluate("fetch('/subscription/plan',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'plan=Starter'}).then(response=>response.status)")
+            assert status == 403
+            page.reload()
+            assert page.locator(".summary h2").text_content() == "Free"
             assert page.locator(".badge", has_text="Trial").is_visible()
-            with page.expect_navigation(url=f"{base_url}/subscription"):
-                page.get_by_role("button", name="Cancel Subscription").click()
-            assert page.locator(".badge", has_text="Cancelled").is_visible()
             assert page.get_by_role("heading", name="Billing History").is_visible()
             assert page.get_by_role("heading", name="Invoice History").is_visible()
         finally:

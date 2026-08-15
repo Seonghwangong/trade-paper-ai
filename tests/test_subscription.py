@@ -32,24 +32,34 @@ def _files(tmp_path, monkeypatch):
     return users, billing, usage
 
 
-def test_default_free_trial_plan_change_and_account_billing_isolation(tmp_path, monkeypatch):
+def test_paid_plan_change_is_blocked_without_writes_and_free_still_works(tmp_path, monkeypatch):
     users, billing, _ = _files(tmp_path, monkeypatch)
     assert subscription.subscription_for_account("A") == {"plan": "Free", "status": "Trial"}
-    response = subscription.change_plan(_request(), "Starter")
+    original_users = users.read_text(encoding="utf-8")
+    for plan in ("Starter", "Professional"):
+        response = subscription.change_plan(_request(), plan)
+        assert response.status_code == 403
+        assert "Online payment is being prepared" in response.body.decode()
+        assert users.read_text(encoding="utf-8") == original_users
+        assert json.loads(billing.read_text(encoding="utf-8")) == []
+        assert not (tmp_path / "audit_log.json").exists()
+
+    response = subscription.change_plan(_request(), "Free")
     assert response.status_code == 303
     stored = json.loads(users.read_text(encoding="utf-8"))
-    assert stored[0]["plan"] == "Starter" and stored[0]["subscription_status"] == "Trial"
+    assert stored[0]["plan"] == "Free" and stored[0]["subscription_status"] == "Active"
+    assert stored[1]["plan"] == "Professional" and stored[1]["subscription_status"] == "Active"
     history = json.loads(billing.read_text(encoding="utf-8"))
     assert history == [{
-        "account_id": "A", "created_at": history[0]["created_at"], "plan": "Starter",
-        "status": "Trial", "amount": 0, "event": "Plan Change",
+        "account_id": "A", "created_at": history[0]["created_at"], "plan": "Free",
+        "status": "Active", "amount": 0, "event": "Plan Change",
     }]
     audit = json.loads((tmp_path / "audit_log.json").read_text(encoding="utf-8"))
     assert audit[0]["action"] == "Change" and audit[0]["document_type"] == "Subscription"
-    assert audit[0]["document_no"] == "Starter" and audit[0]["account_id"] == "A"
+    assert audit[0]["document_no"] == "Free" and audit[0]["account_id"] == "A"
     own_html = subscription.subscription_page(_request("A")).body.decode()
     other_html = subscription.subscription_page(_request("B")).body.decode()
-    assert "Starter" in own_html and "Plan Change" in own_html
+    assert "Free" in own_html and "Plan Change" in own_html
     assert history[0]["created_at"] in own_html
     assert history[0]["created_at"] not in other_html and "Plan Change" not in other_html
 
@@ -60,12 +70,9 @@ def test_status_trial_active_expired_cancelled_and_admin_metrics(tmp_path, monke
         response = subscription.update_subscription_status("A", _request("B", "/admin/subscriptions/A/status", "POST"), status)
         assert response.status_code == 303
         assert subscription.subscription_for_account("A")["status"] == status
-    subscription.update_subscription_status("A", _request("B"), "Active")
-    subscription.change_plan(_request("A"), "Starter")
-    subscription.update_subscription_status("A", _request("B"), "Active")
     html = subscription.subscription_admin(_request("B", "/admin/subscriptions")).body.decode()
     assert "Subscribers" in html and ">2<" in html
-    assert "Paid Users" in html and "$0.00" in html
+    assert "Paid Users" in html and ">1<" in html and "$0.00" in html
 
 
 def test_free_limit_and_unlimited_paid_usage(tmp_path, monkeypatch):
@@ -114,4 +121,6 @@ def test_pricing_and_dashboard_plan_markup(tmp_path, monkeypatch):
     assert "₩29,000 / month" in pricing
     assert subscription.PLANS["Free"]["monthly_document_limit"] == 5
     assert subscription.plan_price_label("Professional") == "Contact"
-    assert "Payment integration will be added" in pricing
+    assert subscription.PAID_PLAN_NOTICE in pricing
+    assert "Choose Starter" not in pricing and "Choose Professional" not in pricing
+    assert pricing.count("Online payment coming soon") == 2
