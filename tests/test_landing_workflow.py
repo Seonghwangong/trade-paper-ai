@@ -114,6 +114,7 @@ def test_landing_footer_exposes_beta_and_support_navigation():
         ("Contact", "/contact"),
         ("Privacy", "/privacy"),
         ("Terms", "/terms"),
+        ("Refund Policy", "/refund-policy"),
         ("Sign In", "/login"),
     ):
         assert f'<a href="{path}">{label}</a>' in html

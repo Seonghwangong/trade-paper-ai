@@ -5,7 +5,7 @@ import os
 from fastapi.responses import HTMLResponse
 
 from app import email_delivery
-from app.release import APP_VERSION, RELEASE_STAGE
+from app.release import APP_VERSION, BUSINESS_PHONE, RELEASE_STAGE
 from app.subscription import PLANS, plan_price_label
 
 
@@ -222,11 +222,11 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   <section class="section" aria-labelledby="final-cta-title"><div class="wrap"><div class="contact-card"><h2 id="final-cta-title">Ready to simplify export documentation?</h2><p>Start your connected export workflow today.</p><div class="section-actions"><a class="primary" href="/register">Start Free</a><a class="secondary" href="/founding-beta">Join Founding Beta</a></div></div></div></section>
 </main>
 <footer>
-      <div class="wrap footer-inner"><div class="footer-brand"><strong>Trade Paper AI</strong><span>Version __APP_VERSION__ · __RELEASE_STAGE__ · Built for Exporters.</span><dl class="business-info" aria-label="사업자 정보"><div><dt>상호</dt><dd>지엘피(GLP)</dd></div><div><dt>대표자</dt><dd>공성환</dd></div><div><dt>사업자등록번호</dt><dd>357-45-01167</dd></div><div><dt>사업장 주소</dt><dd>경상남도 창원시 의창구 지귀로120번길 19, 2층 203호(봉곡동)</dd></div><div><dt>전화번호</dt><dd>010-7166-7770</dd></div></dl></div><nav class="footer-links" aria-label="Footer navigation"><a href="/founding-beta">Apply for Founding Beta</a><a href="/feedback">Send Feedback</a><a href="/demo">Demo</a><a href="/about">About</a><a href="/release-notes">Release Notes</a><a href="/version-history">Version History</a><a href="/contact">Contact</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/login">Sign In</a></nav></div>
+      <div class="wrap footer-inner"><div class="footer-brand"><strong>Trade Paper AI</strong><span>Version __APP_VERSION__ · __RELEASE_STAGE__ · Built for Exporters.</span><dl class="business-info" aria-label="사업자 정보"><div><dt>상호</dt><dd>지엘피(GLP)</dd></div><div><dt>대표자</dt><dd>공성환</dd></div><div><dt>사업자등록번호</dt><dd>357-45-01167</dd></div><div><dt>사업장 주소</dt><dd>경상남도 창원시 의창구 지귀로120번길 19, 2층 203호(봉곡동)</dd></div><div><dt>전화번호</dt><dd>__BUSINESS_PHONE__</dd></div></dl></div><nav class="footer-links" aria-label="Footer navigation"><a href="/founding-beta">Apply for Founding Beta</a><a href="/feedback">Send Feedback</a><a href="/demo">Demo</a><a href="/about">About</a><a href="/release-notes">Release Notes</a><a href="/version-history">Version History</a><a href="/contact">Contact</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/refund-policy">Refund Policy</a><a href="/login">Sign In</a></nav></div>
 </footer>
 <script>(function(){
   function source(){const value=((new URLSearchParams(location.search).get('utm_source')||'')+' '+(document.referrer||'')).toLowerCase();if(value.includes('producthunt')||value.includes('product hunt'))return 'Product Hunt';if(value.includes('reddit'))return 'Reddit';if(value.includes('google'))return 'Google';if(!value.trim())return 'Direct';return 'Other'}
   const seen=new Set();const observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(!entry.isIntersecting)return;const page=entry.target.id==='pricing'?'Pricing':'FAQ';if(seen.has(page))return;seen.add(page);fetch('/analytics/visit?page='+encodeURIComponent(page)+'&source='+encodeURIComponent(source()),{method:'POST',credentials:'omit',keepalive:true}).catch(function(){})})},{threshold:.25});['pricing','faq'].forEach(function(id){const node=document.getElementById(id);if(node)observer.observe(node)})
 })();</script>
 </body>
-</html>""".replace("__APP_VERSION__", APP_VERSION).replace("__RELEASE_STAGE__", RELEASE_STAGE).replace("__CANONICAL_URL__", html.escape(canonical_url, quote=True)).replace("__HERO_URL__", html.escape(hero_url, quote=True)).replace("__JSON_LD__", json_ld).replace("__FAQ_HTML__", faq_html).replace("__STARTER_PRICE__", html.escape(plan_price_label("Starter"))))
+</html>""".replace("__APP_VERSION__", APP_VERSION).replace("__RELEASE_STAGE__", RELEASE_STAGE).replace("__BUSINESS_PHONE__", html.escape(BUSINESS_PHONE)).replace("__CANONICAL_URL__", html.escape(canonical_url, quote=True)).replace("__HERO_URL__", html.escape(hero_url, quote=True)).replace("__JSON_LD__", json_ld).replace("__FAQ_HTML__", faq_html).replace("__STARTER_PRICE__", html.escape(plan_price_label("Starter"))))

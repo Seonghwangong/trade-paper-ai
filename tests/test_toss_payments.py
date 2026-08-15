@@ -63,7 +63,10 @@ def test_product_checkout_and_admin_readiness_do_not_activate_or_create_orders(t
     monkeypatch.setattr(toss_payments, "PAYMENT_ORDERS_FILE", orders)
     product = toss_payments.starter_product_page().body.decode()
     assert "Starter" in product and "₩29,000 / month" in product
+    assert "Monthly subscription" in product and "Unlimited documents" in product and "Direct onboarding" in product
     assert "does not create a paid subscription or collect payment" in product
+    for path in ("/terms", "/privacy", "/refund-policy", "/contact"):
+        assert f'href="{path}"' in product
     checkout = toss_payments.checkout_preparation(_request()).body.decode()
     assert "No payment order has been created" in checkout
     assert "Not Active" in checkout and not orders.exists()
@@ -94,6 +97,17 @@ def test_starter_purchase_preparation_browser(auth_server, browser_name, viewpor
             assert page.get_by_text("₩29,000 / month", exact=True).is_visible()
             assert page.get_by_text("Online payment processing is not active yet", exact=False).is_visible()
             assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+            for path, heading in (
+                ("/terms", "Terms of Service"),
+                ("/privacy", "Privacy Policy"),
+                ("/refund-policy", "Cancellation and Refund Policy"),
+                ("/contact", "Contact Trade Paper AI"),
+            ):
+                assert page.locator(f'a[href="{path}"]').first.is_visible()
+                page.goto(f"{base_url}{path}")
+                assert page.get_by_role("heading", name=heading, exact=True).is_visible()
+                assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+                page.goto(f"{base_url}/starter")
             page.goto(f"{base_url}/register")
             page.get_by_label("Company Name").fill("Toss Review Company")
             page.get_by_label("Email").fill(email)

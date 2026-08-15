@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
 from app.release import (
-    APP_NAME, APP_VERSION, BUILD_NAME, LAST_UPDATED, RELEASE_STAGE, RELEASE_TYPE,
+    APP_NAME, APP_VERSION, BUILD_NAME, BUSINESS_PHONE, LAST_UPDATED, RELEASE_STAGE, RELEASE_TYPE,
     contact_email, contact_url,
 )
 from app.ui import button, html_escape, page_shell, section_card, toolbar
@@ -130,13 +130,15 @@ def demo_page():
 def contact_page():
     email = contact_email()
     website = contact_url()
-    channels = []
+    channels = [
+        f'<p><b>Phone</b><br><a href="tel:{html_escape(BUSINESS_PHONE, attribute=True)}">{html_escape(BUSINESS_PHONE)}</a></p>'
+    ]
     if email:
         channels.append(f'<p><b>Email</b><br><a href="mailto:{html_escape(email, attribute=True)}">{html_escape(email)}</a></p>')
     if website:
         channels.append(f'<p><b>Website</b><br><a href="{html_escape(website, attribute=True)}">{html_escape(website)}</a></p>')
-    if not channels:
-        channels.append("<p>Public contact details have not been configured for this deployment. Founding Beta participants should use their existing onboarding contact channel.</p>")
+    if not email and not website:
+        channels.append("<p>Email and website contact channels are not configured for this deployment. Please use the business phone number above.</p>")
     content = section_card("Contact", "".join(channels))
     return information_page("Contact Trade Paper AI", "Questions and product inquiries", content)
 
@@ -174,6 +176,11 @@ def privacy_page():
             "<p>Passwords are protected using one-way password hashing. Compatible older credentials are upgraded after a successful sign-in. We do not display stored password values.</p>"
             "<p>Authentication uses a signed session cookie with a limited lifetime. Production cookies are configured with HttpOnly, SameSite, and Secure protections.</p>"
             "<p>Your login email is used for account access and password recovery. If email delivery is enabled, the configured email delivery provider receives the recipient address and reset message needed to send the email. Password reset tokens are stored by Trade Paper AI only as hashes and expire after 30 minutes.</p>",
+        )
+        + section_card(
+            "Payment Information",
+            "<p>Online payment processing is not active yet. If it is activated, payment method credentials such as full card details or bank authentication information will be handled by the payment provider and will not be entered into or stored by the Trade Paper AI application.</p>"
+            "<p>Trade Paper AI may retain limited billing records needed to provide and support a subscription, such as an order reference, plan, price, currency, billing cycle, payment status, provider transaction reference, and relevant timestamps.</p>",
         )
         + section_card(
             "Export Documents and Snapshots",
@@ -238,7 +245,8 @@ def terms_page():
         + section_card(
             "Paid Plans, Cancellation, and Refunds",
             "<p>The Starter plan is listed at ₩29,000 per month. Online payment processing is not active yet, so applying for or viewing Starter does not collect payment or activate a paid plan.</p>"
-            "<p>Final online cancellation and refund terms must be published before checkout activation. Until then, billing questions and Founding Beta arrangements are handled through the <a href=\"/contact\">Contact page</a>.</p>",
+            "<p>If online monthly billing is activated, the checkout will disclose the payment and renewal terms before purchase. Subscription cancellation stops future billing according to the timing shown at cancellation; any withdrawal, cancellation, or refund rights required by applicable law remain available.</p>"
+            "<p>See the <a href=\"/refund-policy\">Cancellation and Refund Policy</a> for the request process. Billing questions and Founding Beta arrangements are handled through the <a href=\"/contact\">Contact page</a>.</p>",
         )
         + section_card(
             "Availability and Changes",
@@ -256,3 +264,39 @@ def terms_page():
         )
     )
     return information_page("Terms of Service", "Trade Paper AI Beta · Effective August 10, 2026", content)
+
+
+# Legal and Toss Payments review is required before online payment activation.
+@router.get("/refund-policy")
+def refund_policy_page():
+    content = (
+        section_card(
+            "Current Payment Status",
+            "<p><b>Effective date: August 15, 2026</b></p>"
+            "<p>Online payment processing is not active yet. Viewing the Starter page, applying for Founding Beta, or requesting purchase information does not collect payment or create a paid subscription.</p>",
+        )
+        + section_card(
+            "Starter Monthly Subscription",
+            "<p>When online payment becomes available, Starter is intended to be offered as a monthly subscription at ₩29,000. The checkout will show the charge, billing cycle, renewal terms, and the effect of cancellation before you confirm a purchase.</p>",
+        )
+        + section_card(
+            "Cancel a Subscription",
+            "<p>You may request cancellation through the <a href=\"/contact\">Contact page</a>. Include the email address used for your account and an order or payment reference if one is available. Never send your password or full payment-card details.</p>"
+            "<p>Cancellation will stop future charges according to the cancellation timing disclosed at checkout or when the request is confirmed. We will explain any remaining access period when processing the request.</p>",
+        )
+        + section_card(
+            "Withdrawal and Refund Requests",
+            "<p>You may request a payment cancellation, withdrawal, or refund through the Contact page. We will review the request promptly based on the purchase terms, service usage, the reason for the request, and applicable law.</p>"
+            "<p>Duplicate or incorrect charges and a paid service that cannot be provided for reasons attributable to Trade Paper AI will be handled in accordance with applicable law. This policy does not impose a blanket exclusion of refunds.</p>",
+        )
+        + section_card(
+            "Refund Method and Timing",
+            "<p>Approved refunds will normally be returned through the original payment method. The time for the credit to appear may depend on the payment provider, card issuer, or bank. Any mandatory refund method or deadline under applicable law takes priority.</p>",
+        )
+        + section_card(
+            "Legal Rights and Contact",
+            "<p>Nothing in this policy limits rights that cannot be excluded under applicable consumer-protection law. If this policy conflicts with mandatory law, the law prevails.</p>"
+            "<p>For cancellation, refund, or billing questions, use the <a href=\"/contact\">Contact page</a>. You can also review the <a href=\"/terms\">Terms of Service</a> and <a href=\"/privacy\">Privacy Policy</a>.</p>",
+        )
+    )
+    return information_page("Cancellation and Refund Policy", "Trade Paper AI Starter Monthly Subscription", content)

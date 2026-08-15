@@ -47,7 +47,7 @@ PASSWORD_RESET_RATE_LIMIT = 5
 PASSWORD_RESET_RATE_MAX_KEYS = 10_000
 PUBLIC_PATHS = frozenset({
     "/login", "/register", "/logout", "/forgot-password", "/reset-password",
-    "/privacy", "/terms", "/status", "/health", "/healthz",
+    "/privacy", "/terms", "/refund-policy", "/contact", "/status", "/health", "/healthz",
     "/founding-beta", "/founding-beta/thank-you",
     "/starter",
     "/feedback", "/feedback/thank-you",

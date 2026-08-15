@@ -13,7 +13,9 @@ def test_contact_uses_explicit_configuration_and_operational_fallbacks(monkeypat
     ):
         monkeypatch.delenv(name, raising=False)
     unconfigured = _body(release_pages.contact_page())
-    assert "not been configured" in unconfigured
+    assert "Email and website contact channels are not configured" in unconfigured
+    assert release.BUSINESS_PHONE in unconfigured
+    assert f'href="tel:{release.BUSINESS_PHONE}"' in unconfigured
     assert "hello@tradepaper.ai" not in unconfigured
     assert "www.tradepaper.ai" not in unconfigured
     assert "placeholder" not in unconfigured.casefold()
@@ -59,12 +61,12 @@ def test_release_pages_match_current_founding_beta_capabilities():
 def test_landing_and_common_footer_expose_consistent_release_links():
     landing_body = _body(landing.landing_page())
     assert f"Version {release.APP_VERSION} · {release.RELEASE_STAGE}" in landing_body
-    for path in ("/about", "/release-notes", "/version-history", "/contact", "/privacy", "/terms"):
+    for path in ("/about", "/release-notes", "/version-history", "/contact", "/privacy", "/terms", "/refund-policy"):
         assert f'href="{path}"' in landing_body
 
 
-def test_privacy_and_terms_use_the_same_contact_page():
-    for page in (release_pages.privacy_page(), release_pages.terms_page()):
+def test_privacy_terms_and_refunds_use_the_same_contact_page():
+    for page in (release_pages.privacy_page(), release_pages.terms_page(), release_pages.refund_policy_page()):
         body = _body(page)
         assert 'href="/contact"' in body
         assert "hello@tradepaper.ai" not in body

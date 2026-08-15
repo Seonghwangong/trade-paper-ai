@@ -11,6 +11,7 @@ RELEASE_TYPE = "Founding Beta"
 RELEASE_STAGE = "Founding Beta"
 LAST_UPDATED = "2026-07-22"
 EXPECTED_ROUTE_COUNT = 219
+BUSINESS_PHONE = "010-7166-7770"
 
 RELEASE_NOTES = (
     "Complete shipment-centered trade document workflow.",

@@ -44,7 +44,10 @@ def test_robots_and_sitemap_use_the_validated_public_base_url(monkeypatch):
     locations = [element.text for element in root.findall("{http://www.sitemaps.org/schemas/sitemap/0.9}url/{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
     assert locations == [
         "https://trade.example.com/", "https://trade.example.com/#pricing",
-        "https://trade.example.com/founding-beta", "https://trade.example.com/#faq",
+        "https://trade.example.com/founding-beta", "https://trade.example.com/starter",
+        "https://trade.example.com/#faq", "https://trade.example.com/terms",
+        "https://trade.example.com/privacy", "https://trade.example.com/refund-policy",
+        "https://trade.example.com/contact",
         "https://trade.example.com/login", "https://trade.example.com/register",
     ]
     assert {"/robots.txt", "/sitemap.xml"}.issubset(auth.PUBLIC_PATHS)
