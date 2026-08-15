@@ -117,15 +117,16 @@ h1{margin:0;font-size:clamp(58px,9vw,104px);font-weight:760;letter-spacing:-.065
 .beta-card{max-width:780px;margin:0 auto;padding:34px;border:1px solid #bfdbfe;border-radius:26px;background:#eff6ff;text-align:center}.beta-card h2{font-size:clamp(32px,4vw,46px)}.beta-card p{margin:16px 0 0;color:#475569;font-size:18px;line-height:1.6}
 .faq{display:grid;max-width:860px;margin:0 auto;gap:12px}.faq details{border:1px solid #e2e8f0;border-radius:16px;background:#fff;padding:0 22px}.faq summary{cursor:pointer;padding:20px 0;font-weight:750;list-style-position:inside}.faq details p{margin:0;padding:0 0 20px;color:#64748b;line-height:1.65}
 footer{padding:54px 0;border-top:1px solid #e2e8f0}
-.footer-inner{display:flex;align-items:center;justify-content:space-between;gap:20px}
-.footer-brand{display:grid;gap:5px}.footer-inner strong{font-size:17px}.footer-inner span{color:#64748b}.footer-links{display:flex;justify-content:flex-end;gap:16px;flex-wrap:wrap}.footer-links a{color:#475569;font-size:14px;font-weight:650;text-decoration:none}.footer-links a:hover{text-decoration:underline}
+    .footer-inner{display:flex;align-items:flex-start;justify-content:space-between;gap:32px}
+    .footer-brand{display:grid;min-width:0;max-width:620px;gap:5px}.footer-inner strong{font-size:17px}.footer-inner span{color:#64748b}.business-info{display:grid;gap:7px;margin:17px 0 0;color:#475569;font-size:13px;line-height:1.55}.business-info div{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px}.business-info dt{font-weight:750}.business-info dd{min-width:0;margin:0;overflow-wrap:anywhere;word-break:keep-all}.footer-links{display:flex;justify-content:flex-end;gap:16px;flex-wrap:wrap}.footer-links a{color:#475569;font-size:14px;font-weight:650;text-decoration:none}.footer-links a:hover{text-decoration:underline}
 @media(max-width:780px){
   .hero{min-height:540px;padding:72px 0 64px}
   .product-preview{padding-top:20px}
   .product-preview{padding-bottom:90px}
   .features{grid-template-columns:1fr 1fr}.value-highlights{grid-template-columns:1fr}.showcase,.pricing{grid-template-columns:1fr}.security-list{grid-template-columns:1fr 1fr}
-  .workflow{flex-direction:column}
-  .arrow{transform:rotate(90deg)}
+      .workflow{flex-direction:column}
+      .arrow{transform:rotate(90deg)}
+      .footer-inner{flex-direction:column}.footer-links{justify-content:flex-start}
 }
 @media(max-width:520px){
   .wrap{width:min(100% - 28px,1120px)}
@@ -141,7 +142,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   .features{grid-template-columns:1fr}.security-list{grid-template-columns:1fr}
   .feature{min-height:145px}
   .step{width:100%}
-  .footer-inner{align-items:flex-start;flex-direction:column}.footer-links{justify-content:flex-start}
+      .business-info div{grid-template-columns:1fr;gap:1px}
 }
 </style>
 </head>
@@ -216,7 +217,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   <section class="section" aria-labelledby="final-cta-title"><div class="wrap"><div class="contact-card"><h2 id="final-cta-title">Ready to simplify export documentation?</h2><p>Start your connected export workflow today.</p><div class="section-actions"><a class="primary" href="/register">Start Free</a><a class="secondary" href="/founding-beta">Join Founding Beta</a></div></div></div></section>
 </main>
 <footer>
-  <div class="wrap footer-inner"><div class="footer-brand"><strong>Trade Paper AI</strong><span>Version __APP_VERSION__ · __RELEASE_STAGE__ · Built for Exporters.</span></div><nav class="footer-links" aria-label="Footer navigation"><a href="/founding-beta">Apply for Founding Beta</a><a href="/feedback">Send Feedback</a><a href="/demo">Demo</a><a href="/about">About</a><a href="/release-notes">Release Notes</a><a href="/version-history">Version History</a><a href="/contact">Contact</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/login">Sign In</a></nav></div>
+      <div class="wrap footer-inner"><div class="footer-brand"><strong>Trade Paper AI</strong><span>Version __APP_VERSION__ · __RELEASE_STAGE__ · Built for Exporters.</span><dl class="business-info" aria-label="사업자 정보"><div><dt>상호</dt><dd>지엘피(GLP)</dd></div><div><dt>대표자</dt><dd>공성환</dd></div><div><dt>사업자등록번호</dt><dd>357-45-01167</dd></div><div><dt>사업장 주소</dt><dd>경상남도 창원시 의창구 지귀로120번길 19, 2층 203호(봉곡동)</dd></div><div><dt>전화번호</dt><dd>010-7166-7770</dd></div></dl></div><nav class="footer-links" aria-label="Footer navigation"><a href="/founding-beta">Apply for Founding Beta</a><a href="/feedback">Send Feedback</a><a href="/demo">Demo</a><a href="/about">About</a><a href="/release-notes">Release Notes</a><a href="/version-history">Version History</a><a href="/contact">Contact</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/login">Sign In</a></nav></div>
 </footer>
 <script>(function(){
   function source(){const value=((new URLSearchParams(location.search).get('utm_source')||'')+' '+(document.referrer||'')).toLowerCase();if(value.includes('producthunt')||value.includes('product hunt'))return 'Product Hunt';if(value.includes('reddit'))return 'Reddit';if(value.includes('google'))return 'Google';if(!value.trim())return 'Direct';return 'Other'}
