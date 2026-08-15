@@ -6,6 +6,7 @@ import html
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app import billing
 from app.storage import data_path, load_json_strict, locked_json_mutation
 
 
@@ -20,6 +21,7 @@ PLANS = {
     "Professional": {"monthly_document_limit": None, "summary": "Unlimited documents and professional workflow"},
 }
 SUBSCRIPTION_STATUSES = ("Trial", "Active", "Expired", "Cancelled")
+PLAN_ORDER = tuple(PLANS)
 DOCUMENT_CREATION_PATHS = frozenset({
     "/save-invoice", "/invoice", "/packing-list", "/packing", "/si",
     "/shipment", "/booking", "/bl", "/co", "/quotation", "/proforma",
@@ -92,7 +94,7 @@ def usage_limit_response(summary):
 
 
 def _page(title, body):
-    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{_text(title)}</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{width:min(1100px,calc(100% - 32px));margin:36px auto}}nav{{display:flex;gap:10px;margin-bottom:24px}}a,.button,button{{display:inline-flex;min-height:44px;align-items:center;padding:10px 15px;border:0;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:800;cursor:pointer}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}.card,.summary{{padding:24px;background:#fff;border:1px solid #E5E7EB;border-radius:16px}}.card.current{{border:2px solid #2563EB}}.badge{{display:inline-block;padding:6px 9px;border-radius:999px;background:#DBEAFE;color:#1E3A8A;font-weight:800}}table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;border-bottom:1px solid #E5E7EB;text-align:left}}th{{background:#111827;color:#fff}}select{{min-height:42px;padding:8px;border:1px solid #CBD5E1;border-radius:8px}}form{{display:flex;gap:8px;align-items:center;flex-wrap:wrap}}@media(max-width:720px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main><nav><a href="/">Dashboard</a><a href="/subscription">Subscription</a></nav>{body}</main></body></html>''')
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{_text(title)}</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{width:min(1100px,calc(100% - 32px));margin:36px auto}}nav{{display:flex;gap:10px;margin-bottom:24px}}a,.button,button{{display:inline-flex;min-height:44px;align-items:center;padding:10px 15px;border:0;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:800;cursor:pointer}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}.card,.summary{{padding:24px;background:#fff;border:1px solid #E5E7EB;border-radius:16px}}.card.current{{border:2px solid #2563EB}}.badge{{display:inline-block;padding:6px 9px;border-radius:999px;background:#DBEAFE;color:#1E3A8A;font-weight:800}}.danger{{background:#B91C1C}}.muted{{color:#64748B}}table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;border-bottom:1px solid #E5E7EB;text-align:left}}th{{background:#111827;color:#fff}}select{{min-height:42px;padding:8px;border:1px solid #CBD5E1;border-radius:8px}}form{{display:flex;gap:8px;align-items:center;flex-wrap:wrap}}@media(max-width:720px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main><nav><a href="/">Dashboard</a><a href="/subscription">My Subscription</a></nav>{body}</main></body></html>''')
 
 
 @router.get("/pricing")
@@ -110,11 +112,19 @@ def pricing(request: Request):
 def subscription_page(request: Request):
     account_id = _account_id(request)
     summary = usage_summary(account_id)
-    history = [item for item in load_json_strict(BILLING_HISTORY_FILE, [], list) if isinstance(item, dict) and item.get("account_id") == account_id]
-    rows = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("plan"))}</td><td>{_text(item.get("status"))}</td><td>${float(item.get("amount", 0) or 0):.2f}</td></tr>' for item in reversed(history)) or '<tr><td colspan="4">No billing history.</td></tr>'
+    history = billing.account_billing_history(account_id, BILLING_HISTORY_FILE)
+    rows = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("event"))}</td><td>{_text(item.get("plan"))}</td><td>{_text(item.get("status"))}</td><td>${float(item.get("amount", 0) or 0):.2f}</td></tr>' for item in history) or '<tr><td colspan="5">No billing history.</td></tr>'
     limit = "Unlimited" if summary["limit"] is None else str(summary["limit"])
-    body = f'''<h1>Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Monthly documents: {summary['used']} / {limit}</p><a href="/pricing">Upgrade</a></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table>'''
-    return _page("Subscription", body)
+    current_index = PLAN_ORDER.index(summary["plan"])
+    actions = "".join(
+        f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(plan)}"><button type="submit">{"Upgrade to" if index > current_index else "Downgrade to"} {_text(plan)}</button></form>'
+        for index, plan in enumerate(PLAN_ORDER) if plan != summary["plan"]
+    )
+    cancel = '' if summary["status"] == "Cancelled" else '<form method="post" action="/subscription/cancel"><button class="danger" type="submit">Cancel Subscription</button></form>'
+    invoice_rows = billing.account_invoice_history(account_id, BILLING_HISTORY_FILE)
+    invoices = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("invoice_no"))}</td><td>${float(item.get("amount", 0) or 0):.2f}</td></tr>' for item in invoice_rows) or '<tr><td colspan="3">Payment integration is not active. Invoices will appear here after a payment provider is connected.</td></tr>'
+    body = f'''<h1>My Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Documents this month: {summary['used']} / {limit}</p><div>{actions}{cancel}</div><p class="muted">Payments are not processed in this MVP. Plan changes update workspace access only.</p></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Event</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table><h2>Invoice History</h2><table><thead><tr><th>Date</th><th>Invoice</th><th>Amount</th></tr></thead><tbody>{invoices}</tbody></table>'''
+    return _page("My Subscription", body)
 
 
 @router.post("/subscription/plan")
@@ -130,10 +140,25 @@ def change_plan(request: Request, plan: str = Form("")):
         record["plan"] = plan
         record["subscription_status"] = status
     locked_json_mutation(USERS_FILE, [], update, list)
-    entry = {"account_id": account_id, "created_at": datetime.now(timezone.utc).isoformat(), "plan": plan, "status": status, "amount": 0, "event": "Plan Change"}
-    locked_json_mutation(BILLING_HISTORY_FILE, [], lambda rows: rows.append(entry), list)
+    billing.record_billing_event(account_id, plan, status, "Plan Change", path=BILLING_HISTORY_FILE)
     from app.audit_log import record_request_audit
     record_request_audit(request, "Change", "Subscription", plan, path=USERS_FILE.with_name("audit_log.json"))
+    return RedirectResponse("/subscription", status_code=303)
+
+
+@router.post("/subscription/cancel")
+def cancel_subscription(request: Request):
+    account_id = _account_id(request)
+    subscription = subscription_for_account(account_id)
+    def update(users):
+        record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+        record["subscription_status"] = "Cancelled"
+    locked_json_mutation(USERS_FILE, [], update, list)
+    billing.record_billing_event(account_id, subscription["plan"], "Cancelled", "Subscription Cancelled", path=BILLING_HISTORY_FILE)
+    from app.audit_log import record_request_audit
+    record_request_audit(request, "Cancel", "Subscription", subscription["plan"], path=USERS_FILE.with_name("audit_log.json"))
     return RedirectResponse("/subscription", status_code=303)
 
 

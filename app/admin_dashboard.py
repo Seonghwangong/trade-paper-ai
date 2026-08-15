@@ -13,6 +13,7 @@ from app.storage import data_path, load_json_strict
 
 
 router = APIRouter()
+DASHBOARD_SCOPE = "service"
 USERS_FILE = data_path("users.json")
 EMAIL_HISTORY_FILE = data_path("email_history.json")
 BILLING_HISTORY_FILE = data_path("billing_history.json")

@@ -49,8 +49,9 @@ def test_default_free_trial_plan_change_and_account_billing_isolation(tmp_path, 
     assert audit[0]["document_no"] == "Starter" and audit[0]["account_id"] == "A"
     own_html = subscription.subscription_page(_request("A")).body.decode()
     other_html = subscription.subscription_page(_request("B")).body.decode()
-    assert "Starter" in own_html and "Plan Change" not in own_html
-    assert history[0]["created_at"] in own_html and history[0]["created_at"] not in other_html
+    assert "Starter" in own_html and "Plan Change" in own_html
+    assert history[0]["created_at"] in own_html
+    assert history[0]["created_at"] not in other_html and "Plan Change" not in other_html
 
 
 def test_status_trial_active_expired_cancelled_and_admin_metrics(tmp_path, monkeypatch):
