@@ -177,7 +177,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
         </div>
         <img class="dashboard-screenshot" src="/static/trade-paper-demo-15s.gif" alt="15-second Trade Paper AI demo showing Buyer and Product selection, Export Wizard, Shipment Tracking, and Document Package">
       </div>
-      <div class="demo-caption"><span><strong>15-second product tour.</strong> See the connected export workflow at a glance.</span><a href="/demo">Open interactive demo →</a></div>
+      <div class="demo-caption"><span><strong>15-second product tour.</strong> See the connected export workflow at a glance.</span><a href="/register">Start Free to try the workflow →</a></div>
     </div>
   </section>
   <section class="section" aria-labelledby="features-title">
@@ -222,7 +222,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   <section class="section" aria-labelledby="final-cta-title"><div class="wrap"><div class="contact-card"><h2 id="final-cta-title">Ready to simplify export documentation?</h2><p>Start your connected export workflow today.</p><div class="section-actions"><a class="primary" href="/register">Start Free</a><a class="secondary" href="/founding-beta">Join Founding Beta</a></div></div></div></section>
 </main>
 <footer>
-      <div class="wrap footer-inner"><div class="footer-brand"><strong>Trade Paper AI</strong><span>Version __APP_VERSION__ · __RELEASE_STAGE__ · Built for Exporters.</span><dl class="business-info" aria-label="사업자 정보"><div><dt>상호</dt><dd>지엘피(GLP)</dd></div><div><dt>대표자</dt><dd>공성환</dd></div><div><dt>사업자등록번호</dt><dd>357-45-01167</dd></div><div><dt>사업장 주소</dt><dd>경상남도 창원시 의창구 지귀로120번길 19, 2층 203호(봉곡동)</dd></div><div><dt>전화번호</dt><dd>__BUSINESS_PHONE__</dd></div></dl></div><nav class="footer-links" aria-label="Footer navigation"><a href="/founding-beta">Apply for Founding Beta</a><a href="/feedback">Send Feedback</a><a href="/demo">Demo</a><a href="/about">About</a><a href="/release-notes">Release Notes</a><a href="/version-history">Version History</a><a href="/contact">Contact</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/refund-policy">Refund Policy</a><a href="/login">Sign In</a></nav></div>
+      <div class="wrap footer-inner"><div class="footer-brand"><strong>Trade Paper AI</strong><span>Version __APP_VERSION__ · __RELEASE_STAGE__ · Built for Exporters.</span><dl class="business-info" aria-label="사업자 정보"><div><dt>상호</dt><dd>지엘피(GLP)</dd></div><div><dt>대표자</dt><dd>공성환</dd></div><div><dt>사업자등록번호</dt><dd>357-45-01167</dd></div><div><dt>사업장 주소</dt><dd>경상남도 창원시 의창구 지귀로120번길 19, 2층 203호(봉곡동)</dd></div><div><dt>전화번호</dt><dd>__BUSINESS_PHONE__</dd></div></dl></div><nav class="footer-links" aria-label="Footer navigation"><a href="/founding-beta">Apply for Founding Beta</a><a href="/feedback">Send Feedback</a><a href="#demo">15-Second Demo</a><a href="/about">About</a><a href="/release-notes">Release Notes</a><a href="/version-history">Version History</a><a href="/contact">Contact</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/refund-policy">Refund Policy</a><a href="/login">Sign In</a></nav></div>
 </footer>
 <script>(function(){
   function source(){const value=((new URLSearchParams(location.search).get('utm_source')||'')+' '+(document.referrer||'')).toLowerCase();if(value.includes('producthunt')||value.includes('product hunt'))return 'Product Hunt';if(value.includes('reddit'))return 'Reddit';if(value.includes('google'))return 'Google';if(!value.trim())return 'Direct';return 'Other'}

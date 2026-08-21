@@ -62,8 +62,11 @@ I started Trade Paper AI after seeing how much export work still depends on copy
 
 - Landing: `/`
 - Start Free: `/register`
-- Interactive demo: `/demo`
-- Pricing: `/pricing`
+- 15-second demo: `/#demo`
+- Pricing: `/#pricing`
+- Starter product details: `/starter`
 - Founding Beta: `/founding-beta`
 - Contact: `/contact`
 - Media kit: [`media-kit.md`](media-kit.md)
+
+The guided workflow at `/demo` is available after sign-in because its steps use the authenticated, account-owned workspace. Public launch visitors should use the 15-second demo above, then register to try the workflow.

@@ -90,6 +90,16 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.get_by_role("link", name="Watch 15-Second Demo").click()
             assert page.locator("#demo").is_visible()
             assert page.locator(".dashboard-screenshot").evaluate("image => image.complete && image.naturalWidth > 0")
+            assert page.get_by_role("link", name="Start Free to try the workflow →").get_attribute("href") == "/register"
+            assert page.get_by_role("link", name="15-Second Demo", exact=True).get_attribute("href") == "#demo"
+            for protected_path, login_url in (
+                ("/demo", f"{base_url}/login?next=%2Fdemo"),
+                ("/pricing", f"{base_url}/login?next=%2Fpricing"),
+            ):
+                page.goto(f"{base_url}{protected_path}")
+                page.wait_for_url(login_url)
+                assert page.get_by_role("heading", name="Welcome back").is_visible()
+            page.goto(f"{base_url}/")
             page.get_by_role("link", name="Send Feedback").click()
             page.wait_for_url(f"{base_url}/feedback")
             page.get_by_label("Name").fill(f"Feedback User {browser_name}")

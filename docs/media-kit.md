@@ -34,6 +34,6 @@ These assets are prepared from the current Trade Paper AI logo and real product 
 
 - Keep the product name as “Trade Paper AI”.
 - Do not add customer logos or testimonials until a real customer has approved publication.
-- Do not publish Starter or Professional prices until they are confirmed.
+- Keep Starter pricing consistent at **₩29,000 / month**. Professional remains contact-based.
 - Do not imply that external payment processing is active.
 - The GIF duration is 15 seconds and uses five three-second frames from the product demo.

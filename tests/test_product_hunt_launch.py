@@ -24,6 +24,21 @@ def test_product_hunt_copy_and_social_preview_are_launch_ready():
         assert f"## {heading}" in launch
 
 
+def test_product_hunt_launch_links_use_public_marketing_routes():
+    launch = (ROOT / "docs" / "product-hunt-launch.md").read_text(encoding="utf-8")
+    links = launch.split("## Launch links", 1)[1]
+    for destination in ("/#demo", "/#pricing", "/starter", "/register"):
+        assert f"`{destination}`" in links
+    assert "- Interactive demo: `/demo`" not in links
+    assert "- Pricing: `/pricing`" not in links
+    assert "available after sign-in" in links
+
+    media_kit = (ROOT / "docs" / "media-kit.md").read_text(encoding="utf-8")
+    assert "₩29,000 / month" in media_kit
+    assert "Professional remains contact-based" in media_kit
+    assert "Do not imply that external payment processing is active" in media_kit
+
+
 def test_product_hunt_media_kit_has_all_local_assets_and_expected_dimensions():
     expected = {
         "logo.png": (1024, 1024), "icon.png": (240, 240),
