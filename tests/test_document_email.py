@@ -114,3 +114,14 @@ def test_admin_email_readiness_is_secret_free(monkeypatch):
     with pytest.raises(HTTPException) as denied:
         document_email.email_readiness_admin(_request())
     assert denied.value.status_code == 403
+
+
+def test_admin_email_readiness_identifies_resend_without_secrets(monkeypatch):
+    monkeypatch.setattr(email_delivery, "email_readiness", lambda: {
+        "backend": "API", "provider": "Resend", "sender_domain": "Not Verified",
+        "configuration": "Not Ready",
+    })
+    html = document_email.email_readiness_admin(_request(admin=True)).body.decode()
+    assert "API Provider" in html and "Resend" in html
+    assert "Sender Domain" in html and "Not Verified" in html
+    assert "api key" not in html.casefold() and "recipient" not in html.casefold()

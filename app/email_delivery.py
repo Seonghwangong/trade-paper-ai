@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import base64
 from email.message import EmailMessage
 from email.utils import formataddr, parseaddr
 import html
+import json
 import logging
 import os
 import smtplib
@@ -11,6 +13,7 @@ import ssl
 import time
 from typing import Mapping, NamedTuple, Protocol
 from urllib.parse import quote, urlsplit
+from urllib.request import Request, urlopen
 
 
 logger = logging.getLogger("trade-paper-ai.email-delivery")
@@ -21,6 +24,8 @@ DEFAULT_EMAIL_TIMEOUT_SECONDS = 5.0
 MIN_EMAIL_TIMEOUT_SECONDS = 3.0
 MAX_EMAIL_TIMEOUT_SECONDS = 5.0
 SMTP_MAX_ATTEMPTS = 2
+RESEND_EMAIL_ENDPOINT = "https://api.resend.com/emails"
+SUPPORTED_EMAIL_API_PROVIDERS = frozenset({"resend"})
 
 
 class EmailDeliveryError(Exception):
@@ -48,10 +53,62 @@ class DeliveryMessage:
 
 
 class ApiEmailAdapter(Protocol):
-    """Vendor-neutral contract for a future HTTP API provider adapter."""
+    """Vendor-neutral contract for an HTTP API provider adapter."""
 
     def send(self, message: DeliveryMessage, *, timeout: float) -> bool:
         ...
+
+
+class ResendApiAdapter:
+    """Server-side Resend Email API adapter with no client credential exposure."""
+
+    def __init__(self, source: Mapping[str, str], *, opener=urlopen):
+        self.source = source
+        self.opener = opener
+
+    def send(self, message: DeliveryMessage, *, timeout: float) -> bool:
+        api_key = _required(self.source, "TRADE_PAPER_EMAIL_API_KEY")
+        from_address = _safe_address(
+            _required(self.source, "TRADE_PAPER_EMAIL_FROM_ADDRESS"),
+            "TRADE_PAPER_EMAIL_FROM_ADDRESS",
+        )
+        from_name = _required(self.source, "TRADE_PAPER_EMAIL_FROM_NAME")
+        reply_to = _safe_address(
+            _required(self.source, "TRADE_PAPER_EMAIL_REPLY_TO"),
+            "TRADE_PAPER_EMAIL_REPLY_TO",
+        )
+        recipient = _safe_address(message.recipient, "recipient")
+        payload = {
+            "from": formataddr((from_name, from_address)),
+            "to": [recipient],
+            "subject": message.subject,
+            "text": message.text_body,
+            "html": message.html_body,
+            "reply_to": reply_to,
+        }
+        if message.attachments:
+            payload["attachments"] = [
+                {
+                    "filename": attachment.filename,
+                    "content": base64.b64encode(attachment.content).decode("ascii"),
+                }
+                for attachment in message.attachments
+            ]
+        request = Request(
+            RESEND_EMAIL_ENDPOINT,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Trade-Paper-AI/1.0",
+            },
+            method="POST",
+        )
+        with self.opener(request, timeout=timeout) as response:
+            status = getattr(response, "status", None)
+            if status is None:
+                status = response.getcode()
+            return 200 <= int(status) < 300
 
 
 def _environment(source: Mapping[str, str] | None = None) -> Mapping[str, str]:
@@ -83,6 +140,13 @@ def email_backend(source: Mapping[str, str] | None = None) -> str:
     if backend not in SUPPORTED_EMAIL_BACKENDS:
         raise EmailConfigurationError("TRADE_PAPER_EMAIL_BACKEND must be disabled, smtp, or api.")
     return backend
+
+
+def email_api_provider(source: Mapping[str, str] | None = None) -> str:
+    provider = _setting(_environment(source), "TRADE_PAPER_EMAIL_API_PROVIDER").casefold()
+    if provider not in SUPPORTED_EMAIL_API_PROVIDERS:
+        raise EmailConfigurationError("TRADE_PAPER_EMAIL_API_PROVIDER must be resend for the api backend.")
+    return provider
 
 
 def email_timeout(source: Mapping[str, str] | None = None) -> float:
@@ -158,6 +222,17 @@ def _safe_address(value: str, setting_name: str) -> str:
     return address
 
 
+def _validate_delivery_message(message: DeliveryMessage) -> None:
+    _safe_address(message.recipient, "recipient")
+    if not str(message.subject or "").strip() or "\r" in message.subject or "\n" in message.subject:
+        raise EmailConfigurationError("Email subject is invalid.")
+    if not str(message.text_body or "").strip() and not str(message.html_body or "").strip():
+        raise EmailConfigurationError("Email body is required.")
+    for attachment in message.attachments:
+        if not attachment.filename or "\r" in attachment.filename or "\n" in attachment.filename:
+            raise EmailConfigurationError("Email attachment filename is invalid.")
+
+
 def _smtp_message(message: DeliveryMessage, source: Mapping[str, str]) -> EmailMessage:
     from_address = _safe_address(_required(source, "TRADE_PAPER_EMAIL_FROM_ADDRESS"), "TRADE_PAPER_EMAIL_FROM_ADDRESS")
     from_name = _required(source, "TRADE_PAPER_EMAIL_FROM_NAME")
@@ -213,9 +288,9 @@ def validate_email_configuration(source: Mapping[str, str] | None = None) -> str
         "TRADE_PAPER_EMAIL_REPLY_TO",
     )
     if backend == "api":
-        raise EmailConfigurationError(
-            "The api email backend contract has no provider adapter configured."
-        )
+        email_api_provider(environment)
+        _required(environment, "TRADE_PAPER_EMAIL_API_KEY")
+        return backend
     _, _, _, _, starttls = _smtp_settings(environment)
     deployment = _setting(environment, "TRADE_PAPER_ENV").casefold()
     if deployment in PRODUCTION_ENVIRONMENTS and not starttls:
@@ -287,13 +362,16 @@ def deliver_email(
         if backend == "disabled":
             return False
         timeout = email_timeout(environment)
+        _validate_delivery_message(message)
         if backend == "smtp":
             return _send_smtp(
                 message, environment, smtp_factory=smtp_factory,
                 clock=clock, sleeper=sleeper,
             )
         if api_adapter is None:
-            return False
+            provider = email_api_provider(environment)
+            if provider == "resend":
+                api_adapter = ResendApiAdapter(environment)
         return bool(api_adapter.send(message, timeout=timeout))
     except Exception as error:
         # Never include recipient, message content, credentials, token, or URL.
@@ -329,8 +407,27 @@ def email_readiness(source: Mapping[str, str] | None = None) -> dict[str, str]:
         if backend == "disabled":
             return {"backend": "Disabled", "configuration": "Not Ready"}
         validate_email_configuration(environment)
+        if backend == "api":
+            from_address = _required(environment, "TRADE_PAPER_EMAIL_FROM_ADDRESS")
+            domain = parseaddr(from_address)[1].rsplit("@", 1)[-1].casefold()
+            verified = _boolean(
+                _setting(environment, "TRADE_PAPER_EMAIL_API_DOMAIN_VERIFIED", "false"),
+                "TRADE_PAPER_EMAIL_API_DOMAIN_VERIFIED",
+            )
+            ready = verified and domain != "resend.dev"
+            return {
+                "backend": "API",
+                "provider": "Resend",
+                "sender_domain": "Verified" if ready else "Not Verified",
+                "configuration": "Ready" if ready else "Not Ready",
+            }
         return {"backend": backend.upper(), "configuration": "Ready"}
     except EmailConfigurationError:
         backend = _setting(environment, "TRADE_PAPER_EMAIL_BACKEND", "disabled")
         safe_backend = backend.upper() if backend.casefold() in SUPPORTED_EMAIL_BACKENDS else "Invalid"
-        return {"backend": safe_backend, "configuration": "Not Ready"}
+        result = {"backend": safe_backend, "configuration": "Not Ready"}
+        if backend.casefold() == "api":
+            provider = _setting(environment, "TRADE_PAPER_EMAIL_API_PROVIDER").casefold()
+            result["provider"] = "Resend" if provider == "resend" else "Invalid"
+            result["sender_domain"] = "Not Verified"
+        return result

@@ -1,5 +1,7 @@
 import logging
+import json
 import smtplib
+from urllib.error import HTTPError
 
 import app.auth as auth
 from app import email_delivery
@@ -20,6 +22,8 @@ def _environment(backend="smtp", deployment="production"):
         "TRADE_PAPER_SMTP_PASSWORD": "smtp-secret-value",
         "TRADE_PAPER_SMTP_STARTTLS": "true",
         "TRADE_PAPER_EMAIL_API_KEY": "api-secret-value",
+        "TRADE_PAPER_EMAIL_API_PROVIDER": "resend",
+        "TRADE_PAPER_EMAIL_API_DOMAIN_VERIFIED": "true",
     }
 
 
@@ -230,11 +234,14 @@ def test_enabled_email_backend_configuration_fails_fast_and_requires_tls():
     except email_delivery.EmailConfigurationError as error:
         assert "STARTTLS" in str(error)
 
+    assert email_delivery.validate_email_configuration({**smtp, "TRADE_PAPER_EMAIL_BACKEND": "api"}) == "api"
+    missing_provider = {**smtp, "TRADE_PAPER_EMAIL_BACKEND": "api", "TRADE_PAPER_EMAIL_API_PROVIDER": ""}
     try:
-        email_delivery.validate_email_configuration({**smtp, "TRADE_PAPER_EMAIL_BACKEND": "api"})
-        assert False, "unimplemented API backend must fail fast"
+        email_delivery.validate_email_configuration(missing_provider)
+        assert False, "api backend must require a supported provider"
     except email_delivery.EmailConfigurationError as error:
-        assert "no provider adapter" in str(error)
+        assert "TRADE_PAPER_EMAIL_API_PROVIDER" in str(error)
+        assert "api-secret-value" not in str(error)
 
 
 def test_api_contract_is_vendor_neutral_and_provider_errors_are_safe(caplog):
@@ -242,8 +249,6 @@ def test_api_contract_is_vendor_neutral_and_provider_errors_are_safe(caplog):
     message = email_delivery.DeliveryMessage(
         "owner@example.com", "Subject", "private body", "<p>private body</p>", "password_reset",
     )
-    assert email_delivery.deliver_email(message, environment) is False
-
     class Adapter:
         def __init__(self):
             self.received = None
@@ -269,6 +274,137 @@ def test_api_contract_is_vendor_neutral_and_provider_errors_are_safe(caplog):
     ):
         assert secret not in logs
     assert "error_type=RuntimeError" in logs
+
+
+class ResendResponse:
+    def __init__(self, status=200):
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_resend_success_uses_server_key_and_supports_text_html_pdf_and_zip():
+    environment = _environment("api")
+    captured = {}
+
+    def opener(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return ResendResponse(200)
+
+    message = email_delivery.DeliveryMessage(
+        "buyer@example.com", "Trade documents", "Plain text", "<p>HTML body</p>",
+        "document_delivery", attachments=(
+            email_delivery.EmailAttachment("INV-001.pdf", b"%PDF", "application/pdf"),
+            email_delivery.EmailAttachment("SHP-001.zip", b"PK", "application/zip"),
+        ),
+    )
+    adapter = email_delivery.ResendApiAdapter(environment, opener=opener)
+    assert email_delivery.deliver_email(message, environment, api_adapter=adapter) is True
+    request = captured["request"]
+    payload = json.loads(request.data)
+    assert request.full_url == "https://api.resend.com/emails"
+    assert request.method == "POST" and captured["timeout"] == 5
+    assert request.get_header("Authorization") == "Bearer api-secret-value"
+    assert payload == {
+        "from": "Trade Paper AI <no-reply@trade.example.com>",
+        "to": ["buyer@example.com"],
+        "subject": "Trade documents",
+        "text": "Plain text",
+        "html": "<p>HTML body</p>",
+        "reply_to": "support@trade.example.com",
+        "attachments": [
+            {"filename": "INV-001.pdf", "content": "JVBERg=="},
+            {"filename": "SHP-001.zip", "content": "UEs="},
+        ],
+    }
+
+
+def test_resend_default_api_path_uses_configured_adapter_without_network(monkeypatch):
+    environment = _environment("api")
+    received = []
+
+    class Adapter:
+        def __init__(self, source):
+            assert source is environment
+
+        def send(self, message, *, timeout):
+            received.append((message.purpose, timeout))
+            return True
+
+    monkeypatch.setattr(email_delivery, "ResendApiAdapter", Adapter)
+    message = email_delivery.DeliveryMessage(
+        "owner@example.com", "Reset", "Text", "<p>Text</p>", "password_reset",
+    )
+    assert email_delivery.deliver_email(message, environment) is True
+    assert received == [("password_reset", 5)]
+
+
+def test_password_reset_uses_resend_backend_without_exposing_token(monkeypatch):
+    environment = _environment("api")
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+    captured = []
+
+    class Adapter:
+        def __init__(self, source):
+            assert source is not None
+
+        def send(self, message, *, timeout):
+            captured.append(message)
+            return True
+
+    monkeypatch.setattr(email_delivery, "ResendApiAdapter", Adapter)
+    assert email_delivery.deliver_password_reset("owner@example.com", "private-reset-token") is True
+    assert captured[0].purpose == "password_reset"
+    assert "private-reset-token" in captured[0].text_body
+
+
+def test_resend_timeout_http_and_api_failures_are_safe(caplog):
+    environment = _environment("api")
+    message = email_delivery.DeliveryMessage(
+        "private-recipient@example.com", "private subject", "private body",
+        "<p>private html</p>", "document_delivery",
+    )
+    failures = (
+        lambda request, timeout: (_ for _ in ()).throw(TimeoutError("api-secret-value private body")),
+        lambda request, timeout: (_ for _ in ()).throw(HTTPError(request.full_url, 422, "api-secret-value", {}, None)),
+        lambda request, timeout: ResendResponse(500),
+    )
+    caplog.set_level(logging.WARNING, logger="trade-paper-ai.email-delivery")
+    for opener in failures:
+        adapter = email_delivery.ResendApiAdapter(environment, opener=opener)
+        assert email_delivery.deliver_email(message, environment, api_adapter=adapter) is False
+    for secret in (
+        "api-secret-value", "private-recipient@example.com", "private subject",
+        "private body", "private html",
+    ):
+        assert secret not in caplog.text
+
+
+def test_resend_readiness_requires_provider_key_and_verified_custom_domain():
+    ready = _environment("api")
+    assert email_delivery.email_readiness(ready) == {
+        "backend": "API", "provider": "Resend", "sender_domain": "Verified",
+        "configuration": "Ready",
+    }
+    unverified = {**ready, "TRADE_PAPER_EMAIL_API_DOMAIN_VERIFIED": "false"}
+    assert email_delivery.email_readiness(unverified)["configuration"] == "Not Ready"
+    test_sender = {
+        **ready,
+        "TRADE_PAPER_EMAIL_FROM_ADDRESS": "onboarding@resend.dev",
+        "TRADE_PAPER_EMAIL_API_DOMAIN_VERIFIED": "true",
+    }
+    assert email_delivery.email_readiness(test_sender)["sender_domain"] == "Not Verified"
+    missing_key = dict(ready)
+    missing_key.pop("TRADE_PAPER_EMAIL_API_KEY")
+    status = email_delivery.email_readiness(missing_key)
+    assert status["provider"] == "Resend" and status["configuration"] == "Not Ready"
+    assert "api-secret-value" not in repr(status)
 
 
 def test_forgot_password_absorbs_delivery_exception_and_keeps_generic_response(
