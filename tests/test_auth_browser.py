@@ -705,6 +705,15 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.wait_for_url(f"{base_url}/buyers")
             buyer_b_edit_path = page.locator(f'tr:has-text("{buyer_b_name}") a', has_text="Edit").get_attribute("href")
             assert buyer_b_edit_path
+            page.goto(f"{base_url}/search?q={buyer_b_name}")
+            buyer_b_result = page.locator("article.result-card", has_text=buyer_b_name)
+            buyer_b_detail_path = buyer_b_result.get_by_role("link", name="Open", exact=True).get_attribute("href")
+            assert buyer_b_detail_path == buyer_b_edit_path.replace("/edit-buyer/", "/buyer/")
+            assert buyer_b_detail_path != buyer_a_edit_path.replace("/edit-buyer/", "/buyer/")
+            buyer_b_result.get_by_role("link", name="Open", exact=True).click()
+            page.wait_for_url(f"{base_url}{buyer_b_detail_path}")
+            assert page.get_by_role("heading", name=buyer_b_name, exact=True).is_visible()
+            assert page.get_by_text(buyer_a_name, exact=True).count() == 0
             product_b_name = f"CODEX-PRODUCT-B-{browser_name}"
             page.goto(f"{base_url}/product-form")
             page.locator('input[name="name"]').fill(product_b_name)

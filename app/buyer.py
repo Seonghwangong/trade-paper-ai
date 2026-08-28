@@ -15,7 +15,10 @@ CUSTOMER_STATUSES = ("Lead", "Prospect", "Customer", "Inactive")
 
 def _account_id(request):
     user = request.scope.get("trade_paper_user") or {}
-    return str(user.get("account_id", "") or "").strip()
+    account_id = str(user.get("account_id", "") or "").strip()
+    if not account_id:
+        raise HTTPException(status_code=401, detail="Authenticated account is required")
+    return account_id
 
 
 def load_buyer_records():
@@ -33,6 +36,13 @@ def owned_buyer_entries(account_id):
 
 def load_buyers(account_id):
     return [public_buyer(record) for _, record in owned_buyer_entries(account_id)]
+
+
+def search_buyer_records(account_id):
+    return [
+        {**public_buyer(record), "_storage_index": index}
+        for index, record in owned_buyer_entries(account_id)
+    ]
 
 
 def _owned_buyer(index, account_id):

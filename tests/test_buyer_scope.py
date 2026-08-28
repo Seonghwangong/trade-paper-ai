@@ -121,6 +121,19 @@ def test_buyer_crud_search_and_direct_access_are_account_scoped(tmp_path, monkey
     search_b = main.global_search(_request("account-b", "/search"), "Buyer").body.decode()
     assert "Buyer A Updated" in search_a and "Buyer B" not in search_a
     assert "Buyer B" in search_b and "Buyer A Updated" not in search_b
+    assert 'href="/buyer/1"' in search_b
+    assert 'href="/buyer/0"' not in search_b
+    workspace_b = buyer.buyer_workspace(1, _request("account-b", "/buyer/1")).body.decode()
+    assert "Buyer B" in workspace_b and "Buyer A Updated" not in workspace_b
+    with pytest.raises(HTTPException) as other_account_detail:
+        buyer.buyer_workspace(0, _request("account-b", "/buyer/0"))
+    assert other_account_detail.value.status_code == 404
+
+    before_empty_save = buyers_file.read_bytes()
+    with pytest.raises(HTTPException) as missing_account:
+        buyer.save_buyer(_request(""), "No Owner", "", "", "")
+    assert missing_account.value.status_code == 401
+    assert buyers_file.read_bytes() == before_empty_save
 
     buyer.confirm_delete_buyer(0, _request("account-a"), "Buyer A Updated")
     assert buyer.buyer_data(_request("account-a")) == []

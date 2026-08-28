@@ -1149,7 +1149,13 @@ def global_search_results(query, company=None, customers=None, buyers=None, prod
                 "title": title or identifier,
                 "subtitle": " · ".join(subtitle_values[:3]),
                 "search_text": " ".join([identifier, title, *other_values]),
-                "url": search_result_url(source, identifier, record_index),
+                "url": search_result_url(
+                    source,
+                    identifier,
+                    record.get("_storage_index", record_index)
+                    if source["module"] == "Buyers"
+                    else record_index,
+                ),
                 "match_rank": rank,
                 "module_order": module_order,
             })
@@ -1162,7 +1168,7 @@ def global_search_results(query, company=None, customers=None, buyers=None, prod
 def _account_search_records(account_id):
     return (
         load_account_company(account_id, company_module.ACCOUNT_COMPANIES_FILE),
-        customer_module.load_customers(account_id), buyer_module.load_buyers(account_id),
+        customer_module.load_customers(account_id), buyer_module.search_buyer_records(account_id),
         product_module.load_products(account_id), invoice_module.load_invoices(account_id),
         packing_module.load_packing_lists(account_id), shipping_instruction_module.load_shipping_instructions(account_id),
         booking_module.load_bookings(account_id), shipment_module.load_shipments(account_id),
