@@ -1153,7 +1153,7 @@ def global_search_results(query, company=None, customers=None, buyers=None, prod
                     source,
                     identifier,
                     record.get("_storage_index", record_index)
-                    if source["module"] == "Buyers"
+                    if source["module"] in {"Buyers", "Products"}
                     else record_index,
                 ),
                 "match_rank": rank,
@@ -1169,7 +1169,7 @@ def _account_search_records(account_id):
     return (
         load_account_company(account_id, company_module.ACCOUNT_COMPANIES_FILE),
         customer_module.load_customers(account_id), buyer_module.search_buyer_records(account_id),
-        product_module.load_products(account_id), invoice_module.load_invoices(account_id),
+        product_module.search_product_records(account_id), invoice_module.load_invoices(account_id),
         packing_module.load_packing_lists(account_id), shipping_instruction_module.load_shipping_instructions(account_id),
         booking_module.load_bookings(account_id), shipment_module.load_shipments(account_id),
         container_module.load_containers(account_id), bill_of_lading_module.load_bills_of_lading(account_id),

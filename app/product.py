@@ -15,7 +15,10 @@ PRODUCT_FILE = data_path("products.json")
 
 def _account_id(request):
     user = request.scope.get("trade_paper_user") or {}
-    return str(user.get("account_id", "") or "").strip()
+    account_id = str(user.get("account_id", "") or "").strip()
+    if not account_id:
+        raise HTTPException(status_code=401, detail="Authenticated account is required")
+    return account_id
 
 
 def load_product_records():
@@ -33,6 +36,13 @@ def owned_product_entries(account_id):
 
 def load_products(account_id):
     return [public_product(record) for _, record in owned_product_entries(account_id)]
+
+
+def search_product_records(account_id):
+    return [
+        {**public_product(record), "_storage_index": index}
+        for index, record in owned_product_entries(account_id)
+    ]
 
 
 def enrich_items_from_products(items, account_id):

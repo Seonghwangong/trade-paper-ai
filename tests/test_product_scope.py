@@ -127,6 +127,25 @@ def test_product_crud_search_and_direct_access_are_account_scoped(tmp_path, monk
     search_b = main.global_search(_request("account-b", "/search"), "Product").body.decode()
     assert "Product A Updated" in search_a and "Product B" not in search_a
     assert "Product B" in search_b and "Product A Updated" not in search_b
+    assert 'href="/edit-product/1"' in search_b
+    assert 'href="/edit-product/0"' not in search_b
+    edit_b = product.edit_product(1, _request("account-b", "/edit-product/1")).body.decode()
+    assert "Product B" in edit_b and "Product A Updated" not in edit_b
+    with pytest.raises(HTTPException) as other_account_edit:
+        product.edit_product(0, _request("account-b", "/edit-product/0"))
+    assert other_account_edit.value.status_code == 404
+
+    before_empty_mutations = products_file.read_bytes()
+    with pytest.raises(HTTPException) as missing_create_account:
+        product.save_product(_request(""), "No Owner", "", "", "")
+    assert missing_create_account.value.status_code == 401
+    with pytest.raises(HTTPException) as missing_update_account:
+        product.update_product(1, _request(""), "No Owner Update", "", "", "")
+    assert missing_update_account.value.status_code == 401
+    with pytest.raises(HTTPException) as missing_delete_account:
+        product.confirm_delete_product(1, _request(""), "Product B")
+    assert missing_delete_account.value.status_code == 401
+    assert products_file.read_bytes() == before_empty_mutations
 
     for render in [
         lambda request: certificate_of_origin.co_form(request),

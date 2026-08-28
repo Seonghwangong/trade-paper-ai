@@ -724,6 +724,15 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.wait_for_url(f"{base_url}/products")
             product_b_edit_path = page.locator(f'tr:has-text("{product_b_name}") a', has_text="Edit").get_attribute("href")
             assert product_b_edit_path
+            page.goto(f"{base_url}/search?q={product_b_name}")
+            product_b_result = page.locator("article.result-card", has_text=product_b_name)
+            assert product_b_result.get_by_role("link", name="Open", exact=True).get_attribute("href") == product_b_edit_path
+            assert product_b_edit_path != product_a_edit_path
+            product_b_result.get_by_role("link", name="Open", exact=True).click()
+            page.wait_for_url(f"{base_url}{product_b_edit_path}")
+            assert page.get_by_role("heading", name="Edit Product", exact=True).is_visible()
+            assert page.locator('input[name="name"]').input_value() == product_b_name
+            assert product_a_name not in page.content()
             page.goto(f"{base_url}/invoice")
             page.locator("#buyerCompanySelect").select_option(label=buyer_b_name)
             page.locator("#product1").select_option(label=product_b_name)
