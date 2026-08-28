@@ -24,6 +24,14 @@ def _request(account_id, path="/packing-list"):
     })
 
 
+def _request_without_user(path="/packing-list"):
+    return Request({
+        "type": "http", "method": "GET", "scheme": "http",
+        "path": path, "raw_path": path.encode(), "query_string": b"",
+        "headers": [], "client": ("127.0.0.1", 1), "server": ("testserver", 80),
+    })
+
+
 def _payload(invoice_no, buyer, account_id="forged-account"):
     return {
         "account_id": account_id,
@@ -57,6 +65,36 @@ def test_legacy_packing_migration_is_idempotent_and_backed_up(tmp_path):
     assert second == first
     assert packing_file.read_bytes() == first_bytes
     assert json.loads((tmp_path / "packing_lists.backup.json").read_text(encoding="utf-8")) == original
+
+
+def test_packing_mutations_reject_missing_account_before_file_change(tmp_path, monkeypatch):
+    packing_file = tmp_path / "packing_lists.json"
+    packing_file.write_text(json.dumps([{
+        "account_id": "account-a", "packing_no": "PK-001", "invoice_no": "INV-A",
+        "seller": "Seller A", "buyer": "Buyer A", "items": [{"name": "Product A"}],
+    }]), encoding="utf-8")
+    monkeypatch.setattr(packing, "PACKING_FILE", packing_file)
+    payload = _payload("INV-A", "Buyer A")
+    before = packing_file.read_bytes()
+
+    for invalid_request in (_request(""), _request_without_user()):
+        rejected_operations = (
+            lambda request=invalid_request: packing.create_packing_list(request, payload),
+            lambda request=invalid_request: packing.save_packing(
+                request, "INV-A", "Seller A", "Buyer A", ["Product A"], ["123456"], ["1"], ["10"], ["12"],
+            ),
+            lambda request=invalid_request: packing.update_packing(
+                "PK-001", request, "INV-A", "Seller A", "Buyer A", ["Product A"], ["1"],
+                ["123456"], ["1"], ["10"], ["12"],
+            ),
+            lambda request=invalid_request: packing.delete_packing("PK-001", request),
+            lambda request=invalid_request: packing.confirm_delete_packing("PK-001", request),
+        )
+        for operation in rejected_operations:
+            with pytest.raises(HTTPException) as rejected:
+                operation()
+            assert rejected.value.status_code == 401
+            assert packing_file.read_bytes() == before
 
 
 def test_packing_crud_search_pdf_invoice_reference_and_dashboard_are_scoped(tmp_path, monkeypatch):
@@ -116,6 +154,16 @@ def test_packing_crud_search_pdf_invoice_reference_and_dashboard_are_scoped(tmp_
         ["Product A"], ["4"], ["123456"], ["3"], ["11"], ["13"],
     )
     assert packing.load_packing_lists("account-a")[0]["items"][0]["quantity"] == 4
+    before_cross_account_update = packing_file.read_bytes()
+    account_a_packing = packing.load_packing_lists("account-a")[0]
+    with pytest.raises(HTTPException) as cross_account_update:
+        packing.update_packing(
+            "PK-001", _request("account-b"), "INV-002", "Stolen Seller", "Stolen Buyer",
+            ["Stolen Product"], ["99"], ["999999"], ["99"], ["99"], ["99"],
+        )
+    assert cross_account_update.value.status_code == 404
+    assert packing_file.read_bytes() == before_cross_account_update
+    assert packing.load_packing_lists("account-a")[0] == account_a_packing
     with pytest.raises(HTTPException) as forged_update:
         packing.update_packing(
             "PK-001", _request("account-a"), "INV-002", "Seller", "Buyer",
