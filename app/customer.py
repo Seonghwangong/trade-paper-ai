@@ -17,7 +17,10 @@ CUSTOMER_FILE = data_path("customers.json")
 
 def _account_id(request):
     user = request.scope.get("trade_paper_user") or {}
-    return str(user.get("account_id", "") or "").strip()
+    account_id = str(user.get("account_id", "") or "").strip()
+    if not account_id:
+        raise HTTPException(status_code=401, detail="Authenticated account is required")
+    return account_id
 
 
 def load_customer_records():
