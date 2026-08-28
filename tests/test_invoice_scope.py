@@ -29,6 +29,14 @@ def _request(account_id, path="/invoice-list"):
     })
 
 
+def _request_without_user(path="/invoice-list"):
+    return Request({
+        "type": "http", "method": "GET", "scheme": "http", "path": path,
+        "raw_path": path.encode(), "query_string": b"", "headers": [],
+        "client": ("127.0.0.1", 1), "server": ("testserver", 80),
+    })
+
+
 def _payload(buyer, item, account_id="forged-account"):
     return {
         "account_id": account_id,
@@ -67,6 +75,49 @@ def test_legacy_invoice_migration_is_idempotent_and_backed_up(tmp_path):
     assert second == first
     assert invoices_file.read_bytes() == first_bytes
     assert json.loads((tmp_path / "invoices.backup.json").read_text(encoding="utf-8")) == original
+
+
+def test_invoice_mutations_reject_missing_account_before_file_change(tmp_path, monkeypatch):
+    invoices_file = tmp_path / "invoices.json"
+    invoices_file.write_text(json.dumps([{
+        "account_id": "account-a", "invoice_no": "INV-001", "seller": "Seller A",
+        "buyer": "Buyer A", "items": [{"name": "Product A"}],
+    }]), encoding="utf-8")
+    monkeypatch.setattr(invoice, "INVOICE_FILE", invoices_file)
+    monkeypatch.setattr(main, "DATA_FILE", invoices_file)
+    monkeypatch.setattr(main.proforma_module, "load_proformas", lambda account_id: [])
+    monkeypatch.setattr(main.shipment_module, "load_shipments", lambda account_id: [])
+    payload = _payload("Buyer", "Product")
+    before = invoices_file.read_bytes()
+
+    for invalid_request in (_request("", "/invoice"), _request_without_user("/invoice")):
+        rejected_operations = (
+            lambda request=invalid_request: invoice.create_invoice(request, payload),
+            lambda request=invalid_request: invoice.update_invoice(
+                "INV-001", request, "Seller", "USD", "Buyer", "", "", "Product", "", "1", "1",
+            ),
+            lambda request=invalid_request: invoice.delete_invoice("INV-001", request),
+            lambda request=invalid_request: invoice.confirm_delete_invoice("INV-001", request),
+        )
+        for operation in rejected_operations:
+            with pytest.raises(HTTPException) as rejected:
+                operation()
+            assert rejected.value.status_code == 401
+            assert invoices_file.read_bytes() == before
+
+    with pytest.raises(HTTPException) as helper_rejected:
+        main.save_invoice(payload, "")
+    assert helper_rejected.value.status_code == 401
+    assert invoices_file.read_bytes() == before
+    with pytest.raises(HTTPException) as route_rejected:
+        main.create_invoice(_request_without_user("/save-invoice"), payload)
+    assert route_rejected.value.status_code == 401
+    assert invoices_file.read_bytes() == before
+
+    main.create_invoice(_request("account-a", "/save-invoice"), payload)
+    stored = json.loads(invoices_file.read_text(encoding="utf-8"))
+    assert stored[-1]["account_id"] == "account-a"
+    assert stored[-1]["account_id"] != payload["account_id"]
 
 
 def test_invoice_crud_search_pdf_and_direct_access_are_account_scoped(tmp_path, monkeypatch):
@@ -164,6 +215,9 @@ def test_invoice_crud_search_pdf_and_direct_access_are_account_scoped(tmp_path, 
     with pytest.raises(HTTPException) as delete_denied:
         invoice.delete_invoice("INV-002", _request("account-a"))
     assert delete_denied.value.status_code == 404
+    with pytest.raises(HTTPException) as archive_denied:
+        invoice.confirm_delete_invoice("INV-002", _request("account-a"))
+    assert archive_denied.value.status_code == 404
     with pytest.raises(HTTPException) as pdf_denied:
         invoice.invoice_pdf("INV-002", _request("account-a"))
     assert pdf_denied.value.status_code == 404

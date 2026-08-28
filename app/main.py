@@ -693,9 +693,11 @@ def load_invoices():
 
 
 def save_invoice(invoice_data, account_id):
+    account_id = str(account_id or "").strip()
+    if not account_id:
+        raise HTTPException(status_code=401, detail="Authenticated account is required")
     record = dict(invoice_data)
     record.pop("account_id", None)
-    account_id = str(account_id or "").strip()
     record["account_id"] = account_id
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
