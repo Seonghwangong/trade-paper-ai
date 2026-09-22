@@ -1,9 +1,30 @@
 import json
 
 import pytest
+from fastapi import HTTPException
+from starlette.requests import Request
 
 from app import auth, founding_beta, landing
 from app.validation import DataValidationError
+
+
+def _request(admin=True):
+    return Request({"type": "http", "headers": [], "trade_paper_user": {"account_id": "test-account", "is_admin": admin}})
+
+
+@pytest.mark.parametrize("identity", [{}, {"account_id": "ordinary-user"}, {"account_id": "ordinary-user", "is_admin": False}])
+def test_beta_admin_denies_read_and_write_before_storage_access(monkeypatch, identity):
+    request = Request({"type": "http", "headers": [], "trade_paper_user": identity})
+    def forbidden_storage(*args, **kwargs):
+        pytest.fail("Unauthorized request reached applicant storage")
+    monkeypatch.setattr(founding_beta, "load_json_strict", forbidden_storage)
+    monkeypatch.setattr(founding_beta, "locked_json_mutation", forbidden_storage)
+    with pytest.raises(HTTPException) as read_error:
+        founding_beta.founding_beta_admin(request)
+    assert read_error.value.status_code == 403
+    with pytest.raises(HTTPException) as write_error:
+        founding_beta.update_founding_beta_status(0, request, "Beta Customer")
+    assert write_error.value.status_code == 403
 
 
 def test_founding_beta_application_is_saved_atomically_with_backup(tmp_path, monkeypatch):
@@ -99,7 +120,7 @@ def test_founding_beta_admin_lists_latest_first_and_searches(tmp_path, monkeypat
     ]), encoding="utf-8")
     monkeypatch.setattr(founding_beta, "BETA_APPLICATION_FILE", application_file)
 
-    body = founding_beta.founding_beta_admin().body.decode()
+    body = founding_beta.founding_beta_admin(_request()).body.decode()
     for heading in (
         "Application Date", "Company", "Contact Name", "Email", "Country",
         "Export Item", "Monthly Documents", "Status",
@@ -117,7 +138,7 @@ def test_founding_beta_admin_lists_latest_first_and_searches(tmp_path, monkeypat
         ("Lee", "Beta Trading", "Alpha Export"),
         ("kim@alpha.example", "Alpha Export", "Beta Trading"),
     ):
-        result = founding_beta.founding_beta_admin(query).body.decode()
+        result = founding_beta.founding_beta_admin(_request(), query).body.decode()
         assert visible in result
         assert hidden not in result
 
@@ -135,7 +156,7 @@ def test_founding_beta_admin_status_update_changes_only_status_and_creates_backu
     account_before = account_file.read_bytes()
     monkeypatch.setattr(founding_beta, "BETA_APPLICATION_FILE", application_file)
 
-    response = founding_beta.update_founding_beta_status(0, "Beta Customer")
+    response = founding_beta.update_founding_beta_status(0, _request(), "Beta Customer")
     assert response.status_code == 303
     assert response.headers["location"] == "/admin/founding-beta?updated=1"
     updated = json.loads(application_file.read_text(encoding="utf-8"))
@@ -145,6 +166,6 @@ def test_founding_beta_admin_status_update_changes_only_status_and_creates_backu
     assert account_file.read_bytes() == account_before
 
     with pytest.raises(DataValidationError):
-        founding_beta.update_founding_beta_status(0, "Approved")
+        founding_beta.update_founding_beta_status(0, _request(), "Approved")
     assert json.loads(application_file.read_text(encoding="utf-8")) == updated
-    assert "Status updated successfully." in founding_beta.founding_beta_admin(updated=1).body.decode()
+    assert "Status updated successfully." in founding_beta.founding_beta_admin(_request(), updated=1).body.decode()

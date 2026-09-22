@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 import re
 from urllib.parse import quote, urlencode
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app import auth
 from app.storage import data_path, load_json_strict, locked_json_mutation
 from app.ui import html_escape, page_shell, section_card
 from app.validation import DataValidationError, require_text
@@ -105,7 +106,8 @@ def _status_options(current):
 
 
 @router.get("/admin/founding-beta", response_class=HTMLResponse)
-def founding_beta_admin(search: str = "", updated: int = 0):
+def founding_beta_admin(request: Request, search: str = "", updated: int = 0):
+    auth.require_admin(request)
     records = load_json_strict(BETA_APPLICATION_FILE, [], list)
     query = str(search or "").strip()
     entries = [
@@ -147,7 +149,8 @@ def founding_beta_admin(search: str = "", updated: int = 0):
 
 
 @router.post("/admin/founding-beta/{index}/status")
-def update_founding_beta_status(index: int, status: str = Form("")):
+def update_founding_beta_status(index: int, request: Request, status: str = Form("")):
+    auth.require_admin(request)
     normalized_status = str(status or "").strip()
     if normalized_status not in APPLICATION_STATUSES:
         raise DataValidationError("Status", "The selected status is invalid.", "Choose one of the available statuses.")

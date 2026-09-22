@@ -1265,8 +1265,8 @@ def home(request: Request):
     buyers = buyer_module.load_buyers(user.get("account_id", ""))
     products = product_module.load_products(user.get("account_id", ""))
     operations_summary = operations_dashboard_summary(
-        load_json_strict(founding_beta_module.BETA_APPLICATION_FILE, [], list),
-        load_json_strict(feedback_module.FEEDBACK_FILE, [], list),
+        load_json_strict(founding_beta_module.BETA_APPLICATION_FILE, [], list) if user.get("is_admin") else [],
+        load_json_strict(feedback_module.FEEDBACK_FILE, [], list) if user.get("is_admin") else [],
     )
     beta_cards = "".join(
         f'<a class="operations-stat-card" href="/admin/founding-beta"><span>{dashboard_text(label)}</span><strong>{count}</strong></a>'
@@ -1289,6 +1289,14 @@ def home(request: Request):
         f'<span class="operations-meta">{dashboard_text(record.get("rating", "") or "—")} / 5</span></article>'
         for record in operations_summary["recent_feedback"]
     ) or '<div class="activity-empty">아직 Feedback이 없습니다.</div>'
+
+    operations_html = f'''<section class="section"><div class="operations-grid">
+<div class="operations-panel"><h2>Founding Beta</h2><div class="operations-stat-grid">{beta_cards}</div></div>
+<div class="operations-panel"><h2>Feedback</h2><div class="operations-stat-grid">{feedback_cards}</div></div>
+</div><div class="operations-recent-grid">
+<div class="operations-list"><h3>최근 신청 5건</h3>{recent_beta_rows}</div>
+<div class="operations-list"><h3>최근 Feedback 5건</h3>{recent_feedback_rows}</div>
+</div></section>''' if user.get("is_admin") else ""
 
     quotations = quotation_module.load_quotations(user.get("account_id", ""))
     proformas = proforma_module.load_proformas(user.get("account_id", ""))
@@ -1705,13 +1713,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 <a class="dashboard-stat-card" href="/packing-list"><span>Total Packing Lists</span><strong>{len(packing_lists)}</strong></a>
 </div></section>
 
-<section class="section"><div class="operations-grid">
-<div class="operations-panel"><h2>Founding Beta</h2><div class="operations-stat-grid">{beta_cards}</div></div>
-<div class="operations-panel"><h2>Feedback</h2><div class="operations-stat-grid">{feedback_cards}</div></div>
-</div><div class="operations-recent-grid">
-<div class="operations-list"><h3>최근 신청 5건</h3>{recent_beta_rows}</div>
-<div class="operations-list"><h3>최근 Feedback 5건</h3>{recent_feedback_rows}</div>
-</div></section>
+{operations_html}
 
 <section class="section"><h2 class="section-title">Workflow Guide</h2><div class="workflow-guide">
 <div class="guide-progress-row"><div class="guide-progress-copy"><span>Workflow Progress</span><strong>{workflow_guide['percentage']}%</strong></div><div class="guide-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{workflow_guide['percentage']}"><span class="guide-progress-fill{' complete' if workflow_guide['is_complete'] else ''}" style="width:{workflow_guide['percentage']}%"></span></div></div>

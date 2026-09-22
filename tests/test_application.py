@@ -95,7 +95,7 @@ def test_dashboard_and_search_render(tmp_path, monkeypatch):
         "headers": [],
         "client": ("127.0.0.1", 1),
         "server": ("testserver", 80),
-        "trade_paper_user": {"account_id": "test-account"},
+        "trade_paper_user": {"account_id": "test-account", "is_admin": True},
     })
     dashboard = normalize_html(main.home(request))
     search = normalize_html(main.global_search(request, ""))
@@ -107,6 +107,17 @@ def test_dashboard_and_search_render(tmp_path, monkeypatch):
     assert "최근 Feedback 5건" in dashboard
     assert "Recent feedback" in dashboard
     assert "Global Search" in search
+
+    original_load = main.load_json_strict
+    def deny_operations_read(path, *args, **kwargs):
+        assert path not in (beta_file, feedback_file), "Ordinary users must not load operator data"
+        return original_load(path, *args, **kwargs)
+    monkeypatch.setattr(main, "load_json_strict", deny_operations_read)
+    request.scope["trade_paper_user"].pop("is_admin")
+    ordinary_dashboard = normalize_html(main.home(request))
+    for private_content in ("Recent Co", "kim@example.com", "Recent feedback", "최근 신청 5건", "최근 Feedback 5건", "/admin/founding-beta", "/admin/feedback"):
+        assert private_content not in ordinary_dashboard
+    assert "Shipment Summary" in ordinary_dashboard
 
 
 def test_operations_dashboard_summary_counts_and_recent_order():
