@@ -10,11 +10,12 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from app import auth, subscription
+from app import auth, subscription, toss_billing_test
 from app.storage import data_path, load_json_strict, locked_json_mutation
 
 
 router = APIRouter()
+router.include_router(toss_billing_test.router)
 PAYMENT_ORDERS_FILE = data_path("payment_orders.json")
 ORDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{6,64}$")
 SUPPORTED_PAYMENT_PLAN = "Starter"
@@ -135,7 +136,15 @@ def checkout_preparation(request: Request, plan: str = "Starter"):
     spec = starter_order_spec()
     readiness = toss_readiness()
     body = f'''<section><p>Purchase preparation</p><h1>{_text(spec['order_name'])}</h1><dl><dt>Price</dt><dd>{_text(subscription.plan_price_label(spec['plan']))}</dd><dt>Currency</dt><dd>{_text(spec['currency'])}</dd><dt>Billing cycle</dt><dd>{_text(spec['billing_cycle'])}</dd></dl><p class="notice">Online checkout is not active. No payment order has been created and your current plan has not changed.</p><p>Payment configuration: <strong>{_text(readiness['configuration'])}</strong><br>Activation: <strong>{_text(readiness['activation'])}</strong></p><div class="actions"><a href="/founding-beta">Apply for Founding Beta</a><a class="secondary" href="/subscription">Back to My Subscription</a></div></section>'''
-    return _page("Starter Purchase Preparation", body)
+    response = _page("Starter Purchase Preparation", body)
+    if toss_billing_test.enabled() and (request.scope.get("trade_paper_user") or {}).get("role") != "Viewer":
+        section, state, secure = toss_billing_test.checkout_section(request)
+        response = _page("Starter Purchase Preparation", body + section)
+        response.set_cookie(toss_billing_test.COOKIE, state, max_age=toss_billing_test.TTL,
+                            httponly=True, secure=secure, samesite="lax", path="/subscription/billing-test")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 @router.get("/admin/payment-readiness")

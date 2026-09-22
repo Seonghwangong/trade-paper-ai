@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 
@@ -30,8 +31,8 @@ def _files(tmp_path, monkeypatch):
         {"account_id": "B", "created_at": "2026-08-14T02:00:00Z", "plan": "Professional", "status": "Active", "amount": 99, "event": "Invoice", "invoice_no": "BILL-B"},
     ]), encoding="utf-8")
     usage.write_text(json.dumps([
-        {"account_id": "A", "created_at": "2026-08-01T00:00:00Z", "path": "/invoice"},
-        {"account_id": "B", "created_at": "2026-08-01T00:00:00Z", "path": "/invoice"},
+        {"account_id": "A", "created_at": datetime.now(timezone.utc).strftime("%Y-%m-01T00:00:00Z"), "path": "/invoice"},
+        {"account_id": "B", "created_at": datetime.now(timezone.utc).strftime("%Y-%m-01T00:00:00Z"), "path": "/invoice"},
     ]), encoding="utf-8")
     monkeypatch.setattr(subscription, "USERS_FILE", users)
     monkeypatch.setattr(subscription, "BILLING_HISTORY_FILE", history)

@@ -410,7 +410,12 @@ class AuthenticationMiddleware:
             await response(scope, receive, send)
             return
         if not is_public and user is None:
-            requested = path + (f"?{request.url.query}" if request.url.query else "")
+            # Never carry one-use billing authorization values into a login URL.
+            requested = (
+                "/subscription/checkout?plan=Starter"
+                if path.startswith("/subscription/billing-test/")
+                else path + (f"?{request.url.query}" if request.url.query else "")
+            )
             response = RedirectResponse(f"/login?next={quote(requested, safe='')}", status_code=303)
             await response(scope, receive, send)
             return
