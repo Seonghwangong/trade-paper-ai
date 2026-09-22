@@ -40,6 +40,56 @@ def _form(name, buyer_name, invoice_no, packing_no, si_no):
     }
 
 
+@pytest.mark.parametrize("user", [
+    pytest.param({"account_id": ""}, id="empty-account"),
+    pytest.param({"account_id": " \t "}, id="whitespace-account"),
+    pytest.param({"account_id": None}, id="null-account"),
+    pytest.param({"email": "a@example.com"}, id="missing-account"),
+    pytest.param(None, id="missing-user"),
+])
+@pytest.mark.parametrize("action", ["create", "update", "tracking", "duplicate", "delete", "archive"])
+def test_shipment_rejects_accountless_mutations_before_storage(tmp_path, monkeypatch, user, action):
+    from app import archive
+
+    shipment_file = tmp_path / "shipments.json"
+    original = [{
+        "account_id": "account-a", "shipment_no": "SHP-001",
+        "shipment_name": "Owned shipment", "status": "Draft",
+        "shipper": "Frozen Seller", "items": [{"name": "Frozen Cargo"}],
+    }]
+    shipment_file.write_text(json.dumps(original, indent=2) + "\n", encoding="utf-8")
+    monkeypatch.setattr(shipment, "SHIPMENT_FILE", shipment_file)
+    before = shipment_file.read_bytes()
+
+    def unexpected_storage_access(*args, **kwargs):
+        pytest.fail("Invalid account must be rejected before ownership, dataset loading or mutation")
+
+    for name in ("load_workflow_datasets", "find_shipment", "locked_json_mutation"):
+        monkeypatch.setattr(shipment, name, unexpected_storage_access)
+    monkeypatch.setattr(archive, "archive_document", unexpected_storage_access)
+
+    request = _request("account-a")
+    if user is None:
+        request.scope.pop("trade_paper_user")
+    else:
+        request.scope["trade_paper_user"] = user
+    form = _form("Changed", "Buyer A", "INV-A", "PK-A", "SI-A")
+    actions = {
+        "create": lambda: shipment.save_shipment(request, **form),
+        "update": lambda: shipment.update_shipment("SHP-001", request, **form),
+        "tracking": lambda: shipment.update_shipment_tracking("SHP-001", request, status="Delivered"),
+        "duplicate": lambda: shipment.duplicate_shipment("SHP-001", request),
+        "delete": lambda: shipment.delete_shipment("SHP-001", request),
+        "archive": lambda: shipment.confirm_delete_shipment("SHP-001", request),
+    }
+    with pytest.raises(HTTPException) as denied:
+        actions[action]()
+    assert denied.value.status_code == 401
+    assert shipment_file.read_bytes() == before
+    assert json.loads(shipment_file.read_text(encoding="utf-8")) == original
+    assert set(tmp_path.iterdir()) == {shipment_file}
+
+
 def test_legacy_shipment_migration_is_idempotent_and_backed_up(tmp_path):
     shipment_file = tmp_path / "shipments.json"
     users_file = tmp_path / "users.json"
@@ -171,6 +221,16 @@ def test_shipment_scope_crud_sources_workflow_pdf_search_and_dashboard(tmp_path,
 
     shipment.update_shipment("SHP-001", _request("account-a"), **_form("Shipment A Updated", "Buyer A", "INV-A", "PK-A", "SI-A"))
     assert shipment.shipment_data("SHP-001", _request("account-a"))["shipment_name"] == "Shipment A Updated"
+    before_cross_account_update = shipment_file.read_bytes()
+    account_a_before = json.loads(before_cross_account_update)[0]
+    with pytest.raises(HTTPException) as denied:
+        shipment.update_shipment(
+            "SHP-001", _request("account-b"),
+            **_form("Cross-account change", "Buyer B", "INV-B", "PK-B", "SI-B"),
+        )
+    assert denied.value.status_code == 404
+    assert shipment_file.read_bytes() == before_cross_account_update
+    assert json.loads(shipment_file.read_text())[0] == account_a_before
     for action in (
         lambda: shipment.shipment_detail("SHP-002", _request("account-a")),
         lambda: shipment.edit_shipment("SHP-002", _request("account-a")),
@@ -205,6 +265,11 @@ def test_shipment_scope_crud_sources_workflow_pdf_search_and_dashboard(tmp_path,
     shipment.confirm_delete_shipment("SHP-001", _request("account-a"))
     assert shipment.load_shipments("account-a") == []
     assert shipment.load_shipments("account-b")[0]["shipment_no"] == "SHP-002"
+    shipment.update_shipment("SHP-002", _request("account-b"), **_form("Shipment B Updated", "Buyer B", "INV-B", "PK-B", "SI-B"))
+    assert shipment.shipment_data("SHP-002", _request("account-b"))["shipment_name"] == "Shipment B Updated"
+    assert shipment.delete_shipment("SHP-002", _request("account-b")).status_code == 200
+    shipment.confirm_delete_shipment("SHP-002", _request("account-b"))
+    assert shipment.load_shipments("account-b") == []
 
 
 def test_shipment_api_snapshot_contract_legacy_empty_and_upstream_immutability(tmp_path, monkeypatch):

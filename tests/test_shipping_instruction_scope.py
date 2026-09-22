@@ -24,6 +24,14 @@ def _request(account_id, path="/si-list"):
     })
 
 
+def _request_without_user(path="/si-list"):
+    return Request({
+        "type": "http", "method": "GET", "scheme": "http",
+        "path": path, "raw_path": path.encode(), "query_string": b"",
+        "headers": [], "client": ("127.0.0.1", 1), "server": ("testserver", 80),
+    })
+
+
 def _form(packing_no, invoice_no, consignee):
     return {
         "shipment_no": "", "si_date": "2026-08-01", "packing_no": packing_no,
@@ -37,6 +45,37 @@ def _form(packing_no, invoice_no, consignee):
         "net_weight": ["10"], "gross_weight": ["12"], "total_carton": "2",
         "total_net_weight": "10", "total_gross_weight": "12",
     }
+
+
+def test_shipping_instruction_rejects_accountless_mutations_before_file_change(tmp_path, monkeypatch):
+    si_file = tmp_path / "shipping_instructions.json"
+    original = [{
+        "account_id": "account-a", "si_no": "SI-001", "packing_no": "PK-001",
+        "invoice_no": "INV-001", "shipper": "Shipper A", "consignee": "Consignee A",
+    }]
+    si_file.write_text(json.dumps(original, indent=2) + "\n", encoding="utf-8")
+    monkeypatch.setattr(shipping_instruction, "SI_FILE", si_file)
+    before = si_file.read_bytes()
+
+    for request in (_request(""), _request_without_user()):
+        update = _form("PK-001", "INV-001", "Changed")
+        update.pop("shipment_no")
+        actions = (
+            lambda request=request: shipping_instruction.save_si(
+                request, **_form("PK-001", "INV-001", "New"),
+            ),
+            lambda request=request, update=update: shipping_instruction.update_si(
+                "SI-001", request, **update,
+            ),
+            lambda request=request: shipping_instruction.delete_si("SI-001", request),
+            lambda request=request: shipping_instruction.confirm_delete_si("SI-001", request),
+        )
+        for action in actions:
+            with pytest.raises(HTTPException) as denied:
+                action()
+            assert denied.value.status_code == 401
+            assert si_file.read_bytes() == before
+            assert json.loads(si_file.read_text(encoding="utf-8")) == original
 
 
 def test_legacy_shipping_instruction_migration_is_idempotent_and_backed_up(tmp_path):
@@ -118,6 +157,16 @@ def test_shipping_instruction_scope_reference_crud_pdf_search_and_dashboard(tmp_
     update_a.pop("shipment_no")
     shipping_instruction.update_si("SI-001", _request("account-a"), **update_a)
     assert shipping_instruction.si_data("SI-001", _request("account-a"))["consignee"] == "Consignee A Updated"
+    before_cross_account_update = si_file.read_bytes()
+    account_a_before = next(record.copy() for record in json.loads(si_file.read_text()) if record["si_no"] == "SI-001")
+    cross_account_update = _form("PK-002", "INV-002", "Cross-account change")
+    cross_account_update.pop("shipment_no")
+    with pytest.raises(HTTPException) as denied:
+        shipping_instruction.update_si("SI-001", _request("account-b"), **cross_account_update)
+    assert denied.value.status_code == 404
+    assert si_file.read_bytes() == before_cross_account_update
+    account_a_after = next(record for record in json.loads(si_file.read_text()) if record["si_no"] == "SI-001")
+    assert account_a_after == account_a_before
     with pytest.raises(DataValidationError):
         forged_update = _form("PK-002", "INV-002", "Stolen")
         forged_update.pop("shipment_no")
