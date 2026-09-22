@@ -87,7 +87,29 @@ def test_admin_dashboard_statistics_recent_activity_email_and_isolation(tmp_path
     assert denied.value.status_code == 403
 
 
-def test_admin_role_or_environment_allowlist_only():
-    assert auth.user_is_admin({"email": "owner@example.com", "role": "admin"}, {})
+def test_platform_admin_requires_server_environment_allowlist():
+    for role in ("Owner", "Admin", "admin", "ADMIN", "Manager", "Staff", "Viewer"):
+        assert not auth.user_is_admin({"email": "owner@example.com", "role": role}, {})
     assert auth.user_is_admin({"email": "owner@example.com"}, {"TRADE_PAPER_ADMIN_EMAILS": "other@example.com, OWNER@example.com"})
     assert not auth.user_is_admin({"email": "owner@example.com"}, {})
+
+
+def test_team_admin_session_cannot_gain_platform_access(monkeypatch):
+    from starlette.requests import Request
+    from tests.test_auth import _request_with_cookie
+
+    member = {"email": "team-admin@example.com", "account_id": "customer-a", "role": "Admin", "session_version": 0}
+    monkeypatch.setattr(auth, "load_users", lambda: [member])
+    monkeypatch.delenv("TRADE_PAPER_ADMIN_EMAILS", raising=False)
+    monkeypatch.setattr(auth, "_session_claims", lambda token: (member["email"], 0))
+    identity = auth.current_user(_request_with_cookie("test-session"))
+    assert identity["role"] == "Admin"
+    assert not identity.get("is_admin")
+    request = Request({"type": "http", "headers": [], "trade_paper_user": identity})
+    with pytest.raises(HTTPException) as denied:
+        auth.require_admin(request)
+    assert denied.value.status_code == 403
+
+    monkeypatch.setenv("TRADE_PAPER_ADMIN_EMAILS", member["email"])
+    operator = auth.current_user(_request_with_cookie("test-session"))
+    assert operator["is_admin"] is True

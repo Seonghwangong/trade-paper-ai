@@ -128,12 +128,10 @@ def _admin_emails(environment=None):
 
 
 def user_is_admin(record, environment=None):
+    """Platform operators are server-configured, never tenant-assigned team roles."""
     return bool(
         isinstance(record, dict)
-        and (
-            str(record.get("role", "") or "").strip().casefold() == "admin"
-            or _normalized_email(record.get("email")) in _admin_emails(environment)
-        )
+        and _normalized_email(record.get("email")) in _admin_emails(environment)
     )
 
 
