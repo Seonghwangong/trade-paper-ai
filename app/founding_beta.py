@@ -100,7 +100,7 @@ def founding_beta_thank_you():
 
 def _admin_styles():
     return _styles() + """
-.tp-page{width:min(1380px,calc(100% - 32px))}.admin-nav{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:22px}.admin-nav a{color:#1D4ED8;font-weight:750}.search{display:flex;gap:10px;flex:1 1 420px}.search input{margin:0}.search button{min-height:46px;margin:0}.feedback{margin:0 0 16px;padding:12px 14px;border:1px solid #BBF7D0;border-radius:10px;background:#F0FDF4;color:#166534;font-weight:750}.feedback:empty{display:none}.table-wrap{overflow-x:auto;border:1px solid #E5E7EB;border-radius:16px;background:#fff}table{width:100%;border-collapse:collapse;min-width:1120px}th{padding:13px;background:#111827;color:#fff;text-align:left;font-size:13px}td{padding:13px;border-bottom:1px solid #E5E7EB;vertical-align:top;word-break:break-word}td form{display:flex;grid-template-columns:none;gap:8px;min-width:220px}td select{min-height:40px;margin:0;padding:8px}td button{min-height:40px;margin:0;padding:8px 12px;font-size:13px}.email-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.email-actions a{color:#1D4ED8;font-weight:700}.copy-email{min-height:34px;padding:6px 9px;border:1px solid #CBD5E1;border-radius:8px;background:#F8FAFC;color:#334155;font-size:12px;font-weight:750;cursor:pointer}.empty{text-align:center;color:#64748B;padding:30px}.count{color:#475569;font-weight:750}
+.tp-page{width:min(1380px,calc(100% - 32px))}.admin-nav{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:22px}.admin-nav a{color:#1D4ED8;font-weight:750}.search{display:flex;gap:10px;flex:1 1 420px}.search{flex-wrap:wrap}.search input{margin:0;flex:1 1 240px;width:auto}.search select{flex:1 1 180px;width:auto;margin:0}.follow-up-summary a{color:#1D4ED8;font-weight:750}.search button{min-height:46px;margin:0}.feedback{margin:0 0 16px;padding:12px 14px;border:1px solid #BBF7D0;border-radius:10px;background:#F0FDF4;color:#166534;font-weight:750}.feedback:empty{display:none}.table-wrap{overflow-x:auto;border:1px solid #E5E7EB;border-radius:16px;background:#fff}table{width:100%;border-collapse:collapse;min-width:1120px}th{padding:13px;background:#111827;color:#fff;text-align:left;font-size:13px}td{padding:13px;border-bottom:1px solid #E5E7EB;vertical-align:top;word-break:break-word}td form{display:flex;grid-template-columns:none;gap:8px;min-width:220px}td select{min-height:40px;margin:0;padding:8px}td button{min-height:40px;margin:0;padding:8px 12px;font-size:13px}.email-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.email-actions a{color:#1D4ED8;font-weight:700}.copy-email{min-height:34px;padding:6px 9px;border:1px solid #CBD5E1;border-radius:8px;background:#F8FAFC;color:#334155;font-size:12px;font-weight:750;cursor:pointer}.empty{text-align:center;color:#64748B;padding:30px}.count{color:#475569;font-weight:750}
 """
 
 
@@ -114,14 +114,26 @@ def _status_options(current):
 
 
 @router.get("/admin/founding-beta", response_class=HTMLResponse)
-def founding_beta_admin(request: Request, search: str = "", updated: int = 0):
+def founding_beta_admin(request: Request, search: str = "", updated: int = 0, status_filter: str = ""):
     auth.require_admin(request)
+    selected_filter = str(status_filter or "").strip()
+    if selected_filter and selected_filter not in APPLICATION_STATUSES:
+        raise DataValidationError("Status", "The selected filter is invalid.", "Choose one of the available statuses.")
     records = load_json_strict(BETA_APPLICATION_FILE, [], list)
+    def record_status(record):
+        value = str(record.get("status", "") or "").strip()
+        return value if value in APPLICATION_STATUSES else "New"
+
+    new_count = sum(1 for record in records if isinstance(record, dict) and record_status(record) == "New")
+    filter_options = '<option value="">All statuses</option>' + "".join(
+        f'<option value="{value}"{" selected" if value == selected_filter else ""}>{value}</option>'
+        for value in APPLICATION_STATUSES
+    )
     query = str(search or "").strip()
     entries = [
         (index, record)
         for index, record in enumerate(records)
-        if isinstance(record, dict) and (
+        if isinstance(record, dict) and (not selected_filter or record_status(record) == selected_filter) and (
             not query
             or any(
                 query.casefold() in str(record.get(field, "") or "").casefold()
@@ -149,7 +161,8 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0):
         rows = '<tr><td class="empty" colspan="8">No Founding Beta applications found.</td></tr>'
     feedback = "Status updated successfully." if updated == 1 else ""
     content = f"""
-<div class="admin-nav"><a href="/">← Dashboard</a><form class="search" action="/admin/founding-beta" method="get"><input type="search" name="search" value="{html_escape(query, attribute=True)}" placeholder="Search company, contact, or email"><button type="submit">Search</button></form><span class="count">{len(entries)} applications</span></div>
+<p class="follow-up-summary"><a href="/admin/founding-beta?status_filter=New">{new_count} new applications awaiting first contact</a></p>
+<div class="admin-nav"><a href="/">← Dashboard</a><form class="search" action="/admin/founding-beta" method="get"><input type="search" name="search" value="{html_escape(query, attribute=True)}" placeholder="Search company, contact, or email" aria-label="Search applications"><select name="status_filter" aria-label="Filter applications by status">{filter_options}</select><button type="submit">Search</button></form><span class="count">{len(entries)} applications</span></div>
 <div id="admin-feedback" class="feedback" role="status" aria-live="polite">{feedback}</div>
 <div class="table-wrap"><table><thead><tr><th>Application Date</th><th>Company</th><th>Contact Name</th><th>Email</th><th>Country</th><th>Export Item</th><th>Monthly Documents</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>
 <script>(function(){{const feedback=document.getElementById('admin-feedback');async function copyEmail(value){{if(navigator.clipboard&&navigator.clipboard.writeText){{try{{await navigator.clipboard.writeText(value);return;}}catch(error){{}}}}const input=document.createElement('textarea');input.value=value;input.setAttribute('readonly','');input.style.position='fixed';input.style.opacity='0';document.body.appendChild(input);input.select();document.execCommand('copy');input.remove();}}document.querySelectorAll('.copy-email').forEach(function(button){{button.addEventListener('click',function(){{feedback.textContent='Email copied.';copyEmail(button.dataset.email||'');}});}});}})();</script>"""

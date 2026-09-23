@@ -169,3 +169,33 @@ def test_founding_beta_admin_status_update_changes_only_status_and_creates_backu
         founding_beta.update_founding_beta_status(0, _request(), "Approved")
     assert json.loads(application_file.read_text(encoding="utf-8")) == updated
     assert "Status updated successfully." in founding_beta.founding_beta_admin(_request(), updated=1).body.decode()
+
+
+def test_beta_status_filter_preserves_record_indices_and_combines_search(tmp_path, monkeypatch):
+    application_file = tmp_path / "beta_applications.json"
+    records = [
+        {"company_name": "Legacy Export", "email": "legacy@example.com"},
+        {"company_name": "Already Contacted", "status": "Contacted", "email": "done@example.com"},
+        {"company_name": "New Export", "status": "New", "email": "new@example.com"},
+    ]
+    application_file.write_text(json.dumps(records))
+    monkeypatch.setattr(founding_beta, "BETA_APPLICATION_FILE", application_file)
+    body = founding_beta.founding_beta_admin(_request(), status_filter="New").body.decode()
+    assert "2 new applications awaiting first contact" in body
+    assert "Legacy Export" in body and "New Export" in body
+    assert "Already Contacted" not in body
+    assert 'action="/admin/founding-beta/2/status"' in body
+    assert 'action="/admin/founding-beta/0/status"' in body
+    assert 'action="/admin/founding-beta/1/status"' not in body
+    searched = founding_beta.founding_beta_admin(_request(), search="legacy", status_filter="New").body.decode()
+    assert "Legacy Export" in searched and "New Export" not in searched
+    assert "2 new applications awaiting first contact" in searched
+    assert '<option value="New" selected>' in searched
+    empty = founding_beta.founding_beta_admin(_request(), status_filter="Closed").body.decode()
+    assert "No Founding Beta applications found." in empty
+    assert json.loads(application_file.read_text()) == records
+    with pytest.raises(DataValidationError):
+        founding_beta.founding_beta_admin(_request(), status_filter="invalid")
+    with pytest.raises(HTTPException) as denied:
+        founding_beta.founding_beta_admin(_request(admin=False), status_filter="New")
+    assert denied.value.status_code == 403
