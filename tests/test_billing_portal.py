@@ -46,7 +46,8 @@ def test_my_subscription_upgrade_downgrade_cancel_usage_and_isolation(tmp_path, 
     assert "My Subscription" in page and "Documents this month: 1 / 5" in page
     assert subscription.PAID_PLAN_NOTICE in page
     assert "Upgrade to Starter" not in page and "Upgrade to Professional" not in page
-    assert "Cancel Subscription" in page and "Invoice History" in page
+    assert "Cancel Subscription" not in page and "Invoice History" in page
+    assert "no recurring charge" in page
     assert "Payment integration is not active" in page
     assert "BILL-B" not in page and "$99.00" not in page
 

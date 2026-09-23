@@ -1,4 +1,6 @@
 import asyncio
+import pytest
+from fastapi import HTTPException
 import json
 from datetime import datetime, timezone
 
@@ -125,3 +127,21 @@ def test_pricing_and_dashboard_plan_markup(tmp_path, monkeypatch):
     assert "Choose Starter" not in pricing and "Choose Professional" not in pricing
     assert 'href="/subscription/checkout?plan=Starter">Purchase details</a>' in pricing
     assert "Contact us" in pricing
+
+
+@pytest.mark.parametrize("status", ["Trial", "Active"])
+def test_free_cancellation_preserves_access_and_billing(tmp_path, monkeypatch, status):
+    users, billing, _ = _files(tmp_path, monkeypatch)
+    rows = json.loads(users.read_text())
+    rows[0]["subscription_status"] = status
+    users.write_text(json.dumps(rows))
+    before = users.read_bytes(), billing.read_bytes()
+    page = subscription.subscription_page(_request()).body.decode()
+    assert "Cancel Subscription" not in page
+    with pytest.raises(HTTPException) as error:
+        subscription.cancel_subscription(_request(method="POST", path="/subscription/cancel"))
+    assert error.value.status_code == 409
+    assert (users.read_bytes(), billing.read_bytes()) == before
+    assert subscription.usage_summary("A")["allowed"] is True
+    assert not (tmp_path / "audit_log.json").exists()
+    assert "Cancel Subscription" in subscription.subscription_page(_request("B")).body.decode()
