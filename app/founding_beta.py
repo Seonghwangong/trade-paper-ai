@@ -22,7 +22,7 @@ _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 def _styles():
     return """
-*{box-sizing:border-box}body{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}.tp-page{width:min(720px,calc(100% - 32px));margin:40px auto}.intro{text-align:center;margin-bottom:26px}.intro p{color:#64748B;line-height:1.6}.card{background:#fff;border:1px solid #E5E7EB;border-radius:18px;padding:28px;box-shadow:0 14px 35px rgba(15,23,42,.07)}form{display:grid;gap:9px}label{margin-top:8px;font-weight:750}input,select,textarea{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}textarea{min-height:100px;resize:vertical}input:focus,select:focus,textarea:focus{border-color:#2563EB;outline:3px solid #DBEAFE}button,.back{display:inline-flex;min-height:48px;align-items:center;justify-content:center;margin-top:16px;padding:12px 18px;border:0;border-radius:11px;background:#111827;color:#fff;text-decoration:none;font-size:16px;font-weight:800;cursor:pointer}.required{color:#B91C1C}.benefits{list-style:none;padding:0;margin:20px 0}.benefits li{padding:8px 0;color:#334155}.promise{font-size:18px;font-weight:800}.tp-release-footer{width:min(720px,calc(100% - 32px));margin:34px auto 20px;padding:20px 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}.tp-release-footer strong{display:block;color:#374151}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}@media(max-width:600px){.tp-page{margin:20px auto}.card{padding:22px}}
+*{box-sizing:border-box}body{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}.tp-page{width:min(720px,calc(100% - 32px));margin:40px auto}.intro{text-align:center;margin-bottom:26px}.intro p{color:#64748B;line-height:1.6}.card{background:#fff;border:1px solid #E5E7EB;border-radius:18px;padding:28px;box-shadow:0 14px 35px rgba(15,23,42,.07)}form{display:grid;gap:9px}label{margin-top:8px;font-weight:750}input,select,textarea{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}textarea{min-height:100px;resize:vertical}input:focus,select:focus,textarea:focus{border-color:#2563EB;outline:3px solid #DBEAFE}button,.back{display:inline-flex;min-height:48px;align-items:center;justify-content:center;margin-top:16px;padding:12px 18px;border:0;border-radius:11px;background:#111827;color:#fff;text-decoration:none;font-size:16px;font-weight:800;cursor:pointer}.required{color:#B91C1C}.benefits{list-style:none;padding:0;margin:20px 0}.benefits li{padding:8px 0;color:#334155}.promise{font-size:18px;font-weight:800}.next-steps{padding-left:24px;line-height:1.7}.next-steps li{margin:12px 0}.card p{line-height:1.6}.tp-release-footer{width:min(720px,calc(100% - 32px));margin:34px auto 20px;padding:20px 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}.tp-release-footer strong{display:block;color:#374151}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}@media(max-width:600px){.tp-page{margin:20px auto}.card{padding:22px}}
 """
 
 
@@ -85,7 +85,15 @@ def founding_beta_thank_you():
     content = section_card(
         "Founding Beta",
         '<ul class="benefits"><li>✓ First 10 companies</li><li>✓ Founding price for 6 months</li><li>✓ Direct onboarding</li><li>✓ Priority support</li></ul>'
-        '<p class="promise">We\'ll contact you within 2 business days.</p><a class="back" href="/">Back to Trade Paper AI</a>',
+        '<p class="promise">We\'ll contact you within 2 business days.</p>'
+        '<h2>Start your sample walkthrough</h2>'
+        '<p>Your application does not create an account. You can try the product while you wait for our reply.</p>'
+        '<ol class="next-steps"><li><a href="/register">Create an account</a>, or <a href="/login?next=%2Fdemo">log in to the demo</a> if you already have one.</li>'
+        '<li>Review the sample company, buyer, and product details before saving.</li>'
+        '<li>Create an Invoice, then continue to a Packing List and review the PDFs.</li></ol>'
+        '<p>The demo saves documents to your account when you press Save. Use sample data for your first walkthrough.</p>'
+        '<p>Need help? <a href="/contact">Contact us</a>.</p>'
+        '<a class="back" href="/">Back to Trade Paper AI</a>',
     )
     return HTMLResponse(page_shell("Thank You", content, subtitle="Your Founding Beta application has been received.", styles=_styles()))
 
