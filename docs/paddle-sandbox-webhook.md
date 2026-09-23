@@ -53,7 +53,8 @@ custom_data, or a checkout success callback.
 A signed platform `transaction.completed` for that exact stored transaction,
 expected price, quantity one, and automatic collection binds its subscription
 and customer to the stored account atomically. Simulator events cannot create
-bindings. Conflicting ownership and altered replays are rejected. The transaction
+bindings. Conflicting ownership is rejected. Already processed event IDs are acknowledged
+without applying their payload again, even when delivery metadata changes. The transaction
 completion does not activate a subscription; signed subscription events still
 drive shadow state. Early unbound subscription deliveries return 409 and can be
 retried after completion establishes the binding.
@@ -114,3 +115,14 @@ polling pending results for at most three minutes and offering a manual recheck.
 A confirmed binding disables opening another checkout. Uncertain or expired
 attempts show operator review instead of inviting another payment. No browser
 checkout callback can mark server confirmation as complete.
+
+## Replayed notification idempotency
+
+Paddle can create a new notification ID for the same event ID. After raw-body
+signature verification, the first committed event ID wins: subsequent deliveries
+return duplicate without changing state, ownership, or the original event ledger.
+The original raw-body digest remains stored for auditing but is not a replay
+identity check. This also works with existing ledger entries without migration.
+A replay cannot use a changed body to overwrite an already processed event.
+
+Reference: https://developer.paddle.com/webhooks/about/respond-to-webhooks/

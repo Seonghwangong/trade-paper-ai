@@ -87,11 +87,11 @@ def test_raw_body_tampering(setup):
     assert store.state('test-account-A') is None
 
 
-def test_duplicate_and_conflicting_id(setup):
+def test_processed_event_id_never_reapplies_changed_state(setup):
     client, store = setup
     assert send(client, event()).status_code == 200
     assert send(client, event()).json()['result'] == 'duplicate'
-    assert send(client, event(status='canceled')).status_code == 409
+    assert send(client, event(status='canceled')).json()['result'] == 'duplicate'
     assert store.state('test-account-A')['app_status'] == 'Active'
 
 
@@ -327,3 +327,35 @@ def test_same_time_created_and_activated_are_equivalent(setup):
     assert send(client, activated).json()['result'] == 'duplicate'
     assert store.state('test-account-A') == before
     assert send(client, event('evt_changed', scheduled_change={'action':'cancel'})).status_code == 409
+
+
+def test_new_notification_id_and_json_format_do_not_repeat_subscription_effects(setup):
+    client, store = setup
+    payload = event()
+    payload['notification_id'] = 'ntf_original'
+    assert send(client, payload).json()['result'] == 'applied'
+    before = store.state('test-account-A')
+    payload['notification_id'] = 'ntf_replayed'
+    assert send(client, payload, secret='wrong').status_code == 401
+    raw = json.dumps(payload, indent=2, sort_keys=True).encode()
+    digest = hmac.new(SECRET.encode(), str(NOW).encode()+b':'+raw, hashlib.sha256).hexdigest()
+    result = client.post('/webhooks/paddle', content=raw, headers={'Paddle-Signature':f'ts={NOW};h1={digest}'})
+    assert result.json()['result'] == 'duplicate'
+    assert store.state('test-account-A') == before
+    with store.connect() as db:
+        assert db.execute('SELECT count(*) FROM events').fetchone()[0] == 1
+
+
+def test_replayed_completion_does_not_bind_another_subscription(setup):
+    client, store = setup
+    store.register_checkout(TXN, 'sandbox:buyer', PRICE)
+    payload = completion()
+    payload['notification_id'] = 'ntf_original'
+    assert send(client, payload).json()['result'] == 'bound'
+    payload['notification_id'] = 'ntf_replayed'
+    assert send(client, payload).json()['result'] == 'duplicate'
+    payload['data']['subscription_id'] = 'sub_' + 'z' * 26
+    assert send(client, payload).json()['result'] == 'duplicate'
+    with store.connect() as db:
+        assert db.execute('SELECT subscription_id FROM bindings WHERE account_id=?', ('sandbox:buyer',)).fetchall() == [(SUB,)]
+        assert db.execute('SELECT count(*) FROM events').fetchone()[0] == 1

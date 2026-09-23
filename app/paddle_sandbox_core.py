@@ -131,8 +131,8 @@ class SandboxStore:
             previous = db.execute("SELECT digest FROM events WHERE event_id=?",
                                   (payload["event_id"],)).fetchone()
             if previous:
-                if previous[0] != digest:
-                    raise HTTPException(409, "Event ID conflict")
+                # Paddle replays retain event_id but change notification_id.
+                # First committed event wins; never reapply a processed ID.
                 return "duplicate"
             existing = db.execute("SELECT subscription_id, customer_id, account_id FROM bindings "
                                   "WHERE subscription_id=? OR account_id=?", (sub, checkout[0])).fetchall()
@@ -188,8 +188,8 @@ class SandboxStore:
             db.execute("BEGIN IMMEDIATE")
             duplicate = db.execute("SELECT digest FROM events WHERE event_id=?", (event_id,)).fetchone()
             if duplicate:
-                if duplicate[0] != digest:
-                    raise HTTPException(409, "Event ID conflict")
+                # Signature verification already happened on the exact raw body.
+                # A new delivery envelope must not cause duplicate side effects.
                 return "duplicate"
             binding = db.execute("SELECT account_id FROM bindings WHERE subscription_id=? AND customer_id=?",
                                  (sub_id, customer_id)).fetchone()
