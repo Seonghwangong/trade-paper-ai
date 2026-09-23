@@ -90,6 +90,18 @@ def version_history_page():
     return information_page("Version History", f"Current: Version {APP_VERSION} · {RELEASE_STAGE}", content)
 
 
+@router.get("/getting-started")
+def getting_started_page():
+    content = (
+        section_card("Before you start", '<p>Read this guide without an account. To create documents, create a free account and sign in. The Free plan supports up to five documents per month. Online paid checkout is not active yet.</p><p>Use fictional company, buyer, and product details for your first test. Saving a sample document adds it to your workspace and counts toward your plan limit.</p>')
+        + section_card("Your first document workflow", '<ol><li><b>Company:</b> review and save your company details. Keep existing saved details if you already use the workspace.</li><li><b>Buyer and product:</b> save reusable details for the sample trade.</li><li><b>Commercial Invoice:</b> choose the saved details, review quantities and prices, then save.</li><li><b>Packing List:</b> open the Invoice List and choose Create Packing for that invoice. Check cartons and weights.</li><li><b>Review PDFs:</b> check names, addresses, items, quantities, units, and packing details.</li><li><b>Test email:</b> choose Send Email, use your own inbox as the recipient, review the attachment, and send. Check your inbox for delivery.</li></ol>')
+        + section_card("Start the guided demo", '<p>The guided demo provides temporary sample values. Nothing is saved until you press Save. Shipment setup is optional for your first Invoice and Packing List.</p><a class="tp-btn" href="/register?next=%2Fdemo">Create free account</a> <a class="tp-btn tp-btn-secondary" href="/login?next=%2Fdemo">Sign in to demo</a>')
+        + section_card("한국어 체험 안내", '<div lang="ko"><p>가입 전에는 이 안내를 읽고, 가입·로그인 후 샘플 데이터로 체험하세요. 회사 → 바이어·품목 → Invoice → Packing List → PDF 검토 → 본인 이메일로 시험 발송 순서입니다.</p><p>샘플 문서도 저장하면 계정에 남고 무료 플랜의 월 5개 문서 한도에 포함됩니다. 기존 회사 정보가 있다면 그대로 유지하세요. 온라인 유료 결제는 아직 활성화되지 않았습니다.</p></div>')
+        + section_card("Need help?", '<p>Tell us which step was unclear and what you expected to happen. Leave out confidential customer or shipment details.</p><a class="tp-btn" href="/founding-beta">Request guided onboarding</a> <a class="tp-btn tp-btn-secondary" href="/contact">Contact us</a>')
+    )
+    return information_page("Getting Started with Trade Paper AI", "From your first sample invoice to PDF delivery", content)
+
+
 @router.get("/demo")
 def demo_page():
     content = (

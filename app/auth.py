@@ -49,7 +49,7 @@ PUBLIC_PATHS = frozenset({
     "/login", "/register", "/logout", "/forgot-password", "/reset-password",
     "/privacy", "/terms", "/refund-policy", "/contact", "/status", "/health", "/healthz",
     "/founding-beta", "/founding-beta/thank-you",
-    "/starter",
+    "/starter", "/getting-started",
     "/feedback", "/feedback/thank-you",
     "/robots.txt", "/sitemap.xml",
     "/analytics/visit",
