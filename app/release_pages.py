@@ -17,7 +17,7 @@ def release_navigation():
         button("About", "/about", "secondary"),
         button("Release Notes", "/release-notes", "secondary"),
         button("Version History", "/version-history", "secondary"),
-        button("Try Demo", "/demo", "secondary"),
+        button("Try Demo (login required)", "/demo", "secondary"),
         button("Contact", "/contact", "secondary"),
     )
 

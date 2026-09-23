@@ -127,7 +127,7 @@ def release_footer() -> str:
         '<nav class="tp-release-footer-nav" aria-label="Product information">'
         '<a href="/feedback">Feedback</a><a href="/about">About</a><a href="/release-notes">Release Notes</a>'
         '<a href="/version-history">Version History</a><a href="/contact">Contact</a>'
-        '<a href="/demo">Try Demo</a>'
+        '<a href="/demo">Try Demo (login required)</a>'
         '<a href="/privacy">Privacy</a><a href="/terms">Terms</a>'
         '</nav>'
         '</footer>'

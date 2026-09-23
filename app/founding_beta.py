@@ -33,7 +33,7 @@ def founding_beta_page():
         for value in MONTHLY_DOCUMENT_OPTIONS
     )
     content = f"""
-<div class="intro"><p>Launched July 22, 2026 · Applications are open for our first customer cohort.</p><p>Apply in about 30 seconds. This form collects application details only and does not create an account.</p></div>
+<div class="intro"><p>Launched July 22, 2026 · Applications are open for our first customer cohort.</p><p>Apply in about 30 seconds. This form collects application details only and does not create an account.</p><p>Ready to try the product? <a href="/register">Create an account</a>, then <a href="/login?next=%2Fdemo">log in to try the demo</a>. The demo uses your account to save documents.</p></div>
 <section class="card"><form method="post" action="/founding-beta" data-native-submit="true">
 <label for="company_name">Company Name <span class="required">*</span></label><input id="company_name" name="company_name" autocomplete="organization" required>
 <label for="contact_name">Contact Name <span class="required">*</span></label><input id="contact_name" name="contact_name" autocomplete="name" required>
