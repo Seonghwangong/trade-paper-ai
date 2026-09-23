@@ -216,7 +216,8 @@ WORKFLOW_TIPS = (
 
 
 def _workflow_tip(path: str) -> str:
-    return next((tip for prefix, tip in WORKFLOW_TIPS if path.startswith(prefix)), "")
+    return next((tip for prefix, tip in WORKFLOW_TIPS
+                 if path == prefix or path.startswith((prefix + "/", prefix + "-"))), "")
 
 
 def _help_panel(path: str) -> str:
