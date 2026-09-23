@@ -70,6 +70,7 @@ def test_product_hunt_media_kit_markdown_links_are_not_broken():
         assert (document.parent / target).resolve().is_file(), target
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_product_hunt_landing_and_media_assets_in_browser(auth_server, browser_name):
     base_url, _ = auth_server

@@ -91,6 +91,7 @@ def _register_login_and_setup(page, base_url, browser_name, suffix):
     return company_name, email
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_server, browser_name):
     base_url, data_dir = linkage_server

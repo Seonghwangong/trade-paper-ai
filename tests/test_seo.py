@@ -62,6 +62,7 @@ def test_web_manifest_is_valid_and_uses_existing_icon():
     assert (root / "app" / icon["src"].lstrip("/")).is_file()
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_seo_endpoints_and_metadata_in_browser(auth_server, browser_name):
     base_url, _ = auth_server

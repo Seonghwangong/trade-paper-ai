@@ -80,6 +80,7 @@ def test_product_checkout_and_admin_readiness_do_not_activate_or_create_orders(t
     assert "/starter" in auth.PUBLIC_PATHS
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 @pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 390, "height": 844}])
 def test_starter_purchase_preparation_browser(auth_server, browser_name, viewport):

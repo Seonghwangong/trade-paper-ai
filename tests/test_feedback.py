@@ -132,6 +132,7 @@ def test_feedback_screenshot_status_reply_and_admin_isolation(tmp_path, monkeypa
     assert denied.value.status_code == 403
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_feedback_in_app_browser_flow(auth_server, browser_name):
     base_url, _ = auth_server

@@ -135,6 +135,7 @@ def test_landing_footer_exposes_exact_business_information():
     assert html.count('href="/feedback"') == 1
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 @pytest.mark.parametrize("viewport", [{"width": 1280, "height": 900}, {"width": 390, "height": 844}])
 def test_landing_business_footer_has_no_horizontal_overflow(auth_server, browser_name, viewport):

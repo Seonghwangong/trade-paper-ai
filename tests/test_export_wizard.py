@@ -91,6 +91,7 @@ def test_export_wizard_shows_only_owned_buyer_defaults_and_keeps_overrides(tmp_p
     assert "User remark" in shipment_record["remarks"]
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_export_wizard_browser_flow(auth_server, browser_name):
     base_url, data_dir = auth_server

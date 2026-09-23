@@ -70,6 +70,7 @@ def test_visitor_dashboard_is_global_admin_only(tmp_path, monkeypatch):
     assert "No IP, email, referrer URL, or tracking cookie is stored." in body
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_visitor_analytics_browser_flow(auth_server, browser_name):
     base_url, data_dir = auth_server

@@ -87,6 +87,7 @@ def test_admin_dashboard_shows_global_analytics_only_to_admin(tmp_path, monkeypa
     assert denied.value.status_code == 403
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_analytics_admin_dashboard_browser(auth_server, browser_name):
     base_url, data_dir = auth_server

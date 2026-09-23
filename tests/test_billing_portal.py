@@ -70,6 +70,7 @@ def test_stripe_adapter_is_interface_only():
     assert callable(getattr(billing.StripeAdapter, "create_customer_portal_session"))
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_billing_portal_browser_flow(auth_server, browser_name):
     base_url, _ = auth_server

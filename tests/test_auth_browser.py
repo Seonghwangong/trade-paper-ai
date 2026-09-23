@@ -64,6 +64,7 @@ def auth_server(tmp_path_factory):
             process.wait(timeout=5)
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_authentication_browser_flow(auth_server, browser_name):
     base_url, data_dir = auth_server
@@ -906,6 +907,7 @@ def test_authentication_browser_flow(auth_server, browser_name):
             browser.close()
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_buyer_and_product_stored_xss_browser_rendering(auth_server, browser_name):
     base_url, _ = auth_server

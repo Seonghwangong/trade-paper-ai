@@ -56,6 +56,7 @@ def test_dashboard_rendering_is_escaped_and_separate_from_admin_scope():
     assert admin_dashboard.DASHBOARD_SCOPE == "service"
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_personal_dashboard_insights_browser_and_admin_separation(auth_server, browser_name):
     base_url, _ = auth_server

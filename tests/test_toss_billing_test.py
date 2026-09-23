@@ -110,6 +110,7 @@ def test_exchange_validates_provider_customer_and_sanitizes_errors(monkeypatch):
     assert billing.verify_registration('test_sk_example','auth','customer') is False
 
 
+@pytest.mark.browser
 @pytest.mark.parametrize('browser_name', ['chromium', 'webkit'])
 @pytest.mark.parametrize('width', [390, 1280])
 def test_billing_review_browser(configured, browser_name, width):
