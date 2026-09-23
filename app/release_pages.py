@@ -14,6 +14,7 @@ router = APIRouter()
 def release_navigation():
     return toolbar(
         button("Dashboard", "/", "secondary"),
+        button("Getting Started", "/getting-started", "secondary"),
         button("About", "/about", "secondary"),
         button("Release Notes", "/release-notes", "secondary"),
         button("Version History", "/version-history", "secondary"),
