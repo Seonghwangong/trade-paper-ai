@@ -296,7 +296,7 @@ __DEMO_NOTICE__
         .replace("__DEMO_EMAIL__", demo_values["email"])
         .replace("__DEMO_COUNTRY__", demo_values["country"])
         .replace("__STATUS_OPTIONS__", _status_options(demo_values["status"]))
-        .replace("__DEFAULT_CURRENCY__", "")
+        .replace("__DEFAULT_CURRENCY__", "USD" if demo == 1 else "")
         .replace("__DEFAULT_TRADE_TERM__", "")
         .replace("__DEFAULT_PAYMENT_TERM__", "")
         .replace("__PREFERRED_CARRIER__", "")

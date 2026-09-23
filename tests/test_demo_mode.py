@@ -40,6 +40,7 @@ def test_buyer_and_product_demo_prefills_are_query_scoped():
     assert 'value="Tokyo, Japan"' in buyer_demo
     assert 'value="buyer@example.jp"' in buyer_demo
     assert 'value="Japan"' in buyer_demo
+    assert 'name="default_currency" value="USD"' in buyer_demo
     assert 'value="Notebook Computer"' in product_demo
     assert 'value="847130"' in product_demo
     assert 'value="850"' in product_demo
@@ -49,6 +50,7 @@ def test_buyer_and_product_demo_prefills_are_query_scoped():
     buyer_regular = _body(buyer.buyer_form())
     product_regular = _body(product.product_form())
     assert "Sakura Retail Co." not in buyer_regular
+    assert 'name="default_currency" value=""' in buyer_regular
     assert "Notebook Computer" not in product_regular
     assert "Demo Preview" not in buyer_regular
     assert "Demo Preview" not in product_regular
