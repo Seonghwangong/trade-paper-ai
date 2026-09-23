@@ -89,7 +89,7 @@ class SandboxStore:
         if not isinstance(payload, dict):
             raise HTTPException(400, "Invalid event")
         event_id = payload.get("event_id")
-        if not isinstance(event_id, str) or not event_id.startswith("evt_") or len(event_id) > 100:
+        if not isinstance(event_id, str) or not event_id.startswith(("evt_", "ntfsimevt_")) or len(event_id) > 100:
             raise HTTPException(400, "Invalid event ID")
         event_type = payload.get("event_type")
         if not isinstance(event_type, str):

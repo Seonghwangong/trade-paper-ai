@@ -214,3 +214,20 @@ def test_real_app_webhook_disabled_and_unsigned_requests_fail_closed(monkeypatch
     assert response.status_code == 200
     assert response.json()['result']=='applied'
     assert store.state('sandbox:test-A')['app_status']=='Active'
+
+
+def test_signed_simulator_event_and_replay(setup):
+    client, store = setup
+    payload = event('ntfsimevt_01m36vhykc0w9jar1677be63sc')
+    assert send(client, payload, secret='wrong').status_code == 401
+    assert store.state('test-account-A') is None
+    assert send(client, payload).json()['result'] == 'applied'
+    assert send(client, payload).json()['result'] == 'duplicate'
+    assert store.state('test-account-A')['app_status'] == 'Active'
+
+
+@pytest.mark.parametrize('event_id', ['ntfsimntf_123', 'unknown_123', '', None])
+def test_unrecognized_event_id_rejected(setup, event_id):
+    client, store = setup
+    assert send(client, event(event_id)).status_code == 400
+    assert store.state('test-account-A') is None
