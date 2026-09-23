@@ -201,15 +201,7 @@ async function generatePDF(){
         items: getItems()
     };
 
-    const response = await fetch("/invoice/pdf",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(data)
-    });
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    window.open(url);
+    await previewWorkflowPDF("/invoice/pdf", data);
 }
 
 async function loadCompany(){

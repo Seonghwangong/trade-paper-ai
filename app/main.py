@@ -525,6 +525,27 @@ async function workflowErrorMessage(response){
   if(type.includes("text/html")){try{const text=await response.text();const doc=new DOMParser().parseFromString(text,"text/html");const reason=doc.querySelector(".issue")?.textContent||doc.querySelector("h1")?.textContent;return reason?reason.trim():"The submitted values could not be saved.";}catch(error){}}
   return "The submitted values could not be saved. Review the form and try again.";
 }
+async function previewWorkflowPDF(endpoint,data){
+  clearWorkflowMessage();
+  let response;
+  try{response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/pdf"},body:JSON.stringify(data)});}
+  catch(error){showWorkflowError("The PDF could not be generated because the server could not be reached. Please try again.");return;}
+  if(!response.ok){showWorkflowError(await workflowErrorMessage(response));return;}
+  const contentType=(response.headers.get("content-type")||"").toLowerCase();
+  if(!contentType.includes("application/pdf")){showWorkflowError("The server did not return a PDF. Sign in again if your session expired, then retry.");return;}
+  let blob;
+  try{blob=await response.blob();}
+  catch(error){showWorkflowError("The PDF download was interrupted. Please try again.");return;}
+  if(!blob.size){showWorkflowError("The server returned an empty PDF. Please try again.");return;}
+  const url=window.URL.createObjectURL(blob);
+  const preview=window.open(url);
+  if(!preview){
+    const area=workflowMessageArea();area.className="workflow-message workflow-return";
+    area.textContent="Your PDF is ready. Open it using the link below.";
+    const link=document.createElement("a");link.href=url;link.target="_blank";link.rel="noopener";link.textContent="Open PDF";
+    area.appendChild(document.createElement("br"));area.appendChild(link);area.style.display="block";
+  }
+}
 function showShipmentReturn(shipmentNo,documentLabel,identifier){
   if(window.tpMarkSaved)window.tpMarkSaved();
   const area=workflowMessageArea();area.className="workflow-message workflow-return";area.textContent="✓ "+documentLabel+" saved successfully.";

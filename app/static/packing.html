@@ -393,22 +393,12 @@ async function savePacking(){
 }
 
 async function generatePackingPDF(){
+    clearWorkflowMessage();
     if(!document.getElementById("invoice_no").value){
-        alert("Please select Invoice No.");
+        showWorkflowError("Please select Invoice No. before generating the PDF.");
         return;
     }
-
-    const data = getPackingData();
-
-    const res = await fetch("/packing-list/pdf", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(data)
-    });
-
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    window.open(url);
+    await previewWorkflowPDF("/packing-list/pdf", getPackingData());
 }
 
 window.onload = async function(){
