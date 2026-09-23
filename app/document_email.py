@@ -5,12 +5,14 @@ from email.utils import parseaddr
 import html
 from typing import Annotated
 from urllib.parse import quote
+from uuid import uuid4
 
 from fastapi import APIRouter, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import auth, email_delivery
-from app.storage import data_path, locked_json_mutation
+from app.storage import data_path, locked_json_mutation, load_json_strict
+from app.validation import DataValidationError
 
 
 router = APIRouter()
@@ -115,6 +117,9 @@ def _attachment(document_type: str, document_no: str, request: Request):
     response = handlers[document_type](document_no, request)
     suffix = "zip" if document_type == "document-package" else "pdf"
     mime = "application/zip" if suffix == "zip" else "application/pdf"
+    if response.status_code != 200 or response.media_type != mime or not response.body:
+        raise DataValidationError("Attachment", "The document could not be exported.",
+                                  "Open the document and review it before trying again.")
     return email_delivery.EmailAttachment(f"{document_no}.{suffix}", response.body, mime)
 
 
@@ -123,9 +128,24 @@ def _valid_recipient(value: str) -> bool:
     return bool(address and "\r" not in address and "\n" not in address and parseaddr(address)[1] == address and "@" in address)
 
 
-def _form_page(label, document_type, document_no, recipient, subject, body, error=""):
+def _document_links(document_type, document_no):
+    number = quote(str(document_no), safe="")
+    routes = {
+        "invoice": (f"/invoice-pdf/{number}", "/invoice-list"),
+        "packing": (f"/packing-list-pdf/{number}", "/packing-list"),
+        "shipping-instruction": (f"/si-pdf/{number}", "/si-list"),
+        "booking": (f"/booking-pdf/{number}", "/booking-list"),
+        "bill-of-lading": (f"/bl-pdf/{number}", "/bl-list"),
+        "certificate-of-origin": (f"/co-pdf/{number}", "/co-list"),
+        "document-package": (f"/shipment/{number}/package.zip", "/shipment-list"),
+    }
+    return routes[document_type]
+
+
+def _form_page(label, document_type, document_no, recipient, subject, body, error="", status_code=200):
+    attachment_url, list_url = _document_links(document_type, document_no)
     message = f'<div class="error" role="alert">{html_text(error)}</div>' if error else ""
-    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Send {html_text(label)}</title><style>*{{box-sizing:border-box}}body{{margin:0;padding:32px;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{max-width:720px;margin:auto}}form{{background:#fff;padding:28px;border:1px solid #E5E7EB;border-radius:16px}}label{{display:block;font-weight:700;margin:16px 0 7px}}input,textarea{{width:100%;padding:12px;border:1px solid #CBD5E1;border-radius:9px;font:inherit}}textarea{{min-height:170px;resize:vertical}}button,a{{display:inline-flex;margin-top:18px;padding:12px 17px;border:0;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:800;cursor:pointer}}a{{margin-left:8px;background:#64748B}}.attachment{{padding:12px;background:#F8FAFC;border-radius:9px}}.error{{padding:12px;background:#FEE2E2;color:#991B1B;border-radius:9px}}</style></head><body><main><h1>Send Email</h1><p>{html_text(label)} {html_text(document_no)}</p>{message}<form method="post" action="/send-email/{html_attr(document_type)}/{quote(document_no, safe='')}"><label for="recipient">Recipient</label><input id="recipient" name="recipient" type="email" required value="{html_attr(recipient)}"><label for="subject">Subject</label><input id="subject" name="subject" required value="{html_attr(subject)}"><label for="body">Message</label><textarea id="body" name="body" required>{html_text(body)}</textarea><p class="attachment">Attachment: {html_text(document_no)}.{"zip" if document_type == "document-package" else "pdf"}</p><button type="submit">Send Email</button><a href="javascript:history.back()">Cancel</a></form></main></body></html>''')
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Send {html_text(label)}</title><style>*{{box-sizing:border-box}}body{{margin:0;padding:32px;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{max-width:720px;margin:auto}}form{{background:#fff;padding:28px;border:1px solid #E5E7EB;border-radius:16px}}label{{display:block;font-weight:700;margin:16px 0 7px}}input,textarea{{width:100%;padding:12px;border:1px solid #CBD5E1;border-radius:9px;font:inherit}}textarea{{min-height:170px;resize:vertical}}button,a{{display:inline-flex;margin-top:18px;padding:12px 17px;border:0;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:800;cursor:pointer}}a{{margin-left:8px;background:#64748B}}.attachment{{padding:12px;background:#F8FAFC;border-radius:9px}}.error{{padding:12px;background:#FEE2E2;color:#991B1B;border-radius:9px}}</style></head><body><main><h1>Send Email</h1><p>{html_text(label)} {html_text(document_no)}</p>{message}<form method="post" action="/send-email/{html_attr(document_type)}/{quote(document_no, safe='')}"><label for="recipient">Recipient</label><input id="recipient" name="recipient" type="email" required value="{html_attr(recipient)}"><label for="subject">Subject</label><input id="subject" name="subject" required value="{html_attr(subject)}"><label for="body">Message</label><textarea id="body" name="body" required>{html_text(body)}</textarea><p class="attachment">Attachment: {html_text(document_no)}.{"zip" if document_type == "document-package" else "pdf"}</p><a href="{html_attr(attachment_url)}" target="_blank" rel="noopener">Review attachment</a><p>Check the recipient and attachment before sending. For a sample test, use your own email address.</p><button type="submit">Send Email</button><a href="{html_attr(list_url)}">Back to documents</a></form></main></body></html>''', status_code=status_code)
 
 
 @router.get("/send-email/{document_type}/{document_no}")
@@ -143,9 +163,13 @@ def send_document_email(document_type: str, document_no: str, request: Request, 
     account_id = _account_id(request)
     label, _, record = _document(document_type, document_no, account_id)
     recipient, subject, body = recipient.strip(), subject.strip(), body.strip()
-    if not _valid_recipient(recipient) or not subject or not body:
-        return _form_page(label, document_type, document_no, recipient, subject, body, "Enter a valid recipient, subject, and message.")
-    attachment = _attachment(document_type, document_no, request)
+    if not _valid_recipient(recipient) or not subject or "\r" in subject or "\n" in subject or not body:
+        return _form_page(label, document_type, document_no, recipient, subject, body, "Enter a valid recipient, single-line subject, and message.", status_code=400)
+    try:
+        attachment = _attachment(document_type, document_no, request)
+    except DataValidationError as error:
+        return _form_page(label, document_type, document_no, recipient, subject, body,
+                          f"Attachment could not be created. {error.reason} {error.correction}", status_code=400)
     message = email_delivery.DeliveryMessage(
         recipient=recipient, subject=subject, text_body=body,
         html_body=f"<p>{html.escape(body).replace(chr(10), '<br>')}</p>",
@@ -153,16 +177,33 @@ def send_document_email(document_type: str, document_no: str, request: Request, 
     )
     success = email_delivery.deliver_email(message)
     shipment_no = _linked_shipment_no(record, document_type, account_id)
-    entry = {"account_id": account_id, "sent_at": datetime.now(timezone.utc).isoformat(), "document_type": document_type, "document_no": document_no, "shipment_no": shipment_no, "recipient": recipient, "subject": subject, "status": "Success" if success else "Failed"}
+    entry = {"id": uuid4().hex, "account_id": account_id, "sent_at": datetime.now(timezone.utc).isoformat(), "document_type": document_type, "document_no": document_no, "shipment_no": shipment_no, "recipient": recipient, "subject": subject, "status": "Success" if success else "Failed"}
     locked_json_mutation(HISTORY_FILE, [], lambda rows: rows.append(entry), list)
     from app.audit_log import record_request_audit
     record_request_audit(request, "Send Email", label, document_no, path=HISTORY_FILE.with_name("audit_log.json"))
-    status, detail = ("Success", "The email was sent successfully.") if success else ("Failed", "The email could not be sent. Check the email delivery configuration and try again.")
-    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Email {status}</title><style>body{{margin:0;background:#F3F4F6;font-family:Arial;color:#111827}}main{{min-height:100vh;display:grid;place-items:center}}section{{max-width:580px;padding:34px;background:#fff;border-radius:18px;text-align:center}}a{{display:inline-block;margin-top:16px;padding:12px 16px;background:#111827;color:#fff;text-decoration:none;border-radius:9px;font-weight:bold}}</style></head><body><main><section><h1>{status}</h1><p>{html_text(detail)}</p><a href="/shipment/{html_attr(shipment_no)}"{' style="display:none"' if not shipment_no else ''}>View Shipment</a><a href="/">Dashboard</a></section></main></body></html>''')
+    if not success:
+        return _form_page(label, document_type, document_no, recipient, subject, body,
+                          "Sending failed or could not be confirmed. Your message is kept below. Check your inbox or contact support before retrying to avoid a duplicate.",
+                          status_code=502)
+    return RedirectResponse(f"/email-result/{entry['id']}", status_code=303)
+
+
+@router.get("/email-result/{delivery_id}")
+def email_result(delivery_id: str, request: Request):
+    account_id = _account_id(request)
+    entry = next((item for item in load_json_strict(HISTORY_FILE, default=[], expected_type=list)
+                  if item.get("id") == delivery_id and item.get("account_id") == account_id
+                  and item.get("status") == "Success"), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Email result not found")
+    _, list_url = _document_links(entry["document_type"], entry["document_no"])
+    label = DOCUMENT_TYPES[entry["document_type"]][0]
+    shipment_no = entry.get("shipment_no", "")
+    shipment_link = f'<a href="/shipment/{quote(str(shipment_no), safe="")}">View Shipment</a>' if shipment_no else ""
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Email submitted</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;font-family:Arial;color:#111827}}main{{min-height:100vh;display:grid;place-items:center;padding:20px}}section{{width:min(580px,100%);padding:28px;background:#fff;border-radius:18px;overflow-wrap:anywhere}}a{{display:inline-block;margin:8px 8px 0 0;padding:12px 16px;background:#111827;color:#fff;text-decoration:none;border-radius:9px}}</style></head><body><main><section><h1>Email submitted</h1><p>The email provider accepted your message. This does not confirm arrival in the recipient's inbox.</p><p>{html_text(label)} {html_text(entry["document_no"])}</p><p>Recipient: {html_text(entry["recipient"])}</p><p>Subject: {html_text(entry["subject"])}</p><a href="{html_attr(list_url)}">Back to documents</a>{shipment_link}<a href="/">Dashboard</a></section></main></body></html>''')
 
 
 def shipment_email_history(shipment_no: str, account_id: str):
-    from app.storage import load_json_strict
     return [item for item in load_json_strict(HISTORY_FILE, default=[], expected_type=list) if item.get("account_id") == account_id and item.get("shipment_no") == shipment_no]
 
 
