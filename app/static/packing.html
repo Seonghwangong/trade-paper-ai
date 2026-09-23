@@ -148,11 +148,11 @@ button{
 </select>
 
 <input class="item" placeholder="Item Name">
-<input class="quantity" type="number" placeholder="Quantity">
+<input class="quantity" type="number" step="any" min="0" inputmode="decimal" aria-label="Quantity" placeholder="Quantity">
 <input class="hs_code" placeholder="HS Code">
 <input class="origin" placeholder="Country of Origin">
 <input class="unit" placeholder="Unit">
-<input class="carton" type="number" placeholder="Carton">
+<input class="carton" type="number" step="1" min="0" inputmode="numeric" aria-label="Carton" placeholder="Carton">
 <input class="net_weight" placeholder="Net Weight">
 <input class="gross_weight" placeholder="Gross Weight">
 
@@ -254,11 +254,11 @@ function addItem(){
 <option value="">Select Product</option>
 </select>
 <input class="item" placeholder="Item Name">
-<input class="quantity" type="number" placeholder="Quantity">
+<input class="quantity" type="number" step="any" min="0" inputmode="decimal" aria-label="Quantity" placeholder="Quantity">
 <input class="hs_code" placeholder="HS Code">
 <input class="origin" placeholder="Country of Origin">
 <input class="unit" placeholder="Unit">
-<input class="carton" type="number" placeholder="Carton">
+<input class="carton" type="number" step="1" min="0" inputmode="numeric" aria-label="Carton" placeholder="Carton">
 <input class="net_weight" placeholder="Net Weight">
 <input class="gross_weight" placeholder="Gross Weight">
 <button type="button" class="remove" onclick="removeItem(this)">Remove Item</button>

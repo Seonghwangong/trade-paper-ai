@@ -83,8 +83,8 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 <input id="hs1" placeholder="HS Code">
 <input id="origin1" placeholder="Country of Origin">
 <input id="unit1" placeholder="Unit">
-<input id="qty1" type="number" placeholder="Quantity" oninput="calculateTotal()">
-<input id="price1" type="number" placeholder="Unit Price" oninput="calculateTotal()">
+<input id="qty1" type="number" step="any" min="0" inputmode="decimal" aria-label="Quantity" placeholder="Quantity" oninput="calculateTotal()">
+<input id="price1" type="number" step="any" min="0" inputmode="decimal" aria-label="Unit Price" placeholder="Unit Price" oninput="calculateTotal()">
 </div>
 
 <div class="total" id="total">Total: USD 0</div>
