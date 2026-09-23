@@ -66,3 +66,28 @@ def test_invalid_create_does_not_write_invoice(store, value):
             'items': [{'name': 'Item', 'quantity': value, 'unit_price': 1}],
         })
     assert store.read_bytes() == before
+
+
+def test_edit_preserves_other_items_and_first_item_metadata(store):
+    saved = create()
+    records = json.loads(store.read_text())
+    records[0]['items'][0]['item_id'] = 'original-item'
+    records[0]['items'][0]['custom_reference'] = 'keep-me'
+    other = {'name': 'Second Item', 'quantity': 4, 'unit_price': 3,
+             'item_id': 'second-item', 'origin': 'Japan', 'unit': 'PCS'}
+    records[0]['items'].append(other)
+    store.write_text(json.dumps(records))
+    before = store.read_bytes()
+    page = invoice.edit_invoice(saved['invoice_no'], _request('account-a')).body.decode()
+    assert 'First Item' in page
+    assert 'Other items kept unchanged' in page
+    assert 'Second Item' in page
+    assert 'quantity * unitPrice + 12' in page
+    assert store.read_bytes() == before
+    update(saved['invoice_no'])
+    items = json.loads(store.read_text())[0]['items']
+    assert len(items) == 2
+    assert items[0]['quantity'] == 2.5
+    assert items[0]['item_id'] == 'original-item'
+    assert items[0]['custom_reference'] == 'keep-me'
+    assert items[1] == other

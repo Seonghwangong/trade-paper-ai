@@ -343,6 +343,19 @@ def edit_invoice(invoice_no: str, request: Request):
             unit_price = item.get("unit_price", "")
             origin = item.get("origin", "")
             unit = item.get("unit", "")
+            remaining_total = sum(
+                _invoice_number("Quantity", extra.get("quantity", 0))
+                * _invoice_number("Unit price", extra.get("unit_price", 0))
+                for extra in items[1:]
+            )
+            remaining_notice = ""
+            if len(items) > 1:
+                remaining_rows = [[html_lib.escape(str(extra.get("name", ""))),
+                                   html_lib.escape(str(extra.get("quantity", ""))),
+                                   html_lib.escape(str(extra.get("unit_price", "")))] for extra in items[1:]]
+                remaining_notice = section_card("Other items kept unchanged",
+                    "<p>This form edits the first item only. The items below remain in the Invoice and are included in the total. Party details and currency apply to the whole Invoice.</p>"
+                    + table(["Item", "Quantity", "Unit Price"], remaining_rows))
 
             html = f"""
 <!DOCTYPE html>
@@ -375,7 +388,7 @@ def edit_invoice(invoice_no: str, request: Request):
 ]))}
 
 <div class="card">
-<h2>Product Information</h2>
+<h2>{"First Item" if len(items) > 1 else "Product Information"}</h2>
 
 <select id="product1" onchange="selectProduct(1)">
 <option value="">Select Product Master</option>
@@ -389,6 +402,7 @@ def edit_invoice(invoice_no: str, request: Request):
 <input type="number" step="any" min="0" name="unit_price" id="price1" value="{unit_price}" placeholder="Unit Price" oninput="calculateTotal()">
 </div>
 
+{remaining_notice}
 <div class="total" id="total">Total: USD 0</div>
 
 {form_footer("/invoice-list", "Update Invoice")}
@@ -438,7 +452,7 @@ function calculateTotal(){{
     const quantity = Number(document.getElementById("qty1").value || 0);
     const unitPrice = Number(document.getElementById("price1").value || 0);
     const currency = document.querySelector('input[name="currency"]').value.trim().toUpperCase() || "USD";
-    document.getElementById("total").textContent = "Total: " + currency + " " + (quantity * unitPrice);
+    document.getElementById("total").textContent = "Total: " + currency + " " + (quantity * unitPrice + {remaining_total!r});
 }}
 
 window.onload = function(){{
@@ -497,14 +511,17 @@ def update_invoice(
             inv["buyer"] = buyer
             inv["buyer_address"] = buyer_address
             inv["buyer_email"] = buyer_email
-            inv["items"] = [{
+            existing_items = inv.get("items", [])
+            updated_item = dict(existing_items[0]) if existing_items else {}
+            updated_item.update({
                 "name": item_name,
                 "hs_code": hs_code,
                 "quantity": quantity_value,
                 "unit_price": unit_price_value,
                 "origin": origin,
                 "unit": unit,
-            }]
+            })
+            inv["items"] = [updated_item, *existing_items[1:]]
             return
         raise HTTPException(status_code=404, detail="Invoice not found")
     locked_json_mutation(INVOICE_FILE, [], replace_invoice, list)
