@@ -216,3 +216,31 @@ def test_packing_crud_search_pdf_invoice_reference_and_dashboard_are_scoped(tmp_
     packing.confirm_delete_packing("PK-001", _request("account-a"))
     assert packing.load_packing_lists("account-a") == []
     assert packing.load_packing_lists("account-b")[0]["packing_no"] == "PK-002"
+
+
+def test_packing_data_preserves_saved_snapshot_and_rejects_unowned_records(tmp_path, monkeypatch):
+    packing_file = tmp_path / "packing_lists.json"
+    saved = {
+        "account_id": "account-a", "packing_no": "PK-001",
+        "invoice_no": "INV-001", "seller": "Saved Seller", "buyer": "Saved Buyer",
+        "seller_address": "", "buyer_address": "Original address",
+        "items": [{"name": "Saved product", "quantity": 2, "carton": "3"}],
+    }
+    records = [saved, {**saved, "account_id": "account-b", "packing_no": "PK-002"},
+               {**saved, "packing_no": "PK-003", "archived_at": "2026-09-23"}]
+    packing_file.write_text(json.dumps(records), encoding="utf-8")
+    monkeypatch.setattr(packing, "PACKING_FILE", packing_file)
+    before = packing_file.read_bytes()
+    result = packing.packing_data("PK-001", _request("account-a"))
+    assert result == {k: v for k, v in saved.items() if k != "account_id"}
+    result["items"][0]["name"] = "Changed response"
+    assert packing.packing_data("PK-001", _request("account-a"))["items"][0]["name"] == "Saved product"
+    for number in ("PK-002", "PK-003", "PK-999"):
+        with pytest.raises(HTTPException) as error:
+            packing.packing_data(number, _request("account-a"))
+        assert error.value.status_code == 404
+    for request in (_request_without_user(), _request("")):
+        with pytest.raises(HTTPException) as error:
+            packing.packing_data("PK-001", request)
+        assert error.value.status_code == 401
+    assert packing_file.read_bytes() == before

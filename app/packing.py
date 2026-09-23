@@ -140,6 +140,11 @@ def create_packing_list(request: Request, payload: dict = Body(...)):
     return public_packing(record)
 
 
+@router.get("/packing-data/{packing_no}")
+def packing_data(packing_no: str, request: Request):
+    return public_packing(_owned_packing(packing_no, _account_id(request)))
+
+
 @router.get("/packing-list")
 def packing_list(request: Request, search: str = ""):
     packing_lists = load_packing_lists(_account_id(request))

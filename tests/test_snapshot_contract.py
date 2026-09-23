@@ -71,8 +71,6 @@ def _reachable(functions, start: str, target: str, seen=None) -> bool:
 @pytest.mark.parametrize("channel", ("edit", "api", "pdf"))
 def test_snapshot_channels_share_one_resolution_path(contract, channel):
     """The shared path makes current, legacy, and explicit-empty snapshots resolve identically."""
-    if contract.document == "Packing" and channel == "api":
-        pytest.xfail("Known contract gap: Packing has no same-record JSON API")
     functions = _functions(contract.module)
     endpoint = getattr(contract, channel)
     assert endpoint in functions, (
@@ -87,8 +85,6 @@ def test_snapshot_channels_share_one_resolution_path(contract, channel):
 
 @pytest.mark.parametrize("contract", CONTRACTS, ids=lambda item: item.document)
 def test_snapshot_api_uses_public_account_safe_projection(contract):
-    if contract.document == "Packing":
-        pytest.xfail("Known contract gap: Packing has no same-record JSON API")
     functions = _functions(contract.module)
     assert contract.api in functions, (
         f"{contract.document} API account-isolation contract mismatch: "
