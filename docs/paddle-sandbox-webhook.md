@@ -29,13 +29,13 @@ access. Registered checkout completions can establish a sandbox binding only;
 they never grant access or update subscription state. Stale events cannot replace newer state; equal-timestamp changes return
 409 pending canonical reconciliation. This remains a prototype, not a complete
 production billing integration (refunds, provider cancellation, reconciliation,
-checkout ownership creation, real entitlements and operational retention pending).
+production checkout lifecycle, real entitlements and operational retention pending).
 
 Validation: tests/test_paddle_sandbox.py. Uses signed synthetic requests plus the
 real app middleware. Real Sandbox delivery was verified on 2026-09-23: signed transaction simulation
 returned 200, and a trusted test subscription pause/resume updated shadow state.
-The server-created checkout path described below is locally tested, not yet
-connected to an authenticated checkout endpoint.
+The authenticated server-created checkout endpoint described below is locally
+tested and disabled pending private API key configuration and end-to-end review.
 
 Sources:
 https://developer.paddle.com/webhooks/about/signature-verification/
@@ -58,9 +58,48 @@ completion does not activate a subscription; signed subscription events still
 drive shadow state. Early unbound subscription deliveries return 409 and can be
 retried after completion establishes the binding.
 
-The schema is intentionally limited to one checkout per test account. Retry,
-expiration and replacement policy must be implemented before exposing checkout
-creation to users. A private Sandbox API key and authenticated server-side
-transaction creation endpoint are still required. No production access is granted.
+The schema is intentionally limited to one checkout per test account. The
+allowlisted endpoint below conservatively blocks uncertain or expired attempts
+pending operator reconciliation. A private Sandbox API key is still required
+for end-to-end testing. No production access is granted.
 
 Provider reference: https://developer.paddle.com/webhooks/transactions/transaction-completed/
+
+## Allowlisted checkout review page
+
+GET/POST `/subscription/paddle-test` is implemented and disabled by default.
+It requires an authenticated non-Viewer session, an explicit test-account
+allowlist, and same-origin session-bound CSRF validation on POST. The browser
+cannot choose the account, price, or transaction ID. The server sends only the
+configured price and quantity to the fixed Sandbox API (redirects refused),
+records ownership, then returns the transaction ID to Paddle.js Sandbox.
+
+Additional environment configuration (never commit secret values):
+- `TRADE_PAPER_PADDLE_SANDBOX_CHECKOUT=1`
+- `TRADE_PAPER_PADDLE_SANDBOX_API_KEY`: new-format Sandbox private key with
+  `transaction.write` permission only; store in Render environment.
+- `TRADE_PAPER_PADDLE_SANDBOX_CLIENT_TOKEN`: Sandbox `test_` public token.
+- `TRADE_PAPER_PADDLE_SANDBOX_TEST_ACCOUNTS`: comma-separated account IDs approved
+  for this test; uses the server session, not an email supplied by the browser.
+- Existing webhook configuration and HTTPS `TRADE_PAPER_PUBLIC_BASE_URL` required.
+
+The page uses the existing configured default Sandbox payment link; its approved
+HTTPS checkout domain must be verified before browser end-to-end testing.
+No additional real user data is sent by the transaction creation request.
+
+A durable checkout_attempts row is reserved before the API call. A ready draft is
+reused for 15 minutes. An uncertain response, expired attempt, completed binding,
+or prior unmatched registration blocks automatic new transactions. Expiry blocks
+reopening in this app; it does not cancel the provider draft. An operator must
+reconcile the Sandbox dashboard and database before allowing another attempt;
+do not just delete the reservation after a timeout. This conservative test-only
+workflow does not implement production retry/cancellation policies.
+
+Private API key setup and a real server-created Sandbox checkout test are still
+pending. This route never activates a real paid plan. Browser checkout.completed
+only displays a notice; signed webhooks remain authoritative for shadow state.
+
+References:
+- https://developer.paddle.com/api-reference/transactions/create-transaction/
+- https://developer.paddle.com/paddle-js/methods/paddle-checkout-open/
+- https://developer.paddle.com/api-reference/about/authentication/
