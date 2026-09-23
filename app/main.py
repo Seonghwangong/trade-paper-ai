@@ -528,7 +528,7 @@ async function workflowErrorMessage(response){
 async function previewWorkflowPDF(endpoint,data){
   clearWorkflowMessage();
   let response;
-  try{response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/pdf"},body:JSON.stringify(data)});}
+  try{response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/pdf, application/json"},body:JSON.stringify(data)});}
   catch(error){showWorkflowError("The PDF could not be generated because the server could not be reached. Please try again.");return;}
   if(!response.ok){showWorkflowError(await workflowErrorMessage(response));return;}
   const contentType=(response.headers.get("content-type")||"").toLowerCase();

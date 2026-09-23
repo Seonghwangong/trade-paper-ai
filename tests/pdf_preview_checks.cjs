@@ -16,6 +16,7 @@ async function run(mode){
   vm.runInContext(code,context);
   await context.previewWorkflowPDF('/invoice/pdf',{currency:'EUR'});
   assert.equal(JSON.parse(request.options.body).currency,'EUR');
+  assert(request.options.headers.Accept.includes('application/json'));
   if(['network','invalid','html','interrupted','empty'].includes(mode)){
     assert.equal(errors.length,1,mode);assert.equal(opened.length,0,mode);
   }else{assert.equal(errors.length,0);assert.equal(opened.length,1);}
