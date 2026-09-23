@@ -42,6 +42,11 @@ def test_visit_count_page_funnel_and_daily_trend_without_personal_data(tmp_path,
 
 @pytest.mark.parametrize("referer,query,expected", [
     ("", "", "Direct"),
+    ("", "ref=producthunt", "Product Hunt"),
+    ("", "ref=ProductHunt", "Product Hunt"),
+    ("", "utm_source=&ref=producthunt", "Product Hunt"),
+    ("", "utm_source=reddit&ref=producthunt", "Reddit"),
+    ("", "ref=unknown", "Other"),
     ("https://www.google.com/search?q=export", "", "Google"),
     ("https://www.producthunt.com/posts/trade-paper-ai", "", "Product Hunt"),
     ("https://www.reddit.com/r/export/", "", "Reddit"),

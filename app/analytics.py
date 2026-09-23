@@ -90,7 +90,7 @@ def analytics_metrics(account_id=None, now=None, path=None):
 
 def classify_source(referer="", query_string=""):
     query = parse_qs(str(query_string or ""), keep_blank_values=False)
-    campaign = " ".join(query.get("utm_source", [])).casefold()
+    campaign = " ".join((query.get("utm_source") or query.get("ref", []))).casefold()
     try:
         host = (urlsplit(str(referer or "")).hostname or "").casefold()
     except ValueError:
