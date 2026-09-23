@@ -281,7 +281,8 @@ def edit_packing(packing_no: str, request: Request):
                 ("Buyer Address", f'<input type="text" name="buyer_address" value="{packing.get("buyer_address") or buyer.get("address", "")}">'),
                 ("Buyer Email", f'<input type="text" name="buyer_email" value="{packing.get("buyer_email") or buyer.get("email", "")}">'),
             ])
-            html = f'<form action="/update-packing/{packing_no}" method="post">' + section_card("Packing Information", info)
+            review_note = section_card("Review against the Invoice", '<p>This saved Packing List keeps its own details. Later Invoice edits do not update it automatically. Compare the buyer, items and quantities, then review cartons and weights before saving.</p><p>Invoice No changes only the reference; it does not reload the document details. After editing, download fresh PDFs of both documents.</p><a href="/invoice-list" target="_blank" rel="noopener">Open Invoice List in a new tab</a>')
+            html = review_note + f'<form action="/update-packing/{packing_no}" method="post">' + section_card("Packing Information", info)
 
             for item in items:
                 html += f"""
