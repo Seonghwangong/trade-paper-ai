@@ -100,7 +100,7 @@ def founding_beta_thank_you():
 
 def _admin_styles():
     return _styles() + """
-.tp-page{width:min(1380px,calc(100% - 32px))}.admin-nav{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:22px}.admin-nav a{color:#1D4ED8;font-weight:750}.search{display:flex;gap:10px;flex:1 1 420px}.search{flex-wrap:wrap}.search input{margin:0;flex:1 1 240px;width:auto}.search select{flex:1 1 180px;width:auto;margin:0}.follow-up-summary a{color:#1D4ED8;font-weight:750}.search button{min-height:46px;margin:0}.feedback{margin:0 0 16px;padding:12px 14px;border:1px solid #BBF7D0;border-radius:10px;background:#F0FDF4;color:#166534;font-weight:750}.feedback:empty{display:none}.table-wrap{overflow-x:auto;border:1px solid #E5E7EB;border-radius:16px;background:#fff}table{width:100%;border-collapse:collapse;min-width:1120px}th{padding:13px;background:#111827;color:#fff;text-align:left;font-size:13px}td{padding:13px;border-bottom:1px solid #E5E7EB;vertical-align:top;word-break:break-word}td form{display:flex;grid-template-columns:none;gap:8px;min-width:220px}td select{min-height:40px;margin:0;padding:8px}td button{min-height:40px;margin:0;padding:8px 12px;font-size:13px}.email-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.email-actions a{color:#1D4ED8;font-weight:700}.copy-email{min-height:34px;padding:6px 9px;border:1px solid #CBD5E1;border-radius:8px;background:#F8FAFC;color:#334155;font-size:12px;font-weight:750;cursor:pointer}.empty{text-align:center;color:#64748B;padding:30px}.count{color:#475569;font-weight:750}
+.tp-page{width:min(1380px,calc(100% - 32px))}.admin-nav{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:22px}.admin-nav a{color:#1D4ED8;font-weight:750}.search{display:flex;gap:10px;flex:1 1 420px}.search{flex-wrap:wrap;min-width:0}.search input{margin:0;flex:1 1 240px;width:auto}.search select{flex:1 1 180px;width:auto;margin:0}.follow-up-summary a{color:#1D4ED8;font-weight:750}.search button{min-height:46px;margin:0}.feedback{margin:0 0 16px;padding:12px 14px;border:1px solid #BBF7D0;border-radius:10px;background:#F0FDF4;color:#166534;font-weight:750}.feedback:empty{display:none}.table-wrap{overflow-x:auto;border:1px solid #E5E7EB;border-radius:16px;background:#fff}table{width:100%;border-collapse:collapse;min-width:1120px}th{padding:13px;background:#111827;color:#fff;text-align:left;font-size:13px}td{padding:13px;border-bottom:1px solid #E5E7EB;vertical-align:top;word-break:break-word}td form{display:flex;grid-template-columns:none;gap:8px;min-width:220px}td select{min-height:40px;margin:0;padding:8px}td button{flex-shrink:0;white-space:nowrap;min-height:40px;margin:0;padding:8px 12px;font-size:13px}.email-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.email-actions a{color:#1D4ED8;font-weight:700}.copy-email{min-height:34px;padding:6px 9px;border:1px solid #CBD5E1;border-radius:8px;background:#F8FAFC;color:#334155;font-size:12px;font-weight:750;cursor:pointer}.empty{text-align:center;color:#64748B;padding:30px}.count{color:#475569;font-weight:750}.table-hint{display:none}@media(max-width:600px){.table-hint{display:block;color:#475569}.search input,.search select{min-width:0}}
 """
 
 
@@ -114,11 +114,14 @@ def _status_options(current):
 
 
 @router.get("/admin/founding-beta", response_class=HTMLResponse)
-def founding_beta_admin(request: Request, search: str = "", updated: int = 0, status_filter: str = ""):
+def founding_beta_admin(request: Request, search: str = "", updated: int = 0, status_filter: str = "", sort: str = "newest"):
     auth.require_admin(request)
     selected_filter = str(status_filter or "").strip()
     if selected_filter and selected_filter not in APPLICATION_STATUSES:
         raise DataValidationError("Status", "The selected filter is invalid.", "Choose one of the available statuses.")
+    selected_sort = str(sort or "newest").strip()
+    if selected_sort not in ("newest", "oldest"):
+        raise DataValidationError("Sort", "The selected order is invalid.", "Choose newest or oldest first.")
     records = load_json_strict(BETA_APPLICATION_FILE, [], list)
     def record_status(record):
         value = str(record.get("status", "") or "").strip()
@@ -141,30 +144,63 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
             )
         )
     ]
-    entries.reverse()
+    def submission_order(entry):
+        index, record = entry
+        try:
+            submitted = datetime.fromisoformat(str(record.get("submitted_at", "")))
+            if submitted.tzinfo is None:
+                submitted = submitted.replace(tzinfo=timezone.utc)
+            timestamp = submitted.timestamp()
+            return (0, timestamp if selected_sort == "oldest" else -timestamp, index)
+        except (ValueError, TypeError, OverflowError):
+            return (1, index if selected_sort == "oldest" else -index, index)
+
+    entries.sort(key=submission_order)
+    sort_options = "".join(
+        f'<option value="{value}"{" selected" if value == selected_sort else ""}>{label}</option>'
+        for value, label in (("newest", "Newest first"), ("oldest", "Oldest first"))
+    )
+    return_query = urlencode({"search": query, "status_filter": selected_filter, "sort": selected_sort})
     rows = ""
     for index, record in entries:
         status = str(record.get("status", "") or "").strip()
         email = str(record.get("email", "") or "").strip()
         mailto = f"mailto:{quote(email, safe='@._+-')}?{urlencode({'subject': 'Trade Paper AI Founding Beta'})}"
         company = str(record.get("company_name", "") or "")
+        contact_name = str(record.get("contact_name", "") or "").strip() or "there"
+        draft_body = (
+            f"Hi {contact_name},\r\n\r\n"
+            "Thank you for applying to the Trade Paper AI Founding Beta.\r\n\r\n"
+            "To try the workflow, create an account at https://www.tradepaper.ai/register, "
+            "then sign in at https://www.tradepaper.ai/login?next=%2Fdemo. "
+            "Your beta application does not create an account.\r\n\r\n"
+            "Start with sample company, buyer, and product details. Create an Invoice, "
+            "continue to a Packing List, and review the PDFs. "
+            "The demo saves documents to your account when you press Save.\r\n\r\n"
+            "Which part of preparing export documents takes the most time for your team? "
+            "Reply if you would like help with your first walkthrough.\r\n\r\n"
+            "Thank you,\r\nSeonghwan\r\nTrade Paper AI"
+        )
+        draft_url = f"mailto:{quote(email, safe='@._+-')}?{urlencode({'subject': 'Your Trade Paper AI beta walkthrough', 'body': draft_body}, quote_via=quote)}"
         rows += f"""
 <tr><td>{html_escape(record.get('submitted_at', ''))}</td>
 <td>{html_escape(company)}</td>
 <td>{html_escape(record.get('contact_name', ''))}</td>
-<td><div class="email-actions"><a href="{html_escape(mailto, attribute=True)}">{html_escape(email)}</a><button class="copy-email" type="button" data-email="{html_escape(email, attribute=True)}" aria-label="Copy email for {html_escape(company, attribute=True)}">Copy</button></div></td>
+<td><div class="email-actions"><a href="{html_escape(mailto, attribute=True)}">{html_escape(email)}</a><button class="copy-email" type="button" data-email="{html_escape(email, attribute=True)}" aria-label="Copy email for {html_escape(company, attribute=True)}">Copy</button><a href="{html_escape(draft_url, attribute=True)}" aria-label="Draft welcome email for {html_escape(company, attribute=True)}">Draft welcome email</a></div></td>
 <td>{html_escape(record.get('country', ''))}</td>
 <td>{html_escape(record.get('exports', ''))}</td>
 <td>{html_escape(record.get('monthly_export_documents', ''))}</td>
-<td><form method="post" action="/admin/founding-beta/{index}/status" data-native-submit="true"><select name="status" aria-label="Status for {html_escape(record.get('company_name', ''), attribute=True)}">{_status_options(status)}</select><button type="submit">Update</button></form></td></tr>"""
+<td><form method="post" action="/admin/founding-beta/{index}/status?{html_escape(return_query, attribute=True)}" data-native-submit="true"><select name="status" aria-label="Status for {html_escape(record.get('company_name', ''), attribute=True)}">{_status_options(status)}</select><button type="submit">Update</button></form></td></tr>"""
     if not rows:
         rows = '<tr><td class="empty" colspan="8">No Founding Beta applications found.</td></tr>'
     feedback = "Status updated successfully." if updated == 1 else ""
     content = f"""
-<p class="follow-up-summary"><a href="/admin/founding-beta?status_filter=New">{new_count} new applications awaiting first contact</a></p>
-<div class="admin-nav"><a href="/">← Dashboard</a><form class="search" action="/admin/founding-beta" method="get"><input type="search" name="search" value="{html_escape(query, attribute=True)}" placeholder="Search company, contact, or email" aria-label="Search applications"><select name="status_filter" aria-label="Filter applications by status">{filter_options}</select><button type="submit">Search</button></form><span class="count">{len(entries)} applications</span></div>
+<p class="follow-up-summary"><a href="/admin/founding-beta?status_filter=New&amp;sort=oldest">{new_count} new applications awaiting first contact</a></p>
+<div class="admin-nav"><a href="/">← Dashboard</a><form class="search" action="/admin/founding-beta" method="get"><input type="search" name="search" value="{html_escape(query, attribute=True)}" placeholder="Search company, contact, or email" aria-label="Search applications"><select name="status_filter" aria-label="Filter applications by status">{filter_options}</select><select name="sort" aria-label="Application order">{sort_options}</select><button type="submit">Search</button></form><span class="count">{len(entries)} applications</span></div>
+<p>Draft welcome email opens your email app for review. Send it there, then update the application status to Contacted.</p>
 <div id="admin-feedback" class="feedback" role="status" aria-live="polite">{feedback}</div>
-<div class="table-wrap"><table><thead><tr><th>Application Date</th><th>Company</th><th>Contact Name</th><th>Email</th><th>Country</th><th>Export Item</th><th>Monthly Documents</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>
+<p class="table-hint">Swipe the table sideways to see email actions and application status.</p>
+<div class="table-wrap" role="region" aria-label="Beta applications" tabindex="0"><table><thead><tr><th>Application Date</th><th>Company</th><th>Contact Name</th><th>Email</th><th>Country</th><th>Export Item</th><th>Monthly Documents</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>
 <script>(function(){{const feedback=document.getElementById('admin-feedback');async function copyEmail(value){{if(navigator.clipboard&&navigator.clipboard.writeText){{try{{await navigator.clipboard.writeText(value);return;}}catch(error){{}}}}const input=document.createElement('textarea');input.value=value;input.setAttribute('readonly','');input.style.position='fixed';input.style.opacity='0';document.body.appendChild(input);input.select();document.execCommand('copy');input.remove();}}document.querySelectorAll('.copy-email').forEach(function(button){{button.addEventListener('click',function(){{feedback.textContent='Email copied.';copyEmail(button.dataset.email||'');}});}});}})();</script>"""
     return HTMLResponse(page_shell("Founding Beta Admin", content, subtitle="Manage application follow-up status.", styles=_admin_styles()))
 
@@ -181,5 +217,15 @@ def update_founding_beta_status(index: int, request: Request, status: str = Form
             raise HTTPException(status_code=404, detail="Founding Beta application not found")
         records[index]["status"] = normalized_status
 
+    return_params = {"updated": "1"}
+    search = request.query_params.get("search", "").strip()
+    status_filter = request.query_params.get("status_filter", "").strip()
+    sort = request.query_params.get("sort", "").strip()
+    if search:
+        return_params["search"] = search
+    if status_filter in APPLICATION_STATUSES:
+        return_params["status_filter"] = status_filter
+    if sort in ("newest", "oldest"):
+        return_params["sort"] = sort
     locked_json_mutation(BETA_APPLICATION_FILE, [], update, list)
-    return RedirectResponse("/admin/founding-beta?updated=1", status_code=303)
+    return RedirectResponse("/admin/founding-beta?" + urlencode(return_params), status_code=303)

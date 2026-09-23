@@ -8,8 +8,8 @@ from app import auth, founding_beta, landing
 from app.validation import DataValidationError
 
 
-def _request(admin=True):
-    return Request({"type": "http", "headers": [], "trade_paper_user": {"account_id": "test-account", "is_admin": admin}})
+def _request(admin=True, query=""):
+    return Request({"type": "http", "headers": [], "query_string": query.encode(), "trade_paper_user": {"account_id": "test-account", "is_admin": admin}})
 
 
 @pytest.mark.parametrize("identity", [{}, {"account_id": "ordinary-user"}, {"account_id": "ordinary-user", "is_admin": False}])
@@ -184,9 +184,9 @@ def test_beta_status_filter_preserves_record_indices_and_combines_search(tmp_pat
     assert "2 new applications awaiting first contact" in body
     assert "Legacy Export" in body and "New Export" in body
     assert "Already Contacted" not in body
-    assert 'action="/admin/founding-beta/2/status"' in body
-    assert 'action="/admin/founding-beta/0/status"' in body
-    assert 'action="/admin/founding-beta/1/status"' not in body
+    assert 'action="/admin/founding-beta/2/status?' in body
+    assert 'action="/admin/founding-beta/0/status?' in body
+    assert 'action="/admin/founding-beta/1/status?' not in body
     searched = founding_beta.founding_beta_admin(_request(), search="legacy", status_filter="New").body.decode()
     assert "Legacy Export" in searched and "New Export" not in searched
     assert "2 new applications awaiting first contact" in searched
@@ -199,3 +199,46 @@ def test_beta_status_filter_preserves_record_indices_and_combines_search(tmp_pat
     with pytest.raises(HTTPException) as denied:
         founding_beta.founding_beta_admin(_request(admin=False), status_filter="New")
     assert denied.value.status_code == 403
+
+
+def test_beta_followup_order_draft_and_return_context(tmp_path, monkeypatch):
+    from html import unescape
+    import re
+    from urllib.parse import parse_qs, urlsplit, urlencode
+
+    application_file = tmp_path / "beta_applications.json"
+    records = [
+        {"company_name": "Recent", "contact_name": "Kim & Co", "email": "recent@example.com", "status": "New", "submitted_at": "2026-09-23T09:00:00+09:00"},
+        {"company_name": "Oldest", "email": "old@example.com", "status": "New", "submitted_at": "2026-09-21T12:00:00+00:00"},
+        {"company_name": "Unknown date", "email": "unknown@example.com", "status": "New", "submitted_at": "invalid"},
+    ]
+    application_file.write_text(json.dumps(records))
+    monkeypatch.setattr(founding_beta, "BETA_APPLICATION_FILE", application_file)
+    oldest = founding_beta.founding_beta_admin(_request(), status_filter="New", sort="oldest").body.decode()
+    assert oldest.index('<td>Oldest</td>') < oldest.index('<td>Recent</td>') < oldest.index('<td>Unknown date</td>')
+    newest = founding_beta.founding_beta_admin(_request()).body.decode()
+    assert newest.index('<td>Recent</td>') < newest.index('<td>Oldest</td>') < newest.index('<td>Unknown date</td>')
+    assert 'value="oldest" selected' in oldest
+    assert 'status_filter=New&amp;sort=oldest' in oldest
+    draft_match = re.search(r'href="([^"]+)" aria-label="Draft welcome email for Recent"', oldest)
+    draft = urlsplit(unescape(draft_match.group(1)))
+    assert draft.scheme == 'mailto' and draft.path == 'recent@example.com'
+    params = parse_qs(draft.query)
+    assert params['subject'] == ['Your Trade Paper AI beta walkthrough']
+    assert 'Hi Kim & Co,' in params['body'][0]
+    assert 'https://www.tradepaper.ai/login?next=%2Fdemo' in params['body'][0]
+    assert 'Your beta application does not create an account.' in params['body'][0]
+    assert json.loads(application_file.read_text()) == records
+
+    context = urlencode({'search': 'Oldest & Korea', 'status_filter': 'New', 'sort': 'oldest', 'next': 'https://external.example'})
+    response = founding_beta.update_founding_beta_status(1, _request(query=context), 'Contacted')
+    target = urlsplit(response.headers['location'])
+    assert target.path == '/admin/founding-beta' and not target.netloc
+    assert parse_qs(target.query) == {'updated': ['1'], 'search': ['Oldest & Korea'], 'status_filter': ['New'], 'sort': ['oldest']}
+    updated = json.loads(application_file.read_text())
+    assert updated[1]['status'] == 'Contacted'
+    assert updated[0] == records[0] and updated[2] == records[2]
+    filtered = founding_beta.founding_beta_admin(_request(), status_filter='New', sort='oldest').body.decode()
+    assert '<td>Oldest</td>' not in filtered
+    with pytest.raises(DataValidationError):
+        founding_beta.founding_beta_admin(_request(), sort='bad')
