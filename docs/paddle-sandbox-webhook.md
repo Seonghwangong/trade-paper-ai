@@ -26,8 +26,8 @@ There is no HTTP binding API. An unbound event returns 409 so Paddle can retry.
 Subscribe to subscription.created, activated, updated, resumed, trialing,
 past_due, paused and canceled. Unregistered transaction events are ignored and cannot grant
 access. Registered checkout completions can establish a sandbox binding only;
-they never grant access or update subscription state. Stale events cannot replace newer state; equal-timestamp changes return
-409 pending canonical reconciliation. This remains a prototype, not a complete
+they never grant access or update subscription state. Stale events cannot replace newer state; equal-timestamp events with identical tracked state are acknowledged as equivalent;
+conflicting state at the same time returns 409 pending canonical reconciliation. This remains a prototype, not a complete
 production billing integration (refunds, provider cancellation, reconciliation,
 production checkout lifecycle, real entitlements and operational retention pending).
 

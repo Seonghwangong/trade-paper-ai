@@ -195,9 +195,13 @@ class SandboxStore:
                 # Non-2xx permits retry after trusted binding is established. No event is consumed.
                 raise HTTPException(409, "Subscription binding required")
             account_id = binding[0]
-            old = db.execute("SELECT occurred_at FROM states WHERE account_id=?", (account_id,)).fetchone()
+            old = db.execute("SELECT occurred_at, subscription_id, provider_status, scheduled_action FROM states WHERE account_id=?", (account_id,)).fetchone()
             if old and when == old[0]:
-                # Equal event times need canonical reconciliation; don't guess order.
+                # Separate Paddle event types may describe the same state at the same instant.
+                if old[1:] == (sub_id, status, action):
+                    db.execute("INSERT INTO events VALUES (?, ?, ?)", (event_id, digest, "equivalent"))
+                    return "equivalent"
+                # Different state at the same timestamp still needs reconciliation.
                 raise HTTPException(409, "Subscription reconciliation required")
             result = "stale" if old and when < old[0] else "applied"
             if result == "applied":

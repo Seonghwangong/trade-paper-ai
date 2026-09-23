@@ -180,12 +180,12 @@ def test_payment_failure_and_browser_success_do_not_grant_access(setup):
     assert store.state('test-account-A') is None
 
 
-def test_timezone_equivalent_timestamp_needs_reconciliation(setup):
+def test_timezone_equivalent_identical_state_is_acknowledged(setup):
     client,store=setup
     send(client,event())
     payload=event('evt_offset')
     payload['occurred_at']='2026-09-23T19:00:00+09:00'
-    assert send(client,payload).status_code==409
+    assert send(client,payload).json()['result']=='equivalent'
 
 
 def test_missing_signature_is_rejected(setup):
@@ -313,3 +313,17 @@ def test_concurrent_checkout_completion_binds_once(setup):
         results = list(pool.map(lambda _: store.apply(payload, raw, PRICE), range(16)))
     assert results.count('bound') == 1
     assert results.count('duplicate') == 15
+
+
+def test_same_time_created_and_activated_are_equivalent(setup):
+    client, store = setup
+    created = event('evt_created')
+    created['event_type'] = 'subscription.created'
+    activated = event('evt_activated')
+    activated['event_type'] = 'subscription.activated'
+    assert send(client, created).json()['result'] == 'applied'
+    before = store.state('test-account-A')
+    assert send(client, activated).json()['result'] == 'equivalent'
+    assert send(client, activated).json()['result'] == 'duplicate'
+    assert store.state('test-account-A') == before
+    assert send(client, event('evt_changed', scheduled_change={'action':'cancel'})).status_code == 409
