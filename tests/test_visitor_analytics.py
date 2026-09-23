@@ -65,7 +65,7 @@ def test_visitor_dashboard_is_global_admin_only(tmp_path, monkeypatch):
     analytics.record_visit("Landing", "Google", path=visitor_file)
     analytics.record_visit("Signup", "Google", path=visitor_file)
     body = admin_dashboard.admin_dashboard(_admin_request()).body.decode()
-    for value in ("Visitor Analytics", "Visited Pages", "Acquisition Sources", "Landing → Signup", "Visitor Trend · Last 30 Days"):
+    for value in ("Visitor Analytics", "Visited Pages", "Acquisition Sources", "Signup page views", "Visitor Trend · Last 30 Days"):
         assert value in body
     assert "No IP, email, referrer URL, or tracking cookie is stored." in body
 

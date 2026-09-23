@@ -80,7 +80,7 @@ def test_admin_dashboard_statistics_recent_activity_email_and_isolation(tmp_path
     html = admin_dashboard.admin_dashboard(_request()).body.decode()
     for section in ("Overview", "Documents", "Revenue", "Email", "Shipments", "Customers", "Recent Activity", "Quick Actions"):
         assert f">{section}<" in html
-    assert "$0.00" in html and "INV-001" in html and "PK-001" in html
+    assert "Not measured" in html and "INV-001" in html and "PK-001" in html
     assert "/company" in html and "/invoice" in html and "/shipment-form" in html
     with pytest.raises(HTTPException) as denied:
         admin_dashboard.admin_dashboard(_request(False))
@@ -113,3 +113,28 @@ def test_team_admin_session_cannot_gain_platform_access(monkeypatch):
     monkeypatch.setenv("TRADE_PAPER_ADMIN_EMAILS", member["email"])
     operator = auth.current_user(_request_with_cookie("test-session"))
     assert operator["is_admin"] is True
+
+
+def test_zero_counts_remain_visible_and_markup_is_escaped():
+    html = admin_dashboard._cards({"Empty": 0, "Unknown": None, "<label>": "<value>"})
+    assert '<span>Empty</span><strong>0</strong>' in html
+    assert '<span>Unknown</span><strong></strong>' in html
+    assert '&lt;label&gt;' in html and '&lt;value&gt;' in html
+
+
+def test_repeated_events_are_counts_not_conversion_rates(tmp_path, monkeypatch):
+    from app import analytics
+    monkeypatch.setattr(analytics, "ANALYTICS_FILE", tmp_path / "events.json")
+    monkeypatch.setattr(analytics, "VISITOR_ANALYTICS_FILE", tmp_path / "visits.json")
+    analytics.record_event("Invoice Created", "A")
+    analytics.record_event("Email Sent", "A")
+    analytics.record_event("Email Sent", "A")
+    analytics.record_visit("Signup", "Direct")
+    page = admin_dashboard.admin_dashboard(_request()).body.decode()
+    assert '<span>Email sent events</span><strong>2</strong>' in page
+    assert '<span>Completed signup events</span><strong>0</strong>' in page
+    assert '<span>Signup page views</span><strong>1</strong>' in page
+    assert 'Email Send Rate' not in page and '200.0%' not in page
+    assert 'Landing → Signup' not in page
+    assert 'Page views are not unique visitors' in page
+    assert 'Totals cover all stored events' in page

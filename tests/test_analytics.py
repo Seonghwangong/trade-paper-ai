@@ -79,7 +79,7 @@ def test_admin_dashboard_shows_global_analytics_only_to_admin(tmp_path, monkeypa
     analytics.record_event("Export Wizard Completed", "A", path=path)
     body = admin_dashboard.admin_dashboard(_request(admin=True)).body.decode()
     assert "Product Analytics" in body
-    assert "Wizard Completion" in body
+    assert "Wizard completions" in body
     assert "Last 30 Days" in body
     assert "Privacy-minimized product-flow events only" in body
     with pytest.raises(HTTPException) as denied:
@@ -114,7 +114,7 @@ def test_analytics_admin_dashboard_browser(auth_server, browser_name):
             page.get_by_role("button", name="Save Company").click()
             page.goto(f"{base_url}/admin/dashboard")
             assert page.get_by_role("heading", name="Product Analytics", exact=True).is_visible()
-            assert page.get_by_text("Wizard Completion", exact=True).is_visible()
+            assert page.get_by_text("Wizard completions", exact=True).is_visible()
             assert page.get_by_role("heading", name="Last 30 Days", exact=True).is_visible()
             records = json.loads((data_dir / "analytics.json").read_text(encoding="utf-8"))
             assert any(row["event"] == "Signup" for row in records)
