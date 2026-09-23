@@ -8,6 +8,7 @@ from reportlab.lib import colors
 from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf_text
 import html as html_lib
 import os
+import math
 from typing import Annotated, Optional
 
 from app.storage import data_path, load_json_strict, locked_json_mutation, next_identifier
@@ -30,6 +31,19 @@ INVOICE_FILE = data_path("invoices.json")
 PROFORMA_FILE = data_path("proformas.json")
 
 router = APIRouter()
+
+def _invoice_number(field, value):
+    try:
+        if isinstance(value, bool):
+            raise ValueError("Boolean is not a quantity or price")
+        number = float(value if value is not None and value != "" else 0)
+        if not math.isfinite(number) or number < 0:
+            raise ValueError("Expected a finite non-negative number")
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise DataValidationError(field, f"{field} must be a finite number of zero or more.",
+                                  f"Enter a valid {field.lower()}, then try again.") from exc
+    return int(number) if number.is_integer() else number
+
 
 def _account_id(request):
     user = request.scope.get("trade_paper_user") or {}
@@ -100,6 +114,11 @@ def create_invoice(request: Request, payload: dict = Body(...)):
         if not str(record.get(field, "") or "").strip():
             record[field] = value
     require_items(record.get("items", []))
+    for item in record["items"]:
+        if not isinstance(item, dict):
+            raise DataValidationError("Items", "Each item must contain structured details.", "Add the item again, then save.")
+        item["quantity"] = _invoice_number("Quantity", item.get("quantity", 0))
+        item["unit_price"] = _invoice_number("Unit price", item.get("unit_price", 0))
     product_module.enrich_items_from_products(record.get("items", []), _account_id(request))
     require_existing_reference("Proforma Invoice", record.get("pi_no", ""), load_proformas(_account_id(request)), "pi_no")
     def add_invoice(invoices):
@@ -158,15 +177,7 @@ def create_invoice_pdf(payload, company=None):
             "Add the cargo item again, then retry the PDF.",
         )
 
-    def pdf_number(field, value):
-        try:
-            number = float(value or 0)
-        except (TypeError, ValueError) as exc:
-            raise DataValidationError(
-                field, f"{field} must be a number.",
-                f"Enter a numeric {field.lower()}, then retry the PDF.",
-            ) from exc
-        return int(number) if number.is_integer() else number
+    pdf_number = _invoice_number
 
     total = sum(
         pdf_number("Quantity", item.get("quantity", 0))
@@ -374,8 +385,8 @@ def edit_invoice(invoice_no: str, request: Request):
 <input type="text" name="hs_code" id="hs1" value="{hs_code}" placeholder="HS Code">
 <input type="text" name="origin" id="origin1" value="{origin}" placeholder="Country of Origin">
 <input type="text" name="unit" id="unit1" value="{unit}" placeholder="Unit">
-<input type="number" name="quantity" id="qty1" value="{quantity}" placeholder="Quantity" oninput="calculateTotal()">
-<input type="number" name="unit_price" id="price1" value="{unit_price}" placeholder="Unit Price" oninput="calculateTotal()">
+<input type="number" step="any" min="0" name="quantity" id="qty1" value="{quantity}" placeholder="Quantity" oninput="calculateTotal()">
+<input type="number" step="any" min="0" name="unit_price" id="price1" value="{unit_price}" placeholder="Unit Price" oninput="calculateTotal()">
 </div>
 
 <div class="total" id="total">Total: USD 0</div>
@@ -472,15 +483,8 @@ def update_invoice(
                 or str(inv.get("account_id", "") or "").strip() != account_id
             ):
                 continue
-            try:
-                quantity_value = int(quantity)
-            except:
-                quantity_value = quantity
-
-            try:
-                unit_price_value = float(unit_price)
-            except:
-                unit_price_value = unit_price
+            quantity_value = _invoice_number("Quantity", quantity)
+            unit_price_value = _invoice_number("Unit price", unit_price)
 
             inv["seller"] = seller
             if seller_address is not None:
