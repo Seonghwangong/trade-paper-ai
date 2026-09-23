@@ -33,13 +33,14 @@ def founding_beta_page():
         for value in MONTHLY_DOCUMENT_OPTIONS
     )
     content = f"""
-<div class="intro"><p>Launched July 22, 2026 · Applications are open for our first customer cohort.</p><p>Apply in about 30 seconds. This form collects application details only and does not create an account.</p><p>New here? <a href="/getting-started">Read the step-by-step guide</a> before creating your first document.</p><p>Ready to try the product? <a href="/register?next=%2Fdemo">Create an account</a>, then <a href="/login?next=%2Fdemo">log in to try the demo</a>. The demo uses your account to save documents.</p></div>
+<div class="intro"><h2>Stop retyping the same details between export documents</h2><p>For small exporters and trade teams who prepare Commercial Invoices and Packing Lists themselves.</p><p>Reuse buyer and product details, continue from an Invoice to a Packing List, then review both PDFs.</p></div>
+<section class="card" style="margin-bottom:20px"><h2>Try one sample shipment with us</h2><ol class="next-steps"><li>Tell us what you export and how many documents you prepare.</li><li>Walk through a sample Invoice and Packing List, with direct onboarding if you need help.</li><li>Tell us where you had to retype information or found a step unclear.</li></ol><p>Use fictional details for your first test. Do not submit confidential customer or shipment information.</p><p>The Free plan includes 5 documents per month. Saving sample documents counts toward that limit. Online paid checkout is not active; this application does not create an account or charge you.</p><p>Prefer to explore first? <a href="/getting-started">Read the walkthrough</a>, or <a href="/register?next=%2Fdemo">create an account to try the demo</a>. Already registered? <a href="/login?next=%2Fdemo">Log in to the demo</a>.</p></section>
 <section class="card"><form method="post" action="/founding-beta" data-native-submit="true">
 <label for="company_name">Company Name <span class="required">*</span></label><input id="company_name" name="company_name" autocomplete="organization" required>
 <label for="contact_name">Contact Name <span class="required">*</span></label><input id="contact_name" name="contact_name" autocomplete="name" required>
 <label for="email">Email <span class="required">*</span></label><input id="email" name="email" type="email" autocomplete="email" required>
 <label for="country">Country <span class="required">*</span></label><input id="country" name="country" autocomplete="country-name" required>
-<label for="exports">What do you export?</label><textarea id="exports" name="exports"></textarea>
+<label for="exports">What do you export?</label><textarea id="exports" name="exports" aria-describedby="exports-help"></textarea><p id="exports-help">Optional: add the step where you repeat the most typing, such as buyer details, item quantities, or packing information. A general description is enough.</p>
 <label for="monthly_export_documents">Monthly export documents</label><select id="monthly_export_documents" name="monthly_export_documents"><option value="">Select</option>{options}</select>
 <button type="submit">Apply for Founding Beta</button>
 </form></section>"""
