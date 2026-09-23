@@ -34,12 +34,13 @@ def information_page(title, subtitle, content):
 def release_notes_page():
     content = (
         f'<p class="version">Version {APP_VERSION} · {RELEASE_STAGE}</p>'
+        + section_card("September 23, 2026 · Onboarding and email improvements", '<ul><li><a href="/getting-started">Read the English and Korean getting-started guide</a> before creating an account.</li><li>Continue to the demo after signup and login, and read the guide even before company setup is complete.</li><li>Keep existing company details while trying sample data.</li><li>Review PDF attachments before emailing documents, and retain form input if a send attempt fails.</li><li>Use clearer mobile links from the product tour to the guide and signup.</li></ul>')
         + section_card("What's New", "<ul><li>Account-owned business records and protected application routes</li><li>Password recovery with expiring, hashed reset tokens</li><li>Safe post-login return and POST-only Logout</li><li>Stored XSS protection for customer master data screens</li></ul>")
-        + section_card("Current Capabilities", "<p>Company, customer, buyer, and product master data; commercial, shipping, customs, and certificate documents; Shipment Hub workflow guidance; Dashboard; Global Search; validation; protected deletion; account isolation; password recovery; safe JSON storage; snapshots; and PDF generation.</p>")
+        + section_card("Current Capabilities", "<p>Company, customer, buyer, and product master data; commercial, shipping, customs, and certificate documents; Shipment Hub workflow guidance; Dashboard; Global Search; validation; protected deletion; account isolation; password recovery; safe JSON storage; snapshots; PDF generation; and PDF email delivery.</p>")
         + section_card("Performance", "<p>Request-scoped JSON reuse reduces repeated Dashboard and Shipment Detail reads without stale global caching.</p>")
         + section_card("Workflow", "<p>Commercial Invoice → Packing List → Shipping Instruction → Booking Confirmation → Bill of Lading → Customs Declaration.</p>")
-        + section_card("Known Limitations", "<ul><li>Founding Beta availability and features may change during testing.</li><li>JSON storage requires a single application worker.</li><li>Role-based collaboration and third-party integrations are not included.</li></ul>")
-        + section_card("Deployment Checklist", "<ul><li>Serve the application through HTTPS.</li><li>Configure and verify storage backups.</li><li>Configure SMTP when password reset email delivery is required.</li><li>Publish a customer Contact email or URL.</li><li>Use an existing writable DATA DIR.</li><li>Set a stable Session Secret of at least 32 characters.</li></ul>")
+        + section_card("Known Limitations", "<ul><li>Founding Beta availability and features may change during testing.</li><li>JSON storage requires a single application worker.</li><li>Team invitations and role management require the Professional plan; contact us for availability.</li><li>Online paid checkout is not active yet. Recurring payments with cards issued outside Korea are still being confirmed.</li></ul>")
+        + section_card("Deployment Checklist", "<ul><li>Serve the application through HTTPS.</li><li>Configure and verify storage backups.</li><li>Configure and verify an email delivery provider (SMTP or Resend API) for password recovery and document email.</li><li>Publish a customer Contact email or URL.</li><li>Use an existing writable DATA DIR.</li><li>Set a stable Session Secret of at least 32 characters.</li></ul>")
     )
     return information_page(f"Version {APP_VERSION} Release Notes", RELEASE_STAGE, content)
 
@@ -49,7 +50,7 @@ def release_notes_page():
 def about_page():
     content = (
         section_card("Application", f"<p><b>Application Name</b><br>{APP_NAME}</p><p><b>Version</b><br>{APP_VERSION}</p><p><b>Build</b><br>{BUILD_NAME}</p><p><b>Release Date</b><br>{LAST_UPDATED}</p>")
-        + section_card("Features", "<ul><li>Shipment-centered document workflow</li><li>Dashboard, Global Search, and workflow guidance</li><li>Safe validation, storage, deletion, and PDF output</li><li>Comfort-focused browser productivity tools</li></ul>")
+        + section_card("Features", "<ul><li>Shipment-centered document workflow</li><li>Dashboard, Global Search, and workflow guidance</li><li>Safe validation, storage, deletion, PDF output, and PDF email delivery</li><li>English and Korean getting-started guide with a sample document walkthrough</li><li>Comfort-focused browser productivity tools</li></ul>")
         + section_card("Release Status", f"<p><b>{RELEASE_STAGE}</b><br>{RELEASE_TYPE}</p>")
         + section_card("Release Notes", f'<p><a href="/release-notes">Read the Version {APP_VERSION} Release Notes</a></p>')
         + section_card("Project Philosophy", '<p><b>Fast.<br>Safe.<br>Comfortable.</b></p>')
