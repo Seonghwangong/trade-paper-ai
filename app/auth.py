@@ -403,6 +403,10 @@ class AuthenticationMiddleware:
         request = Request(scope)
         path = request.url.path
         is_public = path in PUBLIC_PATHS or path == "/static" or path.startswith("/static/") or request.method == "OPTIONS"
+        # Provider webhooks use their own signature authentication, not browser sessions.
+        if path == "/webhooks/paddle-sandbox" and request.method == "POST":
+            await self.app(scope, receive, send)
+            return
         user = current_user(request)
         if path == "/" and request.method == "GET" and user is None:
             response = landing_page()
