@@ -64,4 +64,4 @@ def test_static_demo_prefills_require_demo_query_and_never_submit_automatically(
     assert 'params.get("demo") !== "1"' in invoice
     assert 'document.getElementById("qty1").value = "1"' in invoice
     assert 'product.name === "Notebook Computer"' in invoice
-    assert "applyDemoPrefill();" in company and "applyDemoPrefill();" in invoice
+    assert "applyDemoPrefill(data);" in company and "applyDemoPrefill();" in invoice

@@ -107,7 +107,7 @@ async function loadCompany(){
         document.getElementById("address").value = data.address || "";
         document.getElementById("email").value = data.email || "";
         document.getElementById("phone").value = data.phone || "";
-        applyDemoPrefill();
+        applyDemoPrefill(data);
     }catch(e){
         document.getElementById("result").innerHTML =
             "Failed to load company information.";
@@ -115,10 +115,18 @@ async function loadCompany(){
     }
 }
 
-function applyDemoPrefill(){
+function applyDemoPrefill(savedCompany = {}){
     const params = new URLSearchParams(window.location.search);
     if(params.get("demo") !== "1") return;
     document.getElementById("demo-preview").style.display = "block";
+    const hasSavedCompany = ["name", "address", "email", "phone"].some(
+        field => String(savedCompany[field] || "").trim()
+    );
+    if(hasSavedCompany){
+        document.getElementById("demo-preview").textContent =
+            "Demo Preview — Your saved company details are kept. Continue to Buyer without saving unless you want to update them.";
+        return;
+    }
     document.getElementById("name").value = "Busan Comfort Trading";
     document.getElementById("address").value = "Busan, Korea";
     document.getElementById("email").value = "trade@example.com";

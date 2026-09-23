@@ -312,12 +312,18 @@ function applyDemoPrefill(){
     if(params.get("demo") !== "1" || getPiNoFromUrl()) return;
 
     document.getElementById("demo-preview").style.display = "block";
-    const companyIndex = companies.findIndex(company => company && company.name === "Busan Comfort Trading");
+    const companyIndex = companies.findIndex(company => company &&
+        ["name", "address", "email", "phone"].some(field => String(company[field] || "").trim())
+    );
     if(companyIndex >= 0){
         document.getElementById("sellerSelect").value = String(companyIndex);
         selectSeller();
     }else{
+        document.getElementById("sellerSelect").value = "";
         document.getElementById("seller").value = "Busan Comfort Trading";
+        document.getElementById("seller_address").value = "Busan, Korea";
+        document.getElementById("seller_email").value = "trade@example.com";
+        document.getElementById("seller_phone").value = "+82-51-000-0000";
     }
 
     const buyerIndex = buyers.findIndex(buyer => buyer && buyer.name === "Sakura Retail Co.");

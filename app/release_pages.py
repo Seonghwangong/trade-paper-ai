@@ -100,7 +100,7 @@ def demo_page():
         )
         + section_card(
             "Step 1 · Company",
-            '<p><b>Current step:</b> Confirm how company details flow into later documents.</p><p>Open the temporary <b>Busan Comfort Trading</b> prefill, review it, then press Save.</p><a class="tp-btn" href="/company?demo=1">Start with Company</a>',
+            '<p><b>Current step:</b> Confirm how company details flow into later documents.</p><p>If company details are already saved, keep them and continue to Buyer. Otherwise, review the temporary <b>Busan Comfort Trading</b> prefill and press Save.</p><a class="tp-btn" href="/company?demo=1">Start with Company</a>',
         )
         + section_card(
             "Step 2 · Buyer",
