@@ -344,6 +344,8 @@ function applyDemoPrefill(){
         document.getElementById("item1").value = "Notebook Computer";
         document.getElementById("hs1").value = "847130";
         document.getElementById("price1").value = "850";
+        document.getElementById("origin1").value = "Korea";
+        document.getElementById("unit1").value = "PCS";
     }
     document.getElementById("qty1").value = "1";
     calculateTotal();
@@ -355,6 +357,7 @@ window.onload = async function(){
     await loadProducts();
     await loadProformaPrefill();
     applyDemoPrefill();
+    document.dispatchEvent(new Event("tp:prefill-complete"));
 };
 
 </script>
