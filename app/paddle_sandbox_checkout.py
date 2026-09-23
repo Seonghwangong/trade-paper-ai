@@ -106,8 +106,6 @@ def transaction_for(account, key, price, now=None):
     now = time.time() if now is None else now
     store = sandbox_store()
     with store.connect() as db:
-        db.execute('CREATE TABLE IF NOT EXISTS checkout_attempts (account_id TEXT PRIMARY KEY, '
-                   'started REAL NOT NULL, transaction_id TEXT)')
         db.execute('BEGIN IMMEDIATE')
         if db.execute('SELECT 1 FROM bindings WHERE account_id=?', (account,)).fetchone():
             raise HTTPException(409, 'A test subscription is already linked')
@@ -133,18 +131,79 @@ def response_headers():
     return {'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY'}
 
 
+def account_checkout_status(account, now=None):
+    now = time.time() if now is None else now
+    store = sandbox_store()
+    with store.connect() as db:
+        # One read transaction keeps binding and shadow state consistent.
+        db.execute('BEGIN')
+        state = db.execute('SELECT app_status FROM states WHERE account_id=?', (account,)).fetchone()
+        binding = db.execute('SELECT 1 FROM bindings WHERE account_id=?', (account,)).fetchone()
+        attempt = db.execute('SELECT started, transaction_id FROM checkout_attempts WHERE account_id=?', (account,)).fetchone()
+        registered = db.execute('SELECT transaction_id FROM checkouts WHERE account_id=?', (account,)).fetchone()
+    if binding:
+        return {'phase': 'confirmed' if state else 'pending',
+                'subscription_status': state[0] if state else None, 'can_start': False}
+    if attempt:
+        reusable = (attempt[1] and registered == (attempt[1],) and 0 <= now-attempt[0] <= TTL)
+        return {'phase': 'pending' if reusable else 'review',
+                'subscription_status': None, 'can_start': bool(reusable)}
+    return {'phase': 'review' if registered else 'ready', 'subscription_status': None,
+            'can_start': not bool(registered)}
+
+
+@router.get(PATH + '/status')
+def checkout_status(request: Request):
+    configuration()
+    result = account_checkout_status(owner(request))
+    return JSONResponse({'environment': 'sandbox', **result}, headers=response_headers())
+
+
 @router.get(PATH)
 def checkout_page(request: Request):
     _, token, _, _ = configuration()
     account = owner(request)
     config = json.dumps({'token': token, 'csrf': csrf_token(account), 'path': PATH}).replace('<', '\\u003c')
-    body = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Test checkout · Trade Paper AI</title><style>body{font:18px system-ui;max-width:680px;margin:48px auto;padding:24px;line-height:1.6}button{padding:12px 18px;font:inherit}label{display:block;margin:24px 0}</style></head><body><h1>Starter test checkout</h1><p>Paddle Sandbox only. Use a test card. This does not charge real money or activate a paid Trade Paper AI plan.</p><label><input id="consent" type="checkbox"> I understand this is a test checkout.</label><button id="start" type="button">Open test checkout</button><p id="status" role="status"></p><a href="/subscription">Back to subscription</a><script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script><script>
+    body = '''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Test checkout · Trade Paper AI</title><style>body{font:18px system-ui;max-width:680px;margin:48px auto;padding:24px;line-height:1.6}button{padding:12px 18px;font:inherit}label{display:block;margin:24px 0}</style></head><body><h1>Starter test checkout</h1><p>Paddle Sandbox only. Use a test card. This does not charge real money or activate a paid Trade Paper AI plan.</p><label><input id="consent" type="checkbox"> I understand this is a test checkout.</label><button id="start" type="button">Open test checkout</button><p id="status" role="status"></p><p id="server-status" role="status">Checking server confirmation...</p><button id="refresh-status" type="button">Check confirmation</button><a href="/subscription">Back to subscription</a><script src="https://cdn.paddle.com/paddle/v2/paddle.js"></script><script>
 const config = __CONFIG__;
 const status = document.getElementById('status');
 const start = document.getElementById('start');
 let initialized=false;
+let canStart=false;
+let statusTimer=null;
+let checks=0;
+let checking=false;
+let opening=false;
+start.disabled=true;
+const confirmation=document.getElementById('server-status');
+async function checkStatus() {
+ if (checking) return;
+ checking=true;
+ clearTimeout(statusTimer);
+ try {
+  const r=await fetch(config.path+'/status', {credentials:'same-origin', cache:'no-store'});
+  if (!r.ok || r.redirected) throw new Error();
+  const result=await r.json();
+  if (result.environment!=='sandbox') throw new Error();
+  canStart=result.can_start===true;
+  if (result.phase==='confirmed') confirmation.textContent='Server confirmed: '+result.subscription_status+' (test only). No paid plan has been activated.';
+  else if (result.phase==='pending') {
+   confirmation.textContent='Waiting for server confirmation. This can take a few minutes. Do not make another payment.';
+   if (++checks<36) statusTimer=setTimeout(checkStatus,5000);
+   else confirmation.textContent='Server confirmation is still pending. Use Check confirmation to check again.';
+  } else if (result.phase==='review') confirmation.textContent='This test checkout needs operator review before another attempt.';
+  else confirmation.textContent='Ready for a test checkout.';
+ } catch (_) {
+  canStart=false;
+  confirmation.textContent='Unable to check confirmation. Check your connection or reload to sign in again.';
+ } finally {checking=false;start.disabled=opening || !canStart;}
+}
+document.getElementById('refresh-status').addEventListener('click',()=>{checks=0;checkStatus();});
+checkStatus();
 start.addEventListener('click', async () => {
+ if (!canStart || opening) return;
  if (!document.getElementById('consent').checked) {status.textContent='Please confirm this is a test.';return;}
+ opening=true;
  start.disabled=true;
  try {
   if (!window.Paddle) throw new Error('Payment window unavailable. Reload and try again.');
@@ -154,14 +213,14 @@ start.addEventListener('click', async () => {
   if (!initialized) {
   Paddle.Environment.set('sandbox');
   Paddle.Initialize({token:config.token,eventCallback:event=>{
-   if (event.name==='checkout.completed') status.textContent='Test payment completed. Server confirmation is separate; no paid plan has been activated.';
+   if (event.name==='checkout.completed') {status.textContent='Test payment completed. Checking server confirmation...';checks=0;checkStatus();}
   }});
   initialized=true;
   }
   Paddle.Checkout.open({transactionId:data.transaction_id});
   status.textContent='Test checkout opened.';
  } catch (error) {status.textContent=error.message || 'Test checkout unavailable.';}
- finally {start.disabled=false;}
+ finally {opening=false;checkStatus();}
 });
 </script></body></html>'''.replace('__CONFIG__', config)
     return HTMLResponse(body, headers=response_headers())

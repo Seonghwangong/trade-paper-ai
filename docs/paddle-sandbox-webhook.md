@@ -103,3 +103,14 @@ References:
 - https://developer.paddle.com/api-reference/transactions/create-transaction/
 - https://developer.paddle.com/paddle-js/methods/paddle-checkout-open/
 - https://developer.paddle.com/api-reference/about/authentication/
+
+## Checkout confirmation display
+
+GET `/subscription/paddle-test/status` uses the same authenticated test-account
+allowlist. It returns only the current account's sandbox phase and shadow status;
+it does not expose transaction, subscription, customer, or account IDs. Responses
+are not cached. The page checks this server state on load and after checkout,
+polling pending results for at most three minutes and offering a manual recheck.
+A confirmed binding disables opening another checkout. Uncertain or expired
+attempts show operator review instead of inviting another payment. No browser
+checkout callback can mark server confirmation as complete.

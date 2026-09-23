@@ -173,3 +173,36 @@ def test_real_app_requires_login_allowlist_and_csrf(configured, monkeypatch):
     assert response.status_code == 200 and calls==[1]
     with configured.connect() as db:
         assert db.execute('SELECT account_id FROM checkouts').fetchone()[0]=='sandbox:a'
+
+
+def test_confirmation_status_is_account_scoped_and_private(configured):
+    from tests.test_paddle_sandbox import event, signed
+    configured.bind('sub_test', 'ctm_test', 'sandbox:a')
+    payload=event()
+    payload['data']['items'][0]['price']['id']=PRICE
+    raw,_=signed(payload)
+    configured.apply(payload,raw,PRICE)
+    mine=json.loads(checkout.checkout_status(request()).body)
+    other=json.loads(checkout.checkout_status(request('b')).body)
+    assert mine=={'environment':'sandbox','phase':'confirmed','subscription_status':'Active','can_start':False}
+    assert other['phase']=='ready' and other['subscription_status'] is None
+    assert 'sub_test' not in checkout.checkout_status(request()).body.decode()
+    assert checkout.checkout_status(request()).headers['cache-control']=='no-store'
+    with pytest.raises(HTTPException): checkout.checkout_status(request('outsider'))
+    with pytest.raises(HTTPException): checkout.checkout_status(request('',role='Owner'))
+
+
+def test_confirmation_pending_review_and_bound_states(configured,monkeypatch):
+    monkeypatch.setattr(checkout,'create_transaction',lambda *args:TXN)
+    assert checkout.account_checkout_status('sandbox:a',now=100)['phase']=='ready'
+    checkout.transaction_for('sandbox:a',KEY,PRICE,now=100)
+    assert checkout.account_checkout_status('sandbox:a',now=101)=={'phase':'pending','subscription_status':None,'can_start':True}
+    assert checkout.account_checkout_status('sandbox:a',now=1001)=={'phase':'review','subscription_status':None,'can_start':False}
+    configured.bind('sub_test','ctm_test','sandbox:a')
+    assert checkout.account_checkout_status('sandbox:a',now=1001)=={'phase':'pending','subscription_status':None,'can_start':False}
+
+
+def test_uncertain_attempt_is_not_shown_as_confirmed(configured):
+    with configured.connect() as db:
+        db.execute('INSERT INTO checkout_attempts VALUES (?, ?, NULL)',('sandbox:a',100))
+    assert checkout.account_checkout_status('sandbox:a',now=101)=={'phase':'review','subscription_status':None,'can_start':False}

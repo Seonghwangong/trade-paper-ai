@@ -53,6 +53,8 @@ class SandboxStore:
               CREATE TABLE IF NOT EXISTS checkouts (
                 transaction_id TEXT PRIMARY KEY, account_id TEXT NOT NULL UNIQUE,
                 price_id TEXT NOT NULL);
+              CREATE TABLE IF NOT EXISTS checkout_attempts (
+                account_id TEXT PRIMARY KEY, started REAL NOT NULL, transaction_id TEXT);
               CREATE TABLE IF NOT EXISTS events (
                 event_id TEXT PRIMARY KEY, digest TEXT NOT NULL, result TEXT NOT NULL);
               CREATE TABLE IF NOT EXISTS states (
