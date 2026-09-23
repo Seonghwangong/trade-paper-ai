@@ -126,7 +126,7 @@ def test_pricing_and_dashboard_plan_markup(tmp_path, monkeypatch):
     assert subscription.PAID_PLAN_NOTICE in pricing
     assert "Choose Starter" not in pricing and "Choose Professional" not in pricing
     assert 'href="/subscription/checkout?plan=Starter">Purchase details</a>' in pricing
-    assert "Contact us" in pricing
+    assert 'href="/contact">Contact us</a>' in pricing
 
 
 @pytest.mark.parametrize("status", ["Trial", "Active"])
@@ -145,3 +145,19 @@ def test_free_cancellation_preserves_access_and_billing(tmp_path, monkeypatch, s
     assert subscription.usage_summary("A")["allowed"] is True
     assert not (tmp_path / "audit_log.json").exists()
     assert "Cancel Subscription" in subscription.subscription_page(_request("B")).body.decode()
+
+
+@pytest.mark.parametrize("status", ["Trial", "Active", "Expired", "Cancelled"])
+def test_usage_limit_distinguishes_quota_from_inactive_account(status):
+    response = subscription.usage_limit_response({"status": status})
+    page = response.body.decode()
+    assert response.status_code == 402
+    assert 'href="/">Back to Dashboard' in page
+    assert 'href="/contact">Contact us' in page
+    assert subscription.PAID_PLAN_NOTICE in page
+    if status in {"Trial", "Active"}:
+        assert "Monthly Document Limit Reached" in page
+        assert "start of each month (UTC)" in page
+    else:
+        assert "Subscription Not Active" in page
+        assert "allowance resets" not in page

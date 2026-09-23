@@ -100,8 +100,11 @@ def record_document_usage(account_id, path, now=None):
 
 def usage_limit_response(summary):
     status = summary["status"]
-    message = "Your subscription is not active." if status not in {"Trial", "Active"} else "The Free plan monthly limit of 5 documents has been reached."
-    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usage Limit</title><style>body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}section{{max-width:560px;padding:34px;background:#fff;border-radius:18px;text-align:center}}a{{display:inline-block;margin-top:16px;padding:12px 17px;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:bold}}</style></head><body><main><section><h1>Usage Limit Reached</h1><p>{_text(message)}</p><a href="/pricing">View Plans</a></section></main></body></html>''', status_code=402)
+    inactive = status not in {"Trial", "Active"}
+    title = "Subscription Not Active" if inactive else "Monthly Document Limit Reached"
+    message = "Your subscription is not active. Contact us for help with your account." if inactive else "The Free plan monthly limit of 5 documents has been reached. Your allowance resets at the start of each month (UTC)."
+    guidance = "You can return to the dashboard to view your existing documents. " + PAID_PLAN_NOTICE
+    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usage Limit</title><style>body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}section{{max-width:560px;padding:34px;background:#fff;border-radius:18px;text-align:center}}a{{display:inline-block;margin-top:16px;padding:12px 17px;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:bold}}</style></head><body><main><section><h1>{_text(title)}</h1><p>{_text(message)}</p><p>{_text(guidance)}</p><a href="/">Back to Dashboard</a> <a href="/contact">Contact us</a> <a href="/pricing">View Plans</a></section></main></body></html>''', status_code=402)
 
 
 def _page(title, body):
@@ -116,7 +119,7 @@ def pricing(request: Request):
         if name == current["plan"]:
             return '<span class="badge">Current Plan</span>'
         if name != "Free":
-            return '<a class="button" href="/subscription/checkout?plan=Starter">Purchase details</a>' if name == "Starter" else '<span class="badge">Contact us</span>'
+            return '<a class="button" href="/subscription/checkout?plan=Starter">Purchase details</a>' if name == "Starter" else '<a class="button" href="/contact">Contact us</a>'
         return f'<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="{_attr(name)}"><button type="submit">Choose {_text(name)}</button></form>'
     cards = "".join(
         f'''<article class="card{' current' if name == current['plan'] else ''}"><h2>{_text(name)}</h2><p><strong>{_text(plan_price_label(name))}</strong></p><p>{_text(config['summary'])}</p>{action(name)}</article>'''
