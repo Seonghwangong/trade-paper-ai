@@ -15,7 +15,8 @@ def test_demo_page_presents_the_real_workflow_in_order():
         "Step 3 · Product",
         "Step 4 · Invoice",
         "Step 5 · Packing",
-        "Step 6 · Shipment Hub",
+        "Step 6 · Review PDFs and Send Email",
+        "Optional · Shipment Hub",
     ]
     assert [body.index(step) for step in steps] == sorted(body.index(step) for step in steps)
     for path in (
@@ -25,6 +26,7 @@ def test_demo_page_presents_the_real_workflow_in_order():
         "/invoice?demo=1",
         "/invoice-list",
         "/shipment-form",
+        "/packing-list",
     ):
         assert f'href="{path}"' in body
     assert "Temporary values — nothing is saved until you press Save." in body

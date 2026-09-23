@@ -96,7 +96,7 @@ def demo_page():
         section_card(
             "Demo Preview",
             "<p><b>Temporary values — nothing is saved until you press Save.</b></p>"
-            "<p>Follow the six steps in order. Each form uses the real Trade Paper AI workflow and keeps you in control of every save.</p>",
+            "<p>Follow steps 1–6 to create, review, and email your documents. Shipment setup is optional. Each form uses your account, and saved sample documents count toward your plan limit.</p>",
         )
         + section_card(
             "Step 1 · Company",
@@ -119,11 +119,15 @@ def demo_page():
             '<p><b>What this shows:</b> Snapshot data carries forward through the real Invoice → Packing workflow.</p><p>Open the Invoice List and choose <b>Create Packing</b> for the Invoice you just saved. No fake Packing data is created.</p><a class="tp-btn" href="/invoice-list">Open Invoice List</a>',
         )
         + section_card(
-            "Step 6 · Shipment Hub",
+            "Step 6 · Review PDFs and Send Email",
+            '<p>Open your saved Invoice and Packing List in their lists and choose <b>Download PDF</b>. Check the company, buyer, items, quantities, and packing details.</p><p>Then choose <b>Send Email</b> for each document. For this sample test, replace any prefilled recipient with your own email address, review the subject, message, and attachment, then press <b>Send Email</b>. Check your inbox for the PDF.</p><a class="tp-btn" href="/invoice-list">Open Invoice List</a><a class="tp-btn tp-btn-secondary" href="/packing-list">Open Packing List</a>',
+        )
+        + section_card(
+            "Optional · Shipment Hub",
             '<p><b>What this shows:</b> Create a Shipment using the saved Invoice and Packing references, then use Shipment Detail as the hub for the remaining trade documents.</p><a class="tp-btn" href="/shipment-form">Create Shipment</a><a class="tp-btn tp-btn-secondary" href="/shipment-list">Open Shipment List</a>',
         )
     )
-    return information_page("Trade Paper AI Demo", "A 15-minute Comfort First workflow", content)
+    return information_page("Trade Paper AI Demo", "Create, review, and email your first sample documents", content)
 
 
 @router.get("/contact")
