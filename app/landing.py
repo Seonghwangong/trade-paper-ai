@@ -97,6 +97,7 @@ h1{margin:0;font-size:clamp(58px,9vw,104px);font-weight:760;letter-spacing:-.065
 .browser-dot{width:10px;height:10px;border-radius:50%;background:#cbd5e1}
 .browser-address{flex:1;max-width:520px;margin:0 auto;padding:8px 18px;border:1px solid #e2e8f0;border-radius:999px;background:#fff;color:#94a3b8;font-size:12px;text-align:center}
 .dashboard-screenshot{display:block;width:100%;height:auto}
+.launch-link{margin:16px 0;font-size:14px;line-height:1.6}.launch-link a{color:#475569;text-underline-offset:3px}.launch-link a:hover{color:#2563eb}
 .demo-caption{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:18px;color:#64748b}.demo-caption strong{color:#0f172a}.demo-caption a{font-weight:750;color:#2563eb;text-decoration:none}
 .value-highlights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:22px}
 .value-highlight{padding:22px;border:1px solid #e2e8f0;border-radius:20px;background:#f8fafc}
@@ -165,6 +166,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
       <p class="subtitle">Create, manage and send Commercial Invoice, Packing List,<br>Shipping Instruction, Bill of Lading and more<br>in one connected workflow.</p>
       <div class="hero-actions"><a class="primary" href="/register">Start Free</a><a class="secondary" href="#demo">Watch 15-Second Demo</a></div>
       <p class="hero-comfort">Enter your information once. Keep every export document connected.</p>
+      <p class="launch-link"><a href="https://www.producthunt.com/products/trade-paper-ai-2?launch=trade-paper-ai-2" target="_blank" rel="noopener noreferrer">Meet Trade Paper AI on Product Hunt ↗</a></p>
       <div class="trust-row" aria-label="Product trust highlights"><span>✓ Unicode PDF</span><span>✓ Stable Snapshots</span><span>✓ Account Isolation</span><span>✓ Guided Workflow</span><span>✓ Founding Beta</span></div>
     </div>
   </section>
@@ -219,7 +221,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
       <div class="faq">__FAQ_HTML__</div>
     </div>
   </section>
-  <section class="section" aria-labelledby="contact-title"><div class="wrap"><div class="contact-card"><h2 id="contact-title">Questions before you start?</h2><p>Use the deployment's configured Contact channel for product questions, Founding Beta onboarding, privacy, or account requests.</p><div class="section-actions"><a class="primary" href="/contact">Contact Trade Paper AI</a><a class="secondary" href="/founding-beta">Apply for Founding Beta</a></div></div></div></section>
+  <section class="section" aria-labelledby="contact-title"><div class="wrap"><div class="contact-card"><h2 id="contact-title">Questions before you start?</h2><p>Contact us for product questions, help getting started, or account and privacy requests.</p><div class="section-actions"><a class="primary" href="/contact">Contact Trade Paper AI</a><a class="secondary" href="/founding-beta">Apply for Founding Beta</a></div></div></div></section>
   <section class="section" aria-labelledby="final-cta-title"><div class="wrap"><div class="contact-card"><h2 id="final-cta-title">Ready to simplify export documentation?</h2><p>Start your connected export workflow today.</p><div class="section-actions"><a class="primary" href="/register">Start Free</a><a class="secondary" href="/founding-beta">Join Founding Beta</a></div></div></div></section>
 </main>
 <footer>

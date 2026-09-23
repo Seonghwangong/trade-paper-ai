@@ -20,7 +20,7 @@ def test_landing_matches_required_first_document_workflow_and_conversion_ctas():
     assert 'aria-label="Company, Buyer, Product, Invoice, Packing, SI, Shipment, Booking, B/L, CO, Email, Done"' in html
     assert '<a class="primary" href="/register">Start Free</a>' in html
     assert '<a class="secondary" href="#demo">Watch 15-Second Demo</a>' in html
-    assert '<a href="/register">Start Free to try the workflow →</a>' in html
+    assert '<a href="/register?next=%2Fdemo">Start Free to try the workflow →</a>' in html
     assert '<a class="secondary" href="/founding-beta">Join Founding Beta</a>' in html
     assert '<a class="nav-link" href="/login">Sign in</a>' in html
 
