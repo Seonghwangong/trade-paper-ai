@@ -50,6 +50,9 @@ class SandboxStore:
               CREATE TABLE IF NOT EXISTS bindings (
                 subscription_id TEXT PRIMARY KEY, customer_id TEXT NOT NULL,
                 account_id TEXT NOT NULL UNIQUE);
+              CREATE TABLE IF NOT EXISTS checkouts (
+                transaction_id TEXT PRIMARY KEY, account_id TEXT NOT NULL UNIQUE,
+                price_id TEXT NOT NULL);
               CREATE TABLE IF NOT EXISTS events (
                 event_id TEXT PRIMARY KEY, digest TEXT NOT NULL, result TEXT NOT NULL);
               CREATE TABLE IF NOT EXISTS states (
@@ -79,6 +82,68 @@ class SandboxStore:
             db.execute("INSERT INTO bindings VALUES (?, ?, ?)",
                        (subscription_id, customer_id, account_id))
 
+    def register_checkout(self, transaction_id, account_id, price_id):
+        """Trusted server setup only, before exposing a server-created checkout.
+
+        transaction_id must come from the authenticated Sandbox API response,
+        account_id from the authenticated server session (sandbox: namespace).
+        Never call with a transaction ID supplied by a browser.
+        """
+        if (not isinstance(transaction_id, str) or not re.fullmatch(r"txn_[a-z0-9]{26}", transaction_id)
+                or not isinstance(account_id, str) or not account_id.startswith("sandbox:")
+                or not account_id[8:].strip() or len(account_id) > 200
+                or not isinstance(price_id, str) or not price_id.startswith("pri_")):
+            raise ValueError("Trusted sandbox checkout required")
+        with self.connect() as db:
+            db.execute("INSERT INTO checkouts VALUES (?, ?, ?)",
+                       (transaction_id, account_id, price_id))
+
+    def _complete_checkout(self, payload, raw, price_id):
+        # Simulated payloads may be edited in the dashboard: never establish ownership.
+        if not payload["event_id"].startswith("evt_"):
+            return "ignored"
+        data = payload.get("data")
+        txn = data.get("id") if isinstance(data, dict) else None
+        if not isinstance(txn, str):
+            raise HTTPException(400, "Invalid transaction event")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            checkout = db.execute("SELECT account_id, price_id FROM checkouts WHERE transaction_id=?",
+                                  (txn,)).fetchone()
+            if not checkout:
+                return "ignored"
+            try:
+                timestamp(payload.get("occurred_at"))
+                sub, customer = data["subscription_id"], data["customer_id"]
+                items = data["items"]
+                if (data["status"] != "completed" or data["collection_mode"] != "automatic"
+                        or checkout[1] != price_id or len(items) != 1
+                        or items[0]["price"]["id"] != price_id
+                        or type(items[0]["quantity"]) is not int or items[0]["quantity"] != 1
+                        or not isinstance(sub, str) or not re.fullmatch(r"sub_[a-z0-9]{26}", sub)
+                        or not isinstance(customer, str) or not re.fullmatch(r"ctm_[a-z0-9]{26}", customer)):
+                    raise ValueError()
+            except (KeyError, TypeError, ValueError, IndexError):
+                raise HTTPException(400, "Invalid checkout completion") from None
+            digest = hashlib.sha256(raw).hexdigest()
+            previous = db.execute("SELECT digest FROM events WHERE event_id=?",
+                                  (payload["event_id"],)).fetchone()
+            if previous:
+                if previous[0] != digest:
+                    raise HTTPException(409, "Event ID conflict")
+                return "duplicate"
+            existing = db.execute("SELECT subscription_id, customer_id, account_id FROM bindings "
+                                  "WHERE subscription_id=? OR account_id=?", (sub, checkout[0])).fetchall()
+            expected = (sub, customer, checkout[0])
+            if existing and existing != [expected]:
+                raise HTTPException(409, "Checkout ownership conflict")
+            if not existing:
+                db.execute("INSERT INTO bindings VALUES (?, ?, ?)", expected)
+            db.execute("INSERT INTO events VALUES (?, ?, ?)",
+                       (payload["event_id"], digest, "bound"))
+        # Completion establishes ownership only. Subscription events drive shadow state.
+        return "bound"
+
     def state(self, account_id):
         with self.connect() as db:
             db.row_factory = sqlite3.Row
@@ -94,6 +159,8 @@ class SandboxStore:
         event_type = payload.get("event_type")
         if not isinstance(event_type, str):
             raise HTTPException(400, "Invalid event type")
+        if event_type == "transaction.completed":
+            return self._complete_checkout(payload, raw, price_id)
         if event_type not in EVENTS:
             return "ignored"
         try:

@@ -231,3 +231,85 @@ def test_unrecognized_event_id_rejected(setup, event_id):
     client, store = setup
     assert send(client, event(event_id)).status_code == 400
     assert store.state('test-account-A') is None
+
+TXN = 'txn_' + 'a' * 26
+SUB = 'sub_' + 'b' * 26
+CUSTOMER = 'ctm_' + 'c' * 26
+
+
+def completion(**changes):
+    payload = event('evt_checkout')
+    payload['event_type'] = 'transaction.completed'
+    payload['data'] = {'id': TXN, 'subscription_id': SUB, 'customer_id': CUSTOMER,
+        'status': 'completed', 'collection_mode': 'automatic',
+        'items': [{'price': {'id': PRICE}, 'quantity': 1}],
+        'custom_data': {'account_id': 'attacker'}, **changes}
+    return payload
+
+
+def test_checkout_binding_waits_for_signed_server_registered_transaction(setup):
+    client, store = setup
+    payload = completion()
+    assert send(client, payload).json()['result'] == 'ignored'
+    store.register_checkout(TXN, 'sandbox:buyer', PRICE)
+    assert send(client, payload, secret='wrong').status_code == 401
+    sub_event = event('evt_subscription', id=SUB, customer_id=CUSTOMER)
+    assert send(client, sub_event).status_code == 409
+    assert send(client, payload).json()['result'] == 'bound'
+    assert store.state('sandbox:buyer') is None
+    assert send(client, payload).json()['result'] == 'duplicate'
+    assert send(client, sub_event).json()['result'] == 'applied'
+    assert store.state('sandbox:buyer')['app_status'] == 'Active'
+    assert store.state('attacker') is None
+
+
+@pytest.mark.parametrize('patch', [
+    {'status': 'paid'}, {'collection_mode': 'manual'}, {'subscription_id': None},
+    {'customer_id': 'bad'}, {'items': []},
+    {'items': [{'price': {'id': PRICE}, 'quantity': True}]},
+    {'items': [{'price': {'id': 'pri_other'}, 'quantity': 1}]},
+])
+def test_invalid_completion_cannot_consume_checkout(setup, patch):
+    client, store = setup
+    store.register_checkout(TXN, 'sandbox:buyer', PRICE)
+    assert send(client, completion(**patch)).status_code == 400
+    assert send(client, completion()).json()['result'] == 'bound'
+
+
+def test_simulated_completion_cannot_establish_ownership(setup):
+    client, store = setup
+    store.register_checkout(TXN, 'sandbox:buyer', PRICE)
+    payload = completion()
+    payload['event_id'] = 'ntfsimevt_test'
+    assert send(client, payload).json()['result'] == 'ignored'
+    assert send(client, event(id=SUB, customer_id=CUSTOMER)).status_code == 409
+
+
+def test_checkout_binding_conflicts_are_atomic(setup):
+    client, store = setup
+    store.register_checkout(TXN, 'sandbox:buyer', PRICE)
+    store.bind(SUB, CUSTOMER, 'sandbox:other')
+    assert send(client, completion()).status_code == 409
+    with store.connect() as db:
+        assert db.execute('SELECT count(*) FROM events').fetchone()[0] == 0
+        assert db.execute('SELECT account_id FROM bindings WHERE subscription_id=?', (SUB,)).fetchone()[0] == 'sandbox:other'
+
+
+def test_checkout_registration_cannot_overwrite_owner(setup):
+    _, store = setup
+    store.register_checkout(TXN, 'sandbox:buyer', PRICE)
+    with pytest.raises(server.sqlite3.IntegrityError):
+        store.register_checkout(TXN, 'sandbox:attacker', PRICE)
+    with pytest.raises(ValueError):
+        store.register_checkout(TXN, 'production-account', PRICE)
+
+
+def test_concurrent_checkout_completion_binds_once(setup):
+    _, store = setup
+    store.register_checkout(TXN, 'sandbox:buyer', PRICE)
+    payload = completion()
+    raw, _ = signed(payload)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: store.apply(payload, raw, PRICE), range(16)))
+    assert results.count('bound') == 1
+    assert results.count('duplicate') == 15
