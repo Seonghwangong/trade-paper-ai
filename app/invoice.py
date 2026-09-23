@@ -138,6 +138,7 @@ def create_invoice_pdf(payload, company=None):
     payload = public_invoice(payload)
     company = company if isinstance(company, dict) else load_json_strict(COMPANY_FILE, {}, dict)
 
+    currency = str(payload.get("currency") or "USD").strip().upper() or "USD"
     invoice_no = payload.get("invoice_no", "INV-001")
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -283,8 +284,8 @@ def create_invoice_pdf(payload, company=None):
         pdf.drawString(60, y + 11, fit_pdf_text(pdf, item["name"], 170, TP_UNICODE, 10))
         pdf.drawString(245, y + 11, str(item.get("hs_code", "")))
         pdf.drawRightString(350, y + 11, str(quantity))
-        pdf.drawRightString(445, y + 11, f"USD {unit_price:,.2f}")
-        pdf.drawRightString(540, y + 11, f"USD {line_total:,.2f}")
+        pdf.drawRightString(445, y + 11, f"{currency} {unit_price:,.2f}")
+        pdf.drawRightString(540, y + 11, f"{currency} {line_total:,.2f}")
         y -= row_h
 
     total_x = table_right - total_w
@@ -302,7 +303,7 @@ def create_invoice_pdf(payload, company=None):
 
     pdf.setFillColor(colors.white)
     pdf.setFont(TP_UNICODE_BOLD, 13)
-    pdf.drawRightString(total_x + total_w - 20, total_bottom + 17, f"TOTAL: USD {total:,.2f}")
+    pdf.drawRightString(total_x + total_w - 20, total_bottom + 17, f"TOTAL: {currency} {total:,.2f}")
 
     draw_signature_footer()
 
@@ -352,7 +353,7 @@ def edit_invoice(invoice_no: str, request: Request):
 <form action="/update-invoice/{invoice_no}" method="post">
 
 {section_card("Invoice Information", metadata([
-    ("Currency", f'<input type="text" name="currency" value="{inv.get("currency", "USD")}" placeholder="Currency">'),
+    ("Currency", f'<input type="text" name="currency" value="{html_lib.escape(str(inv.get("currency") or "USD"), quote=True)}" placeholder="Currency" oninput="calculateTotal()" onchange="calculateTotal()">'),
     ("Seller", f'<input type="text" name="seller" value="{inv.get("seller", "")}" placeholder="Seller Name">'),
     ("Seller Address", f'<input type="text" name="seller_address" value="{inv.get("seller_address", company.get("address", ""))}" placeholder="Seller Address">'),
     ("Seller Email", f'<input type="text" name="seller_email" value="{inv.get("seller_email", company.get("email", ""))}" placeholder="Seller Email">'),
@@ -425,7 +426,8 @@ function selectProduct(number){{
 function calculateTotal(){{
     const quantity = Number(document.getElementById("qty1").value || 0);
     const unitPrice = Number(document.getElementById("price1").value || 0);
-    document.getElementById("total").innerHTML = "Total: USD " + (quantity * unitPrice);
+    const currency = document.querySelector('input[name="currency"]').value.trim().toUpperCase() || "USD";
+    document.getElementById("total").textContent = "Total: " + currency + " " + (quantity * unitPrice);
 }}
 
 window.onload = function(){{
@@ -599,7 +601,7 @@ def invoice_list(request: Request, search: str = ""):
         invoice_no = str(inv.get("invoice_no", "") or "")
         rows.append([
             badge(invoice_no), html_lib.escape(str(inv.get("seller", "") or "")),
-            html_lib.escape(str(inv.get("buyer", "") or "")), item_names, f"USD {total:g}",
+            html_lib.escape(str(inv.get("buyer", "") or "")), item_names, f"{html_lib.escape(str(inv.get('currency') or 'USD').strip().upper() or 'USD')} {total:g}",
             button("PDF", f"/invoice-pdf/{invoice_no}", "secondary"),
             button("Send Email", f"/send-email/invoice/{invoice_no}", "secondary"),
             button("Created" if packing_exists else "Packing", packing_href, "secondary"),

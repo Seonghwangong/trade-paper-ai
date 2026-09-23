@@ -1,0 +1,15 @@
+const fs = require('fs'), vm = require('vm'), assert = require('assert');
+const source = fs.readFileSync(require('path').join(__dirname, '../app/static/invoice.html'),'utf8');
+const code = source.match(/<script>([\s\S]*?)<\/script>/)[1];
+const fields = Object.fromEntries(['currency','buyerCompanySelect','buyer','buyer_address','buyer_email','item1','hs1','origin1','unit1','qty1','price1','total'].map(k=>[k,{value:'',textContent:'',addEventListener:()=>{}}]));
+fields.item1.value='Sample Item'; fields.currency.value='USD'; fields.qty1.value='2'; fields.price1.value='25';
+const context = vm.createContext({document:{getElementById:id=>fields[id],dispatchEvent:()=>{}},window:{},Event:class{}});
+vm.runInContext(code,context);
+vm.runInContext('buyers=[{name:"Euro Buyer",default_currency:" eur "},{name:"No Default"}];',context);
+fields.buyerCompanySelect.value='0'; vm.runInContext('selectBuyerCompany()',context);
+assert.equal(fields.currency.value,'EUR'); assert.equal(fields.total.textContent,'Total: EUR 50');
+fields.currency.value='JPY';fields.buyerCompanySelect.value='1';vm.runInContext('selectBuyerCompany()',context);
+assert.equal(fields.currency.value,'JPY'); assert.equal(fields.total.textContent,'Total: JPY 50');
+fields.currency.value='<b>EUR</b>'; vm.runInContext('calculateTotal()',context);
+assert.equal(fields.total.textContent,'Total: <B>EUR</B> 50');
+console.log('Buyer default, preserve explicit currency, total update and text-only rendering passed.');
