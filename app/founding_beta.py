@@ -33,7 +33,7 @@ def founding_beta_page():
         for value in MONTHLY_DOCUMENT_OPTIONS
     )
     content = f"""
-<div class="intro"><p>Launched July 22, 2026 · Applications are open for our first customer cohort.</p><p>Apply in about 30 seconds. This form collects application details only and does not create an account.</p><p>Ready to try the product? <a href="/register?next=%2Fdemo">Create an account</a>, then <a href="/login?next=%2Fdemo">log in to try the demo</a>. The demo uses your account to save documents.</p></div>
+<div class="intro"><p>Launched July 22, 2026 · Applications are open for our first customer cohort.</p><p>Apply in about 30 seconds. This form collects application details only and does not create an account.</p><p>New here? <a href="/getting-started">Read the step-by-step guide</a> before creating your first document.</p><p>Ready to try the product? <a href="/register?next=%2Fdemo">Create an account</a>, then <a href="/login?next=%2Fdemo">log in to try the demo</a>. The demo uses your account to save documents.</p></div>
 <section class="card"><form method="post" action="/founding-beta" data-native-submit="true">
 <label for="company_name">Company Name <span class="required">*</span></label><input id="company_name" name="company_name" autocomplete="organization" required>
 <label for="contact_name">Contact Name <span class="required">*</span></label><input id="contact_name" name="contact_name" autocomplete="name" required>
@@ -92,6 +92,7 @@ def founding_beta_thank_you():
         '<li>Review the sample company, buyer, and product details before saving.</li>'
         '<li>Create an Invoice, then continue to a Packing List and review the PDFs.</li></ol>'
         '<p>The demo saves documents to your account when you press Save. Use sample data for your first walkthrough.</p>'
+        '<p><a href="/getting-started">Read the step-by-step guide</a> for the full workflow and free-plan limits.</p>'
         '<p>Need help? <a href="/contact">Contact us</a>.</p>'
         '<a class="back" href="/">Back to Trade Paper AI</a>',
     )
@@ -171,6 +172,7 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
         draft_body = (
             f"Hi {contact_name},\r\n\r\n"
             "Thank you for applying to the Trade Paper AI Founding Beta.\r\n\r\n"
+            "Read the step-by-step guide: https://www.tradepaper.ai/getting-started\r\n\r\n"
             "To try the workflow, create an account at https://www.tradepaper.ai/register?next=%2Fdemo, "
             "then sign in at https://www.tradepaper.ai/login?next=%2Fdemo. "
             "Your beta application does not create an account.\r\n\r\n"

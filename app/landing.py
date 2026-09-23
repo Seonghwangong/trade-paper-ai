@@ -177,7 +177,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
         </div>
         <img class="dashboard-screenshot" src="/static/trade-paper-demo-15s.gif" alt="15-second Trade Paper AI demo showing Buyer and Product selection, Export Wizard, Shipment Tracking, and Document Package">
       </div>
-      <div class="demo-caption"><span><strong>15-second product tour.</strong> See the connected export workflow at a glance.</span><a href="/register">Start Free to try the workflow →</a></div>
+      <div class="demo-caption"><span><strong>15-second product tour.</strong> See the connected export workflow at a glance.</span><span><a href="/getting-started">Read the step-by-step guide</a> · <a href="/register?next=%2Fdemo">Start Free to try the workflow →</a></span></div>
     </div>
   </section>
   <section class="section" aria-labelledby="features-title">
