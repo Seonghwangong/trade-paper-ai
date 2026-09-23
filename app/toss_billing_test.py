@@ -54,6 +54,7 @@ def _owner(request):
         raise HTTPException(401, "Login required")
     if user.get("role") == "Viewer":
         raise HTTPException(403, "Viewer role is read-only")
+    auth.require_admin(request)
     return owner
 
 

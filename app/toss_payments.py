@@ -134,10 +134,9 @@ def checkout_preparation(request: Request, plan: str = "Starter"):
     if plan != SUPPORTED_PAYMENT_PLAN:
         raise HTTPException(status_code=400, detail="Only Starter purchase preparation is available")
     spec = starter_order_spec()
-    readiness = toss_readiness()
-    body = f'''<section><p>Purchase preparation</p><h1>{_text(spec['order_name'])}</h1><dl><dt>Price</dt><dd>{_text(subscription.plan_price_label(spec['plan']))}</dd><dt>Currency</dt><dd>{_text(spec['currency'])}</dd><dt>Billing cycle</dt><dd>{_text(spec['billing_cycle'])}</dd></dl><p class="notice">Online checkout is not active. No payment order has been created and your current plan has not changed.</p><p>Payment configuration: <strong>{_text(readiness['configuration'])}</strong><br>Activation: <strong>{_text(readiness['activation'])}</strong></p><div class="actions"><a href="/founding-beta">Apply for Founding Beta</a><a class="secondary" href="/subscription">Back to My Subscription</a></div></section>'''
+    body = f'''<section><p>Purchase preparation</p><h1>{_text(spec['order_name'])}</h1><dl><dt>Price</dt><dd>{_text(subscription.plan_price_label(spec['plan']))}</dd><dt>Currency</dt><dd>{_text(spec['currency'])}</dd><dt>Billing cycle</dt><dd>{_text(spec['billing_cycle'])}</dd></dl><p class="notice">Online checkout is not active. No payment order has been created and your current plan has not changed.</p><div class="actions"><a href="/founding-beta">Apply for Founding Beta</a><a class="secondary" href="/subscription">Back to My Subscription</a></div></section>'''
     response = _page("Starter Purchase Preparation", body)
-    if toss_billing_test.enabled() and (request.scope.get("trade_paper_user") or {}).get("role") != "Viewer":
+    if toss_billing_test.enabled() and (request.scope.get("trade_paper_user") or {}).get("is_admin") and (request.scope.get("trade_paper_user") or {}).get("role") != "Viewer":
         section, state, secure = toss_billing_test.checkout_section(request)
         response = _page("Starter Purchase Preparation", body + section)
         response.set_cookie(toss_billing_test.COOKIE, state, max_age=toss_billing_test.TTL,

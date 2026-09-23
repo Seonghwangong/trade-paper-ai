@@ -69,7 +69,7 @@ def test_product_checkout_and_admin_readiness_do_not_activate_or_create_orders(t
         assert f'href="{path}"' in product
     checkout = toss_payments.checkout_preparation(_request()).body.decode()
     assert "No payment order has been created" in checkout
-    assert "Not Active" in checkout and not orders.exists()
+    assert "Payment configuration" not in checkout and not orders.exists()
     with pytest.raises(HTTPException) as error:
         toss_payments.checkout_preparation(_request(), "Professional")
     assert error.value.status_code == 400
@@ -127,7 +127,7 @@ def test_starter_purchase_preparation_browser(auth_server, browser_name, viewpor
             page.goto(f"{base_url}/subscription/checkout?plan=Starter")
             assert page.get_by_role("heading", name="Trade Paper AI Starter Monthly").is_visible()
             assert page.get_by_text("No payment order has been created", exact=False).is_visible()
-            assert page.get_by_text("Not Active", exact=True).is_visible()
+            assert page.get_by_text("Payment configuration", exact=False).count() == 0
             if viewport["width"] > 500:
                 page.goto(f"{base_url}/admin/payment-readiness")
                 assert page.get_by_role("heading", name="Payment Readiness").is_visible()

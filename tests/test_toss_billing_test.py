@@ -10,9 +10,9 @@ from starlette.requests import Request
 from app import toss_billing_test as billing, toss_payments
 
 
-def request(owner="account-a", state="", role="Owner"):
+def request(owner="account-a", state="", role="Owner", admin=True):
     return Request({"type": "http", "method": "GET", "path": "/subscription/billing-test/success", "headers": [(b"cookie", (billing.COOKIE + "=" + state).encode())],
-        "trade_paper_user": {"account_id": owner, "role": role}})
+        "trade_paper_user": {"account_id": owner, "role": role, "is_admin": admin}})
 
 
 @pytest.fixture
@@ -156,3 +156,19 @@ def test_expired_login_does_not_copy_authorization_into_login_url(monkeypatch):
     location=dict(messages[0]['headers'])[b'location'].decode()
     assert 'private' not in location and 'authKey' not in location
     assert location == '/login?next=%2Fsubscription%2Fcheckout%3Fplan%3DStarter'
+
+
+def test_non_admin_cannot_open_or_complete_test_registration(configured, monkeypatch):
+    page = toss_payments.checkout_preparation(request(admin=False))
+    assert "requestBillingAuth" not in page.body.decode()
+    assert "Payment configuration" not in page.body.decode()
+    assert "set-cookie" not in page.headers
+    with pytest.raises(HTTPException) as error:
+        billing.checkout_section(request(admin=False))
+    assert error.value.status_code == 403
+    state, customer = billing.new_state("account-a")
+    calls = []
+    monkeypatch.setattr(billing, "verify_registration", lambda *args: calls.append(args))
+    result = billing.billing_test_success(request(state=state, admin=False), state, customer, "test-auth")
+    assert result.status_code == 403
+    assert calls == []
