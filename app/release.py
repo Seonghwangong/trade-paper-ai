@@ -14,6 +14,7 @@ EXPECTED_ROUTE_COUNT = 272
 BUSINESS_PHONE = "010-7166-7770"
 
 RELEASE_NOTES = (
+    "Deployment-stable login sessions, protected Free-plan access, and clearer monthly-limit and contact guidance.",
     "Complete shipment-centered trade document workflow.",
     "Read-only Dashboard workflow, health, activity, and notification summaries.",
     "Safe JSON storage, validation, and referential delete protection.",
