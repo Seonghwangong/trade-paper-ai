@@ -503,3 +503,36 @@ def test_signup_destination_rejects_external_redirects(tmp_path, monkeypatch, de
     assert 'external.example' not in page
     result = auth.register("Demo Co", "new@example.com", "sample123", "sample123", next_path=destination)
     assert result.headers['location'] == '/login?registered=1&next=%2F'
+
+
+@pytest.mark.parametrize("signed_in", [False, True])
+def test_getting_started_remains_readable_before_company_setup(monkeypatch, signed_in):
+    import asyncio
+    from fastapi import FastAPI
+    from app.release_pages import router
+
+    user = {"account_id": "new-account", "role": "Owner"} if signed_in else None
+    monkeypatch.setattr(auth, "current_user", lambda request: user)
+    monkeypatch.setattr(auth, "company_setup_complete", lambda *args: False)
+    app = FastAPI()
+    app.include_router(router)
+    app.add_middleware(auth.AuthenticationMiddleware)
+
+    async def get(path):
+        messages = []
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+        async def send(message):
+            messages.append(message)
+        scope = dict(_request().scope, method="GET", path=path, raw_path=path.encode())
+        await app(scope, receive, send)
+        return messages
+
+    guide = asyncio.run(get("/getting-started"))
+    assert guide[0]["status"] == 200
+    assert b"Your first document workflow" in b"".join(m.get("body", b"") for m in guide)
+    demo = asyncio.run(get("/demo"))
+    assert demo[0]["status"] == 303
+    location = dict(demo[0]["headers"])[b"location"]
+    expected = b"/company?setup=1&next=%2Fdemo" if signed_in else b"/login?next=%2Fdemo"
+    assert location == expected

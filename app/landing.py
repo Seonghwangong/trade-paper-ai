@@ -127,6 +127,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
 @media(max-width:780px){
   .hero{min-height:540px;padding:72px 0 64px}
   .product-preview{padding-top:20px}
+  .demo-caption{flex-direction:column;align-items:flex-start}
   .product-preview{padding-bottom:90px}
   .features{grid-template-columns:1fr 1fr}.value-highlights{grid-template-columns:1fr}.showcase,.pricing{grid-template-columns:1fr}.security-list{grid-template-columns:1fr 1fr}
       .workflow{flex-direction:column}
