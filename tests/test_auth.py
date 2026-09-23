@@ -464,3 +464,42 @@ def test_production_application_import_requires_session_secret():
     )
     assert configured.returncode == 0, configured.stderr
     assert environment["TRADE_PAPER_SESSION_SECRET"] not in (configured.stdout + configured.stderr)
+
+
+def test_demo_destination_survives_signup_validation_and_login(tmp_path, monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+    monkeypatch.setattr(auth, "USERS_FILE", tmp_path / "users.json")
+    login_page = auth.login_page(next="/demo").body.decode()
+    assert 'href="/register?next=%2Fdemo"' in login_page
+    signup_page = auth.register_page(next="/demo").body.decode()
+    assert 'name="next" value="/demo"' in signup_page
+    assert 'href="/login?next=%2Fdemo"' in signup_page
+
+    for company, email, password, confirmation in (
+        ("", "new@example.com", "sample123", "sample123"),
+        ("Demo Co", "invalid", "sample123", "sample123"),
+        ("Demo Co", "new@example.com", "", ""),
+        ("Demo Co", "new@example.com", "sample123", "mismatch"),
+        ("Demo Co", "new@example.com", "short", "short"),
+    ):
+        failed = auth.register(company, email, password, confirmation, next_path="/demo")
+        assert failed.status_code == 400
+        assert 'name="next" value="/demo"' in failed.body.decode()
+    created = auth.register("Demo Co", "new@example.com", "sample123", "sample123", next_path="/demo")
+    assert parse_qs(urlsplit(created.headers['location']).query) == {'registered': ['1'], 'next': ['/demo']}
+    duplicate = auth.register("Demo Co", "new@example.com", "sample123", "sample123", next_path="/demo")
+    assert duplicate.status_code == 409
+    assert 'name="next" value="/demo"' in duplicate.body.decode()
+    logged_in = auth.login("new@example.com", "sample123", next_path="/demo", request=_request())
+    assert logged_in.status_code == 303
+    assert logged_in.headers['location'] == '/onboarding?next=%2Fdemo'
+
+
+@pytest.mark.parametrize('destination', ['https://external.example', '//external.example', '/\\external.example'])
+def test_signup_destination_rejects_external_redirects(tmp_path, monkeypatch, destination):
+    monkeypatch.setattr(auth, "USERS_FILE", tmp_path / "users.json")
+    page = auth.register_page(next=destination).body.decode()
+    assert 'name="next" value="/"' in page
+    assert 'external.example' not in page
+    result = auth.register("Demo Co", "new@example.com", "sample123", "sample123", next_path=destination)
+    assert result.headers['location'] == '/login?registered=1&next=%2F'
