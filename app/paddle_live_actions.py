@@ -1,6 +1,7 @@
-"""Server-only Live checkout and cancellation services; no public routes.
+"""Server-only Live checkout and cancellation services.
 
-Callers must authenticate/authorize the account and enforce CSRF before use.
+The default-off management adapter authorizes cancellation and enforces CSRF.
+Other callers must authenticate/authorize the account and enforce CSRF before use.
 Persistent reservations prohibit repeating ambiguous provider mutations. API
 responses never grant/revoke access: signed events remain authoritative.
 """

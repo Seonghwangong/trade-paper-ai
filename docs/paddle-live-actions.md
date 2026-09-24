@@ -1,11 +1,12 @@
 # Live checkout and cancellation service
 
-This is a server-only service layer, not a public checkout release. No new HTTP
-routes or purchase buttons exist, and production flags/credentials are unchanged.
-Do not enable sales yet. A future adapter must require the authenticated account
-owner, trusted origin and CSRF, and must never accept a price, account, transaction
-or subscription identifier from browser input. Map provider/storage errors to
-generic responses; do not expose exception bodies, provider payloads or secrets.
+This is a server service layer, not a public checkout release. The default-off
+management adapter now connects status/cancellation (paddle-live-management.md).
+Checkout is not exposed and production flags/credentials are unchanged. Do not
+enable sales yet. Any purchase adapter must require the authenticated owner,
+trusted origin and CSRF, and must never accept a price, account, transaction or
+subscription identifier from browser input. Errors must not expose provider
+payloads, credentials or private storage details.
 
 ## Provider boundary
 
@@ -20,7 +21,8 @@ no real API request or money movement was performed.
 LIVE_ACCESS switches, a separate Live signing secret, key and price. All variable
 names start with `TRADE_PAPER_PADDLE_`. The cancellation factory requires its own
 LIVE_CANCEL switch, Live API key and ledger price; disabling sales/access must
-not prevent canceling renewals. Neither factory is currently called by routes.
+not prevent canceling renewals. Only the cancellation factory is called by the
+management adapter. The checkout factory still has no route.
 
 ## Durable checkout intent
 
@@ -58,7 +60,7 @@ confirmed. A public adapter must surface unresolved requests as requiring help.
 
 ## Remaining release work
 
-Authenticated HTTP/UI adapter, explicit purchase terms, Live product/price amount
+Authenticated checkout HTTP/UI adapter, explicit purchase terms, Live product/price amount
 validation, private configuration, canonical entitlement reconciliation, recovery
 tools for ambiguous checkout operations, refund/chargeback policy, SQLite-consistent
 backup, monitoring and end-to-end launch verification remain required. Runtime

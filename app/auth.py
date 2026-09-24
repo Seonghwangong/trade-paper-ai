@@ -426,6 +426,7 @@ class AuthenticationMiddleware:
             scope["trade_paper_user"] = user
             setup_allowed = (
                 path in COMPANY_SETUP_PATHS
+                or path in {'/subscription/paddle', '/subscription/paddle/status', '/subscription/paddle/cancel'}
                 or path == "/static"
                 or path.startswith("/static/")
                 or request.method == "OPTIONS"

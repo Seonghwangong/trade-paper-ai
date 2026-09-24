@@ -157,6 +157,11 @@ def subscription_page(request: Request):
     if _managed_subscription(record):
         actions = '<a href="/contact">Contact billing support</a>'
         cancel = '<p class="muted">To change or cancel this subscription, contact billing support.</p>'
+        from app import paddle_live_manage
+        if (paddle_live_manage.enabled() and (request.scope.get('trade_paper_user') or {}).get('role') == 'Owner'
+                and paddle_live_runtime.is_managed(account_id)):
+            actions = '<a href="/subscription/paddle">Manage billing</a>'
+            cancel = '<p class="muted">View your billing status or request cancellation from Manage billing.</p>'
     invoice_rows = billing.account_invoice_history(account_id, BILLING_HISTORY_FILE)
     invoices = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("invoice_no"))}</td><td>{_text(billing.amount_label(item))}</td></tr>' for item in invoice_rows) or '<tr><td colspan="3">Payment integration is not active. Invoices will appear here after a payment provider is connected.</td></tr>'
     body = f'''<h1>My Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Documents this month: {summary['used']} / {limit}</p><div>{actions}{cancel}</div><p class="muted">{_text(PAID_PLAN_NOTICE)}</p></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Event</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table><h2>Invoice History</h2><table><thead><tr><th>Date</th><th>Invoice</th><th>Amount</th></tr></thead><tbody>{invoices}</tbody></table>'''
