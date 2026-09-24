@@ -7,6 +7,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import billing
+from app.paddle_subscription_policy import is_provider_managed, require_local_subscription
 from app.storage import data_path, load_json_strict, locked_json_mutation
 
 
@@ -137,6 +138,11 @@ def subscription_page(request: Request):
     limit = "Unlimited" if summary["limit"] is None else str(summary["limit"])
     actions = '' if summary["plan"] == "Free" else '<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="Free"><button type="submit">Downgrade to Free</button></form>'
     cancel = '<p class="muted">The Free plan has no recurring charge and does not need to be cancelled.</p>' if summary["plan"] == "Free" else '' if summary["status"] == "Cancelled" else '<form method="post" action="/subscription/cancel"><button class="danger" type="submit">Cancel Subscription</button></form>'
+    users = load_json_strict(USERS_FILE, [], list)
+    record = next((row for row in users if isinstance(row, dict) and row.get("account_id") == account_id), {})
+    if is_provider_managed(record):
+        actions = '<a href="/contact">Contact billing support</a>'
+        cancel = '<p class="muted">To change or cancel this subscription, contact billing support.</p>'
     invoice_rows = billing.account_invoice_history(account_id, BILLING_HISTORY_FILE)
     invoices = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("invoice_no"))}</td><td>{_text(billing.amount_label(item))}</td></tr>' for item in invoice_rows) or '<tr><td colspan="3">Payment integration is not active. Invoices will appear here after a payment provider is connected.</td></tr>'
     body = f'''<h1>My Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Documents this month: {summary['used']} / {limit}</p><div>{actions}{cancel}</div><p class="muted">{_text(PAID_PLAN_NOTICE)}</p></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Event</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table><h2>Invoice History</h2><table><thead><tr><th>Date</th><th>Invoice</th><th>Amount</th></tr></thead><tbody>{invoices}</tbody></table>'''
@@ -155,6 +161,7 @@ def change_plan(request: Request, plan: str = Form("")):
         record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
         if record is None:
             raise HTTPException(status_code=404, detail="Account not found")
+        require_local_subscription(record)
         record["plan"] = plan
         record["subscription_status"] = status
     locked_json_mutation(USERS_FILE, [], update, list)
@@ -172,6 +179,7 @@ def cancel_subscription(request: Request):
         record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
         if record is None:
             raise HTTPException(status_code=404, detail="Account not found")
+        require_local_subscription(record)
         if str(record.get("plan", "Free") or "Free") == "Free":
             raise HTTPException(status_code=409, detail="The Free plan has no recurring subscription to cancel.")
         record["subscription_status"] = "Cancelled"
@@ -202,6 +210,7 @@ def update_subscription_status(account_id: str, request: Request, status: str = 
         record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
         if record is None:
             raise HTTPException(status_code=404, detail="Account not found")
+        require_local_subscription(record)
         record["subscription_status"] = status
     locked_json_mutation(USERS_FILE, [], update, list)
     from app.audit_log import record_audit
