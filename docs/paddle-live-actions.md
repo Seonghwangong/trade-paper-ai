@@ -2,7 +2,8 @@
 
 This is a server service layer, not a public checkout release. The default-off
 management adapter now connects status/cancellation (paddle-live-management.md).
-Checkout is not exposed and production flags/credentials are unchanged. Do not
+An allowlisted checkout pilot now exists (paddle-live-checkout.md); production
+flags/credentials are unchanged. Do not
 enable sales yet. Any purchase adapter must require the authenticated owner,
 trusted origin and CSRF, and must never accept a price, account, transaction or
 subscription identifier from browser input. Errors must not expose provider
@@ -22,7 +23,7 @@ LIVE_ACCESS switches, a separate Live signing secret, key and price. All variabl
 names start with `TRADE_PAPER_PADDLE_`. The cancellation factory requires its own
 LIVE_CANCEL switch, Live API key and ledger price; disabling sales/access must
 not prevent canceling renewals. Only the cancellation factory is called by the
-management adapter. The checkout factory still has no route.
+management adapter; the checkout factory is used by the default-off pilot.
 
 ## Durable checkout intent
 
@@ -60,8 +61,7 @@ confirmed. A public adapter must surface unresolved requests as requiring help.
 
 ## Remaining release work
 
-Authenticated checkout HTTP/UI adapter, explicit purchase terms, Live product/price amount
-validation, private configuration, canonical entitlement reconciliation, recovery
+Private configuration, public sales rollout, canonical financial/entitlement reconciliation, recovery
 tools for ambiguous checkout operations, refund/chargeback policy, SQLite-consistent
 backup, monitoring and end-to-end launch verification remain required. Runtime
 ledgers must be backed up consistently before operational use; local JSON/source

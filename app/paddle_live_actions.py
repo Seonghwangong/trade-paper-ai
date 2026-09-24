@@ -22,6 +22,7 @@ from fastapi import HTTPException
 from app import paddle_live_runtime as runtime
 from app.paddle_live_store import BillingConflict, _account, _id
 from app.paddle_subscription_policy import _instant, evaluate_snapshot
+from app.paddle_live_offer import expected_offer, validate_price, validate_transaction_offer
 
 API = 'https://api.paddle.com'
 TTL = 900
@@ -64,7 +65,10 @@ class LiveClient:
     def create_checkout(self, price):
         _id(price, 'pri')
         return self._request('POST', '/transactions', {
-            'items': [{'price_id': price, 'quantity': 1}], 'collection_mode': 'automatic'})
+            'items': [{'price_id': price, 'quantity': 1}], 'collection_mode': 'automatic', 'currency_code': 'KRW'})
+
+    def price(self, price_id):
+        return self._request('GET', '/prices/' + _id(price_id, 'pri') + '?include=product')
 
     def transaction(self, transaction_id):
         return self._request('GET', '/transactions/' + _id(transaction_id, 'txn'))
@@ -121,6 +125,10 @@ class LiveActions:
         now = time.time() if now is None else now
         if not isinstance(now, (int, float)) or not math.isfinite(now) or now < 0:
             raise ValueError('Valid timestamp required')
+        offer = expected_offer(self.store.price_id)
+        # Read-only preflight before reserving a mutation; invalid catalog never
+        # creates a transaction or strands an otherwise unused account.
+        validate_price(self.client.price(self.store.price_id), offer)
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             if db.execute('SELECT 1 FROM bindings WHERE account_id=?', (account_id,)).fetchone():
@@ -140,8 +148,13 @@ class LiveActions:
                 db.execute("INSERT INTO live_operations VALUES (?, 'checkout', ?, NULL, NULL)",
                            (account_id, now))
         if previous:
-            return _transaction(self.client.transaction(previous[1]), self.store.price_id, previous[1])
-        txn = _transaction(self.client.create_checkout(self.store.price_id), self.store.price_id)
+            data = self.client.transaction(previous[1])
+            txn = _transaction(data, self.store.price_id, previous[1])
+            validate_transaction_offer(data, offer)
+            return txn
+        data = self.client.create_checkout(self.store.price_id)
+        txn = _transaction(data, self.store.price_id)
+        validate_transaction_offer(data, offer)
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             # Registration and response journal commit together, before exposing ID.

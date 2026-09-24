@@ -53,8 +53,8 @@ status edits even if access is disabled. Keep the price configuration and ledger
 available when turning off access: removing the ledger/configuration can prevent
 safe ownership decisions. Only a provider cancellation flow actually stops renewal.
 Support links remain available. The default-off owner management adapter now
-connects cancellation/status (paddle-live-management.md); the checkout service
-in paddle-live-actions.md still has no public route. Flags do not cancel charges.
+connects cancellation/status (paddle-live-management.md). An allowlisted checkout
+pilot is documented in paddle-live-checkout.md. Flags do not cancel charges.
 
 Both flags remain off in production. Do not enable access for customers before
 Live checkout, reconciliation, cancellation/portal, refunds, backup and operational

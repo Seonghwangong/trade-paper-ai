@@ -14,11 +14,27 @@ from app.paddle_live_store import BillingConflict, PaddleLiveStore
 from tests.test_paddle_live_store import store, bound, send, event, ledger, PRICE, TXN, SUB, NOW, snapshot
 
 KEY = 'pdl_live_apikey_synthetic_test_only'
+PRODUCT = 'pro_' + 'p'*26
+
+
+@pytest.fixture(autouse=True)
+def offer_config(monkeypatch):
+    monkeypatch.setenv('TRADE_PAPER_PADDLE_LIVE_PRODUCT_ID', PRODUCT)
+    monkeypatch.setenv('TRADE_PAPER_PADDLE_LIVE_TAX_MODE', 'internal')
+
+
+def price():
+    return {'id': PRICE, 'product_id': PRODUCT, 'status': 'active', 'type': 'standard',
+            'billing_cycle': {'interval': 'month', 'frequency': 1}, 'trial_period': None,
+            'unit_price': {'amount': '29000', 'currency_code': 'KRW'}, 'unit_price_overrides': [],
+            'tax_mode': 'internal', 'quantity': {'minimum': 1, 'maximum': 1},
+            'product': {'id': PRODUCT, 'status': 'active', 'type': 'standard'}}
 
 
 def transaction():
     return {'id': TXN, 'status': 'draft', 'collection_mode': 'automatic',
-            'items': [{'price': {'id': PRICE}, 'quantity': 1}]}
+            'items': [{'price': price(), 'quantity': 1}], 'currency_code': 'KRW',
+            'discount_id': None, 'subscription_id': None}
 
 
 class Client:
@@ -28,6 +44,10 @@ class Client:
         self.current = snapshot()
         self.checkout_data = transaction()
         self.create_error = self.cancel_error = None
+
+    def price(self, price_id):
+        assert price_id == PRICE
+        return price()
 
     def create_checkout(self, price):
         assert price == PRICE
@@ -312,7 +332,7 @@ def test_transport_fixed_live_host_payload_and_no_redirect(monkeypatch):
         actions.API + '/transactions/' + TXN, actions.API + '/subscriptions/' + SUB,
         actions.API + '/subscriptions/' + SUB + '/cancel']
     assert [r.get_method() for r, _ in seen] == ['POST', 'GET', 'GET', 'POST']
-    assert json.loads(seen[0][0].data) == {'items': [{'price_id': PRICE, 'quantity': 1}], 'collection_mode': 'automatic'}
+    assert json.loads(seen[0][0].data) == {'items': [{'price_id': PRICE, 'quantity': 1}], 'collection_mode': 'automatic', 'currency_code': 'KRW'}
     assert json.loads(seen[3][0].data) == {'effective_from': 'next_billing_period'}
     assert all(timeout == 15 and r.get_header('Authorization') == 'Bearer ' + KEY for r, timeout in seen)
     with pytest.raises(ValueError):

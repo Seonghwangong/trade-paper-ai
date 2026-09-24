@@ -42,9 +42,9 @@ def owner(request):
         raise HTTPException(403, 'Account unavailable.') from None
 
 
-def csrf_token(account):
+def csrf_token(account, purpose='cancel'):
     value = str(int(time.time())) + '.' + secrets.token_hex(16)
-    digest = hmac.new(auth._SESSION_SECRET, ('live-billing-cancel:' + account + ':' + value).encode(),
+    digest = hmac.new(auth._SESSION_SECRET, ('live-billing-' + purpose + ':' + account + ':' + value).encode(),
                       hashlib.sha256).hexdigest()
     return value + '.' + digest
 
@@ -59,22 +59,22 @@ def public_origin():
     return origin
 
 
-def validate_request(request, account):
+def validate_request(request, account, purpose='cancel', confirmation='cancel-at-period-end'):
     origin = public_origin()
     try:
         stamp, nonce, signature = request.headers.get('x-billing-csrf', '').split('.')
         if (request.headers.get('origin') != origin
                 or request.headers.get('sec-fetch-site') not in (None, 'same-origin')
-                or request.headers.get('x-billing-confirm') != 'cancel-at-period-end'
+                or request.headers.get('x-billing-confirm') != confirmation
                 or not 0 <= time.time() - int(stamp) <= TTL
                 or not re.fullmatch(r'[a-f0-9]{32}', nonce)):
             raise ValueError()
         expected = hmac.new(auth._SESSION_SECRET,
-            ('live-billing-cancel:' + account + ':' + stamp + '.' + nonce).encode(), hashlib.sha256).hexdigest()
+            ('live-billing-' + purpose + ':' + account + ':' + stamp + '.' + nonce).encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected):
             raise ValueError()
     except (ValueError, TypeError):
-        raise HTTPException(403, 'Reload this page and confirm your cancellation request.') from None
+        raise HTTPException(403, 'Reload this page and confirm your request.') from None
 
 
 def status_for(account, *, now=None):

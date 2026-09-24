@@ -6,9 +6,10 @@
 - GET `/subscription/paddle/status`: read-only subscription/cancellation summary.
 - POST `/subscription/paddle/cancel`: verified period-end cancellation request.
 
-The switch is unchanged/off in production. No checkout widget or new purchase
-endpoint was added. Live product/amount validation, sales UI, reconciliation,
-refund/chargeback handling and consistent SQLite backup remain release gates.
+The switch is unchanged/off in production. The separate allowlisted checkout
+pilot and catalog validation are documented in paddle-live-checkout.md. Public
+sales rollout, reconciliation, refund/chargeback handling and consistent SQLite
+backup remain release gates.
 
 Only an exact Owner role may read or mutate billing through these routes.
 Authentication middleware still requires a valid login; company setup is not a
