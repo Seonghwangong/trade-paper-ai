@@ -54,7 +54,7 @@ def test_paid_plan_change_is_blocked_without_writes_and_free_still_works(tmp_pat
     history = json.loads(billing.read_text(encoding="utf-8"))
     assert history == [{
         "account_id": "A", "created_at": history[0]["created_at"], "plan": "Free",
-        "status": "Active", "amount": 0, "event": "Plan Change",
+        "status": "Active", "amount": 0, "currency": "USD", "event": "Plan Change",
     }]
     audit = json.loads((tmp_path / "audit_log.json").read_text(encoding="utf-8"))
     assert audit[0]["action"] == "Change" and audit[0]["document_type"] == "Subscription"

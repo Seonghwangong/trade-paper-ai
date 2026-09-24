@@ -111,3 +111,55 @@ def test_billing_portal_browser_flow(auth_server, browser_name):
             assert page.get_by_role("heading", name="Invoice History").is_visible()
         finally:
             browser.close()
+
+
+def test_billing_currency_survives_storage_and_both_history_tables(tmp_path, monkeypatch):
+    _, history = _files(tmp_path, monkeypatch)
+    entry = billing.record_billing_event('A', 'Starter', 'Active', 'Invoice',
+                                        amount=29000, currency='krw', path=history)
+    assert entry['currency'] == 'KRW'
+    before = history.read_bytes()
+    page = subscription.subscription_page(_request()).body.decode()
+    assert page.count('KRW ₩29,000.00') == 2
+    assert '$29,000.00' not in page and '$29000.00' not in page
+    assert 'BILL-B' not in page
+    assert before == history.read_bytes()
+
+
+def test_billing_legacy_usd_and_other_currencies_remain_distinct():
+    assert billing.amount_label({'amount': 29}) == 'USD $29.00'
+    assert billing.amount_label({'amount': '12.34', 'currency': 'eur'}) == 'EUR 12.34'
+    assert billing.amount_label({'amount': 0, 'currency': ''}) == 'USD $0.00'
+    assert billing.amount_label({'amount': 5, 'currency': '<script>'}) == 'Amount unavailable'
+    assert billing.amount_label({'amount': 'NaN', 'currency': 'USD'}) == 'Amount unavailable'
+
+
+def test_admin_separates_currencies_and_does_not_call_event_totals_mrr(tmp_path, monkeypatch):
+    _, history = _files(tmp_path, monkeypatch)
+    for amount, currency in [(29000, 'KRW'), (29, 'USD'), (12.5, 'EUR')]:
+        billing.record_billing_event('A', 'Starter', 'Active', 'Invoice', amount=amount,
+                                    currency=currency, path=history)
+    page = subscription.subscription_admin(_request()).body.decode()
+    assert 'KRW ₩29,000.00' in page and 'USD $29.00' in page and 'EUR 12.50' in page
+    assert '<h2>MRR</h2>' not in page and '$29041.50' not in page
+    assert 'Not verified payment revenue or MRR.' in page
+
+
+def test_invalid_billing_currency_does_not_write(tmp_path):
+    path = tmp_path / 'billing.json'
+    path.write_text('[]')
+    with pytest.raises(ValueError):
+        billing.record_billing_event('A', 'Starter', 'Active', 'Invoice', amount=29000,
+                                    currency='<KRW>', path=path)
+    assert path.read_text() == '[]'
+
+
+def test_monthly_amounts_exclude_other_month_and_status_and_report_bad_data():
+    rows = [
+        {'created_at': '2026-09-01', 'status': 'Active', 'amount': '0.1', 'currency': 'USD'},
+        {'created_at': '2026-09-02', 'status': 'Active', 'amount': '0.2', 'currency': 'USD'},
+        {'created_at': '2026-08-01', 'status': 'Active', 'amount': 100, 'currency': 'USD'},
+        {'created_at': '2026-09-01', 'status': 'Cancelled', 'amount': 100, 'currency': 'USD'},
+        {'created_at': '2026-09-01', 'status': 'Active', 'amount': 'bad', 'currency': 'KRW'},
+    ]
+    assert billing.monthly_recorded_amounts(rows, '2026-09') == ['USD $0.30', 'Some amounts unavailable']

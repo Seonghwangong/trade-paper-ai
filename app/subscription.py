@@ -133,12 +133,12 @@ def subscription_page(request: Request):
     account_id = _account_id(request)
     summary = usage_summary(account_id)
     history = billing.account_billing_history(account_id, BILLING_HISTORY_FILE)
-    rows = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("event"))}</td><td>{_text(item.get("plan"))}</td><td>{_text(item.get("status"))}</td><td>${float(item.get("amount", 0) or 0):.2f}</td></tr>' for item in history) or '<tr><td colspan="5">No billing history.</td></tr>'
+    rows = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("event"))}</td><td>{_text(item.get("plan"))}</td><td>{_text(item.get("status"))}</td><td>{_text(billing.amount_label(item))}</td></tr>' for item in history) or '<tr><td colspan="5">No billing history.</td></tr>'
     limit = "Unlimited" if summary["limit"] is None else str(summary["limit"])
     actions = '' if summary["plan"] == "Free" else '<form method="post" action="/subscription/plan"><input type="hidden" name="plan" value="Free"><button type="submit">Downgrade to Free</button></form>'
     cancel = '<p class="muted">The Free plan has no recurring charge and does not need to be cancelled.</p>' if summary["plan"] == "Free" else '' if summary["status"] == "Cancelled" else '<form method="post" action="/subscription/cancel"><button class="danger" type="submit">Cancel Subscription</button></form>'
     invoice_rows = billing.account_invoice_history(account_id, BILLING_HISTORY_FILE)
-    invoices = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("invoice_no"))}</td><td>${float(item.get("amount", 0) or 0):.2f}</td></tr>' for item in invoice_rows) or '<tr><td colspan="3">Payment integration is not active. Invoices will appear here after a payment provider is connected.</td></tr>'
+    invoices = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("invoice_no"))}</td><td>{_text(billing.amount_label(item))}</td></tr>' for item in invoice_rows) or '<tr><td colspan="3">Payment integration is not active. Invoices will appear here after a payment provider is connected.</td></tr>'
     body = f'''<h1>My Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Documents this month: {summary['used']} / {limit}</p><div>{actions}{cancel}</div><p class="muted">{_text(PAID_PLAN_NOTICE)}</p></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Event</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table><h2>Invoice History</h2><table><thead><tr><th>Date</th><th>Invoice</th><th>Amount</th></tr></thead><tbody>{invoices}</tbody></table>'''
     return _page("My Subscription", body)
 
@@ -187,11 +187,10 @@ def subscription_admin(request: Request):
     _account_id(request)
     users = [item for item in load_json_strict(USERS_FILE, [], list) if isinstance(item, dict)]
     paid = sum(subscription_for_account(str(item.get("account_id", "")))["plan"] in {"Starter", "Professional"} and subscription_for_account(str(item.get("account_id", "")))["status"] == "Active" for item in users)
-    billing = load_json_strict(BILLING_HISTORY_FILE, [], list)
-    month = _month_key()
-    mrr = sum(float(item.get("amount", 0) or 0) for item in billing if isinstance(item, dict) and str(item.get("created_at", "")).startswith(month) and item.get("status") == "Active")
+    history = load_json_strict(BILLING_HISTORY_FILE, [], list)
+    recorded = "<br>".join(_text(value) for value in billing.monthly_recorded_amounts(history, _month_key()))
     rows = "".join(f'''<tr><td>{_text(item.get("company"))}</td><td>{_text(item.get("email"))}</td><td>{_text(subscription_for_account(str(item.get("account_id", "")))["plan"])}</td><td><form method="post" action="/admin/subscriptions/{_attr(item.get('account_id'))}/status"><select name="status">{''.join(f'<option value="{status}"{" selected" if status == subscription_for_account(str(item.get("account_id", "")))["status"] else ""}>{status}</option>' for status in SUBSCRIPTION_STATUSES)}</select><button>Save</button></form></td></tr>''' for item in users)
-    return _page("Subscription Admin", f'<h1>Subscription Admin</h1><section class="grid"><div class="card"><h2>Subscribers</h2><strong>{len(users)}</strong></div><div class="card"><h2>Paid Users</h2><strong>{paid}</strong></div><div class="card"><h2>MRR</h2><strong>${mrr:.2f}</strong></div></section><h2>Accounts</h2><table><thead><tr><th>Company</th><th>Email</th><th>Plan</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table>')
+    return _page("Subscription Admin", f'<h1>Subscription Admin</h1><section class="grid"><div class="card"><h2>Subscribers</h2><strong>{len(users)}</strong></div><div class="card"><h2>Paid Users</h2><strong>{paid}</strong></div><div class="card"><h2>Recorded amounts this month</h2><strong>{recorded}</strong><p class="muted">Active billing entries, grouped by currency. Not verified payment revenue or MRR.</p></div></section><h2>Accounts</h2><table><thead><tr><th>Company</th><th>Email</th><th>Plan</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table>')
 
 
 @router.post("/admin/subscriptions/{account_id}/status")
