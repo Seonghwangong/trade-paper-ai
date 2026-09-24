@@ -1,10 +1,11 @@
 # Paddle subscription access and local-change guard
 
 This is preparation for Live billing, not a completed Live payment integration.
-No real paid entitlements are granted by this change and no Paddle API is called.
+The default-off Live runtime now uses the evaluator for authoritative access reads.
+No production switches have been enabled and no Paddle API is called.
 
 `app/paddle_subscription_policy.py:evaluate_snapshot` is a pure function for a
-trusted, current Paddle subscription snapshot. Before calling it, the future
+trusted, current Paddle subscription snapshot. Before calling it, the
 adapter must authenticate webhook/API provenance, resolve ownership from a
 server-created checkout binding, and enforce event ordering/deduplication.
 Do not treat this function as a signature validator or pass browser success
@@ -27,12 +28,14 @@ records marked with a nonempty billing_provider or paddle_subscription_id with
 409, before changing users, billing history or audit records. The subscription
 page directs those accounts to billing support until the authenticated provider
 portal/cancellation flow is implemented. Unmarked legacy/free accounts retain
-existing behavior. These markers are server-managed; the future Live adapter
-must set them atomically with ownership and entitlements. Do not use local
+existing behavior. Server-managed markers are honored for legacy safety; current Live ownership is
+read from the ledger itself, including checkout reservations, so JSON markers are
+not required for local-change protection. Do not use local
 administrative status changes as a replacement for stopping provider renewal.
 
-Remaining: durable Live ownership and event ledger, reconciliation, actual access
-projection, provider cancellation/customer portal, refund handling, private Live
+Implemented separately: durable Live ledger, signed HTTP adapter, opt-in access
+projection. Remaining: reconciliation, provider cancellation/customer portal,
+refund handling, private Live
 configuration and full end-to-end verification. Sandbox remains isolated.
 
 Reference: https://developer.paddle.com/api-reference/subscriptions/cancel-subscription/

@@ -1,6 +1,6 @@
 """Side-effect-free policy for authenticated, server-bound Paddle snapshots.
 
-The snapshot evaluator is not wired to production entitlement writes. Its caller
+The opt-in Live runtime derives access without production entitlement writes. Its caller
 must verify signatures/API provenance, ownership and event ordering BEFORE using
 it. Browser checkout events/custom_data must never be passed as trusted state.
 """
@@ -35,7 +35,7 @@ def evaluate_snapshot(data, *, subscription_id, customer_id, price_id, now):
     """One monthly Starter item, without a paid-plan trial or past-due grace.
 
     IDs must come from a trusted server checkout binding, not request parameters.
-    Expired snapshots cannot extend access; the future integration must reconcile
+    Expired snapshots cannot extend access; the integration must reconcile
     against Paddle before renewing the local access period.
     """
     for prefix, value in (("sub", subscription_id), ("ctm", customer_id), ("pri", price_id)):

@@ -6,7 +6,7 @@ import html
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app import billing
+from app import billing, paddle_live_runtime
 from app.paddle_subscription_policy import is_provider_managed, require_local_subscription
 from app.storage import data_path, load_json_strict, locked_json_mutation
 
@@ -57,9 +57,13 @@ def _account_id(request: Request):
     return account_id
 
 
-def subscription_for_account(account_id, users_file=None):
+def subscription_for_account(account_id, users_file=None, *, now=None):
     users = load_json_strict(users_file or USERS_FILE, [], list)
     record = next((item for item in users if isinstance(item, dict) and str(item.get("account_id", "") or "") == account_id), {})
+    if record:
+        override = paddle_live_runtime.subscription_override(account_id, record, now=now)
+        if override is not None:
+            return override
     plan = str(record.get("plan", "Free") or "Free")
     if plan not in PLANS:
         plan = "Free"
@@ -67,6 +71,16 @@ def subscription_for_account(account_id, users_file=None):
     if status not in SUBSCRIPTION_STATUSES:
         status = "Trial"
     return {"plan": plan, "status": status}
+
+
+def _managed_subscription(record):
+    return is_provider_managed(record) or paddle_live_runtime.is_managed(str(record.get("account_id", "")))
+
+
+def _require_local_subscription(record):
+    require_local_subscription(record)
+    if paddle_live_runtime.is_managed(str(record.get("account_id", ""))):
+        raise HTTPException(409, "Contact billing support to change or cancel this subscription.")
 
 
 def _month_key(now=None):
@@ -83,7 +97,7 @@ def monthly_usage(account_id, now=None, usage_file=None):
 
 
 def usage_summary(account_id, now=None):
-    subscription = subscription_for_account(account_id)
+    subscription = subscription_for_account(account_id, now=now)
     used = monthly_usage(account_id, now)
     limit = PLANS[subscription["plan"]]["monthly_document_limit"]
     allowed = subscription["status"] in {"Trial", "Active"} and (limit is None or used < limit)
@@ -140,7 +154,7 @@ def subscription_page(request: Request):
     cancel = '<p class="muted">The Free plan has no recurring charge and does not need to be cancelled.</p>' if summary["plan"] == "Free" else '' if summary["status"] == "Cancelled" else '<form method="post" action="/subscription/cancel"><button class="danger" type="submit">Cancel Subscription</button></form>'
     users = load_json_strict(USERS_FILE, [], list)
     record = next((row for row in users if isinstance(row, dict) and row.get("account_id") == account_id), {})
-    if is_provider_managed(record):
+    if _managed_subscription(record):
         actions = '<a href="/contact">Contact billing support</a>'
         cancel = '<p class="muted">To change or cancel this subscription, contact billing support.</p>'
     invoice_rows = billing.account_invoice_history(account_id, BILLING_HISTORY_FILE)
@@ -161,7 +175,7 @@ def change_plan(request: Request, plan: str = Form("")):
         record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
         if record is None:
             raise HTTPException(status_code=404, detail="Account not found")
-        require_local_subscription(record)
+        _require_local_subscription(record)
         record["plan"] = plan
         record["subscription_status"] = status
     locked_json_mutation(USERS_FILE, [], update, list)
@@ -179,7 +193,7 @@ def cancel_subscription(request: Request):
         record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
         if record is None:
             raise HTTPException(status_code=404, detail="Account not found")
-        require_local_subscription(record)
+        _require_local_subscription(record)
         if str(record.get("plan", "Free") or "Free") == "Free":
             raise HTTPException(status_code=409, detail="The Free plan has no recurring subscription to cancel.")
         record["subscription_status"] = "Cancelled"
@@ -210,7 +224,7 @@ def update_subscription_status(account_id: str, request: Request, status: str = 
         record = next((item for item in users if isinstance(item, dict) and item.get("account_id") == account_id), None)
         if record is None:
             raise HTTPException(status_code=404, detail="Account not found")
-        require_local_subscription(record)
+        _require_local_subscription(record)
         record["subscription_status"] = status
     locked_json_mutation(USERS_FILE, [], update, list)
     from app.audit_log import record_audit

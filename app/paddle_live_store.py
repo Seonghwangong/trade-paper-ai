@@ -1,8 +1,8 @@
-"""Isolated Live billing ledger, not registered with the production application.
+"""Live billing ledger used by the default-off signed webhook adapter.
 
 Only server-created checkout IDs may be registered. Signed transaction completion
 establishes ownership; signed subscription snapshots determine access. No method
-writes users.json, makes API requests, or grants application entitlements.
+writes users.json or makes API requests. The opt-in runtime reads access decisions.
 """
 from __future__ import annotations
 
@@ -45,11 +45,18 @@ def _json(value):
 
 
 class PaddleLiveStore:
-    def __init__(self, path, *, price_id, environment):
+    def __init__(self, path, *, price_id, environment, read_only=False):
         if environment != "live":
             raise ValueError("Explicit live environment required")
         self.price_id = _id(price_id, "pri")
         self.path = Path(path)
+        self.read_only = read_only
+        if read_only:
+            with self.connect() as db:
+                meta = dict(db.execute("SELECT key, value FROM paddle_live_meta"))
+                if meta != {"schema": "1", "environment": "live", "price_id": self.price_id}:
+                    raise ValueError("Live database configuration mismatch")
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -77,7 +84,8 @@ class PaddleLiveStore:
 
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(str(self.path), timeout=10)
+        target = self.path.resolve().as_uri() + "?mode=ro" if self.read_only else str(self.path)
+        db = sqlite3.connect(target, timeout=2, uri=self.read_only)
         try:
             with db:
                 yield db
@@ -108,7 +116,7 @@ class PaddleLiveStore:
     def apply_signed_event(self, raw, signature, *, secret, now=None):
         """Authenticate raw bytes before touching the ledger.
 
-        The future HTTP adapter must bound the streamed body and supply only the
+        The HTTP adapter must bound the streamed body and supply only the
         private LIVE destination secret. Secrets do not encode their environment.
         A signed sandbox event must never be delivered with this Live secret.
         """
@@ -205,15 +213,23 @@ class PaddleLiveStore:
         db.execute("INSERT OR REPLACE INTO snapshots VALUES (?, ?, ?)", (sub, when, value))
         return "applied"
 
-    def access_for_account(self, account_id, *, now=None):
-        """Read current decision from this account's bound snapshot; no JSON writes."""
+    def account_state(self, account_id, *, now=None):
+        """Return reservation and decision in one consistent read; no user JSON writes."""
         _account(account_id)
         now = datetime.now(timezone.utc) if now is None else now
         with self.connect() as db:
-            row = db.execute("SELECT b.subscription_id, b.customer_id, s.snapshot FROM bindings b "
-                             "JOIN snapshots s ON s.subscription_id=b.subscription_id WHERE b.account_id=?",
-                             (account_id,)).fetchone()
+            row = db.execute("SELECT b.subscription_id, b.customer_id, s.snapshot FROM checkouts c "
+                             "LEFT JOIN bindings b ON b.transaction_id=c.transaction_id "
+                             "LEFT JOIN snapshots s ON s.subscription_id=b.subscription_id "
+                             "WHERE c.account_id=?", (account_id,)).fetchone()
         if row is None:
-            return None
-        return evaluate_snapshot(json.loads(row[2]), subscription_id=row[0], customer_id=row[1],
-                                 price_id=self.price_id, now=now)
+            return False, None
+        if row[2] is None:
+            return True, None
+        decision = evaluate_snapshot(json.loads(row[2]), subscription_id=row[0], customer_id=row[1],
+                                     price_id=self.price_id, now=now)
+        return True, decision
+
+    def access_for_account(self, account_id, *, now=None):
+        """Read current decision from this account's bound snapshot; no JSON writes."""
+        return self.account_state(account_id, now=now)[1]

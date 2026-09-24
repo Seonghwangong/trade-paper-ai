@@ -1,8 +1,10 @@
 # Isolated Paddle Live ledger
 
 `PaddleLiveStore` is a tested storage foundation, not an active payment flow.
-It has no registered HTTP route, environment loader, production singleton, user
+The default-off `/webhooks/paddle-live` adapter now uses this ledger. The opt-in
+runtime derives account access using read-only SQLite connections. It has no user
 JSON writer or outgoing Paddle API call. Importing it creates no database.
+See paddle-live-runtime.md for configuration and response behavior.
 
 Construct it explicitly with a separate path, environment="live" and the trusted
 Live monthly Starter price ID. Metadata pins schema/environment/price. An existing
@@ -24,7 +26,7 @@ the current local JSON recovery export does not include it.
    alone never grants access. Unknown transaction IDs do not consume the event.
 4. Supported subscription events require the matching trusted binding and the
    existing strict monthly Starter policy. An early unbound event conflicts and
-   remains retryable. The future HTTP adapter must return a retryable error.
+   remains retryable. The HTTP adapter returns a retryable 409.
 5. Deduplication by event_id, binding/snapshot updates and event registration are
    inside a single BEGIN IMMEDIATE transaction. Duplicate notifications cannot
    apply twice. Older occurred_at timestamps cannot replace current snapshots.
@@ -36,12 +38,11 @@ the current local JSON recovery export does not include it.
 
 Errors: malformed data/configuration raises ValueError; unauthenticated or expired
 signatures raise HTTPException(401) from the existing verifier; BillingConflict
-requires retry/reconciliation. The future public adapter must map errors without
+requires retry/reconciliation. The public adapter maps errors without
 exposing raw payloads or secrets. Unhandled DB failures must be retried, not acked.
 
-Remaining before launch: Live checkout reservations/API client, bounded HTTP
-adapter with correct credentials, canonical reconciliation, authoritative account
-access projection and provider markers, provider cancellation/portal, refunds and
+Remaining before launch: Live checkout reservations/API client, private Live
+configuration, canonical reconciliation, provider cancellation/portal, refunds and
 chargebacks, durable backup/restore, monitoring and end-to-end verification. Existing
 sandbox and application accounts are unchanged. Do not point a Live notification
 destination at the sandbox route or treat this module as a completed integration.

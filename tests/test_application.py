@@ -10,12 +10,12 @@ from starlette.requests import Request
 from tests.helpers import normalize_html, route_snapshot_digest
 
 
-EXPECTED_ROUTE_DIGEST = "9341df8cd125fbb6f25f5dc5d4658b12e43feaa2e6c094de86776d6e825228c5"
+EXPECTED_ROUTE_DIGEST = "b71a0ccd14bf09cbaefcf716049e7691c2785027fb36c04d8146cf65f81a51c1"
 
 
 def test_application_import_and_route_order():
     assert main.app is not None
-    assert len(main.app.routes) == main.EXPECTED_ROUTE_COUNT == 272
+    assert len(main.app.routes) == main.EXPECTED_ROUTE_COUNT == 273
     assert route_snapshot_digest(main.app) == EXPECTED_ROUTE_DIGEST
 
 

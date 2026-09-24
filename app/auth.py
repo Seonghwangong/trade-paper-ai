@@ -404,7 +404,7 @@ class AuthenticationMiddleware:
         path = request.url.path
         is_public = path in PUBLIC_PATHS or path == "/static" or path.startswith("/static/") or request.method == "OPTIONS"
         # Provider webhooks use their own signature authentication, not browser sessions.
-        if path == "/webhooks/paddle-sandbox" and request.method == "POST":
+        if path in {"/webhooks/paddle-sandbox", "/webhooks/paddle-live"} and request.method == "POST":
             await self.app(scope, receive, send)
             return
         user = current_user(request)
@@ -448,7 +448,13 @@ class AuthenticationMiddleware:
         if user is not None:
             from app import subscription
             if subscription.is_document_creation(request):
-                summary = subscription.usage_summary(user["account_id"])
+                from app.paddle_live_runtime import LiveBillingUnavailable
+                try:
+                    summary = subscription.usage_summary(user["account_id"])
+                except LiveBillingUnavailable:
+                    response = HTMLResponse("Billing status is temporarily unavailable. Please try again later.", status_code=503)
+                    await response(scope, receive, send)
+                    return
                 if not summary["allowed"]:
                     response = subscription.usage_limit_response(summary)
                     await response(scope, receive, send)
