@@ -52,7 +52,9 @@ Existing Live reservations remain protected against local cancel/downgrade/admin
 status edits even if access is disabled. Keep the price configuration and ledger
 available when turning off access: removing the ledger/configuration can prevent
 safe ownership decisions. Only a provider cancellation flow actually stops renewal.
-Support links remain until that flow is implemented. Flags do not cancel charges.
+Support links remain until the public cancellation flow is implemented. The
+server-only checkout/cancel services are described in paddle-live-actions.md;
+they have no public routes yet. Flags do not cancel charges.
 
 Both flags remain off in production. Do not enable access for customers before
 Live checkout, reconciliation, cancellation/portal, refunds, backup and operational

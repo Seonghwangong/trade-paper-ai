@@ -81,6 +81,12 @@ class PaddleLiveStore:
             db.execute("""CREATE TABLE IF NOT EXISTS snapshots (
                 subscription_id TEXT PRIMARY KEY, occurred_at TEXT NOT NULL,
                 snapshot TEXT NOT NULL)""")
+            # Additive schema-1 extension. Old ledgers remain readable before
+            # their first writable open migrates this table.
+            db.execute("""CREATE TABLE IF NOT EXISTS live_operations (
+                account_id TEXT NOT NULL, kind TEXT NOT NULL,
+                started REAL NOT NULL, target_id TEXT,
+                result TEXT, PRIMARY KEY (account_id, kind))""")
 
     @contextmanager
     def connect(self):
@@ -218,12 +224,17 @@ class PaddleLiveStore:
         _account(account_id)
         now = datetime.now(timezone.utc) if now is None else now
         with self.connect() as db:
+            db.execute("BEGIN")
             row = db.execute("SELECT b.subscription_id, b.customer_id, s.snapshot FROM checkouts c "
                              "LEFT JOIN bindings b ON b.transaction_id=c.transaction_id "
                              "LEFT JOIN snapshots s ON s.subscription_id=b.subscription_id "
                              "WHERE c.account_id=?", (account_id,)).fetchone()
-        if row is None:
-            return False, None
+            if row is None:
+                extended = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                      "AND name='live_operations'").fetchone()
+                pending = extended and db.execute("SELECT 1 FROM live_operations "
+                    "WHERE account_id=? AND kind='checkout'", (account_id,)).fetchone()
+                return bool(pending), None
         if row[2] is None:
             return True, None
         decision = evaluate_snapshot(json.loads(row[2]), subscription_id=row[0], customer_id=row[1],
