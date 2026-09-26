@@ -23,8 +23,9 @@ def process(raw, signature, secret):
     now = time.time()
     # Reject unsigned traffic before even opening/creating the Live database.
     verify(raw, signature, secret, now)
+    offer = runtime.offer()
     ledger = runtime.store()
-    return ledger.apply_signed_event(raw, signature, secret=secret, now=now)
+    return ledger.apply_signed_event(raw, signature, secret=secret, offer=offer, now=now)
 
 
 @router.post(WEBHOOK_PATH)

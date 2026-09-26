@@ -119,7 +119,7 @@ class PaddleLiveStore:
             db.execute("INSERT INTO checkouts VALUES (?, ?, ?)", expected)
         return "registered"
 
-    def apply_signed_event(self, raw, signature, *, secret, now=None):
+    def apply_signed_event(self, raw, signature, *, secret, offer=None, now=None):
         """Authenticate raw bytes before touching the ledger.
 
         The HTTP adapter must bound the streamed body and supply only the
@@ -148,7 +148,7 @@ class PaddleLiveStore:
             if db.execute("SELECT 1 FROM events WHERE event_id=?", (event_id,)).fetchone():
                 return "duplicate"
             if kind == "transaction.completed":
-                result = self._bind_completed(db, event.get("data"))
+                result = self._bind_completed(db, event.get("data"), offer)
             elif kind in SUBSCRIPTION_EVENTS:
                 result = self._save_snapshot(db, event.get("data"), when, occurred)
             else:
@@ -159,18 +159,19 @@ class PaddleLiveStore:
             db.execute("INSERT INTO events VALUES (?, ?, ?, ?)", (event_id, digest, when, result))
             return result
 
-    def _bind_completed(self, db, data):
+    def _bind_completed(self, db, data, offer):
+        if offer is None or offer.price_id != self.price_id:
+            raise ValueError("Live offer contract required")
+        # Imported lazily to keep identifier validation shared without a module cycle.
+        from app.paddle_live_offer import validate_completed_transaction
+        validate_completed_transaction(data, offer)
         try:
             txn = _id(data["id"], "txn")
             row = db.execute("SELECT account_id, price_id FROM checkouts WHERE transaction_id=?", (txn,)).fetchone()
             if not row:
                 return "unregistered"
             sub, customer = _id(data["subscription_id"], "sub"), _id(data["customer_id"], "ctm")
-            items = data["items"]
-            if (data["status"] != "completed" or data["collection_mode"] != "automatic"
-                    or not isinstance(items, list) or len(items) != 1
-                    or items[0]["price"]["id"] != self.price_id or row[1] != self.price_id
-                    or type(items[0]["quantity"]) is not int or items[0]["quantity"] != 1):
+            if row[1] != self.price_id:
                 raise ValueError("Unexpected completed transaction")
         except (KeyError, TypeError, IndexError):
             raise ValueError("Invalid completed transaction") from None

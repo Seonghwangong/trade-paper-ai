@@ -6,6 +6,7 @@ import sqlite3
 from fastapi import HTTPException
 
 from app.paddle_live_store import PaddleLiveStore
+from app.paddle_live_offer import expected_offer
 from app.storage import data_path
 
 
@@ -27,6 +28,13 @@ def store(*, read_only=False):
         return PaddleLiveStore(data_path('paddle_live.sqlite3'), price_id=price_id(),
                                environment='live', read_only=read_only)
     except (OSError, sqlite3.Error, ValueError):
+        raise LiveBillingUnavailable() from None
+
+
+def offer():
+    try:
+        return expected_offer(price_id())
+    except ValueError:
         raise LiveBillingUnavailable() from None
 
 

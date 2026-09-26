@@ -10,10 +10,13 @@ import pytest
 from fastapi import HTTPException
 
 from app.paddle_live_store import BillingConflict, PaddleLiveStore
+from app.paddle_live_offer import Offer, validate_completed_transaction
 from app.paddle_sandbox_core import SandboxStore
 from tests.test_paddle_subscription_policy import snapshot, SUB, CUSTOMER, PRICE, NOW
 
 TXN = 'txn_' + 'd' * 26
+PRODUCT = 'pro_' + 'p' * 26
+OFFER = Offer(PRICE, PRODUCT, 'internal')
 SECRET = 'synthetic-live-destination-secret'
 CLOCK = int(NOW.timestamp())
 
@@ -25,9 +28,25 @@ def event(n=1, kind='subscription.updated', data=None, day=24):
 
 
 def completion(n=1, **changes):
+    price = {'id': PRICE, 'product_id': PRODUCT, 'status': 'active', 'type': 'standard',
+             'billing_cycle': {'interval': 'month', 'frequency': 1}, 'trial_period': None,
+             'unit_price': {'amount': '29000', 'currency_code': 'KRW'},
+             'unit_price_overrides': [], 'tax_mode': 'internal',
+             'quantity': {'minimum': 1, 'maximum': 1}}
+    money = {'subtotal': '29000', 'discount': '0', 'tax': '2900', 'total': '29000'}
+    totals = {**money, 'credit': '0', 'credit_to_balance': '0', 'balance': '0',
+              'grand_total': '29000', 'grand_total_tax': '2900', 'currency_code': 'KRW'}
     data = {'id': TXN, 'subscription_id': SUB, 'customer_id': CUSTOMER,
             'status': 'completed', 'collection_mode': 'automatic',
-            'items': [{'price': {'id': PRICE}, 'quantity': 1}]}
+            'currency_code': 'KRW', 'discount_id': None,
+            'items': [{'price': price, 'quantity': 1, 'proration': None}],
+            'details': {'totals': totals, 'line_items': [{
+                'price_id': PRICE, 'quantity': 1, 'proration': None,
+                'product': {'id': PRODUCT, 'type': 'standard', 'status': 'active'},
+                'totals': money, 'unit_totals': money}],
+                'adjusted_totals': {key: totals[key] for key in (
+                    'subtotal', 'tax', 'total', 'grand_total', 'grand_total_tax', 'currency_code')}},
+            'payments': [{'status': 'captured', 'amount': '29000'}]}
     data.update(changes)
     return event(n, 'transaction.completed', data)
 
@@ -40,7 +59,7 @@ def signed(payload, secret=SECRET):
 
 def send(store, payload):
     raw, sig = signed(payload)
-    return store.apply_signed_event(raw, sig, secret=SECRET, now=CLOCK)
+    return store.apply_signed_event(raw, sig, secret=SECRET, offer=OFFER, now=CLOCK)
 
 
 @pytest.fixture
@@ -185,6 +204,45 @@ def test_invalid_completions_cannot_create_binding(store, patch):
     with pytest.raises(ValueError):
         send(store, completion(**patch))
     assert ledger(store) == before
+
+
+@pytest.mark.parametrize(('path', 'value'), [
+    (('currency_code',), 'USD'),
+    (('discount_id',), 'dsc_' + 'x' * 26),
+    (('items', 0, 'price', 'product_id'), 'pro_' + 'x' * 26),
+    (('details', 'totals', 'subtotal'), '1'),
+    (('details', 'totals', 'credit'), '1'),
+    (('details', 'totals', 'total'), '31900'),
+    (('details', 'adjusted_totals', 'total'), '1'),
+    (('details', 'line_items', 0, 'price_id'), 'pri_' + 'x' * 26),
+    (('details', 'line_items', 0, 'totals', 'discount'), '1'),
+    (('payments', 0, 'amount'), '1'),
+])
+def test_changed_financial_terms_never_bind_or_consume_event(store, path, value):
+    store.register_checkout(TXN, 'account-A')
+    payload = completion()
+    target = payload['data']
+    for part in path[:-1]:
+        target = target[part]
+    target[path[-1]] = value
+    before = ledger(store)
+    with pytest.raises(ValueError):
+        send(store, payload)
+    assert ledger(store) == before
+    assert send(store, completion()) == 'bound'
+
+
+def test_explicit_external_tax_offer_accepts_exact_tax_added_total():
+    data = completion()['data']
+    data['items'][0]['price']['tax_mode'] = 'external'
+    for totals in (data['details']['totals'], data['details']['adjusted_totals'],
+                   data['details']['line_items'][0]['totals'],
+                   data['details']['line_items'][0]['unit_totals']):
+        totals['total'] = '31900'
+    data['details']['totals']['grand_total'] = '31900'
+    data['details']['adjusted_totals']['grand_total'] = '31900'
+    data['payments'][0]['amount'] = '31900'
+    validate_completed_transaction(data, Offer(PRICE, PRODUCT, 'external'))
 
 
 def test_unsigned_tampered_expired_or_simulated_events_have_no_effect(store):

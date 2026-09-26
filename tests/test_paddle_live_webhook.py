@@ -14,7 +14,7 @@ from app import paddle_live_runtime as runtime
 from app import paddle_live_webhook as adapter
 from app.paddle_sandbox_core import MAX_BODY
 from tests.test_paddle_sandbox import TestClient
-from tests.test_paddle_live_store import completion, event, SECRET, PRICE, TXN, snapshot, NOW
+from tests.test_paddle_live_store import completion, event, SECRET, PRICE, PRODUCT, TXN, snapshot, NOW
 from tests.test_subscription import _files, _request
 
 
@@ -24,6 +24,8 @@ def live(tmp_path, monkeypatch):
     monkeypatch.setenv('TRADE_PAPER_PADDLE_LIVE_PRICE_ID', PRICE)
     monkeypatch.setenv('TRADE_PAPER_PADDLE_LIVE_WEBHOOK_SECRET', SECRET)
     monkeypatch.setenv('TRADE_PAPER_PADDLE_LIVE_WEBHOOK', '1')
+    monkeypatch.setenv('TRADE_PAPER_PADDLE_LIVE_PRODUCT_ID', PRODUCT)
+    monkeypatch.setenv('TRADE_PAPER_PADDLE_LIVE_TAX_MODE', 'internal')
     monkeypatch.delenv('TRADE_PAPER_PADDLE_LIVE_ACCESS', raising=False)
     monkeypatch.delenv('TRADE_PAPER_PADDLE_SANDBOX_PRICE_ID', raising=False)
     monkeypatch.delenv('TRADE_PAPER_PADDLE_SANDBOX_WEBHOOK_SECRET', raising=False)
@@ -52,6 +54,13 @@ def test_default_off_and_missing_configuration_do_not_create_database(live, monk
     monkeypatch.setenv('TRADE_PAPER_PADDLE_LIVE_WEBHOOK', '1')
     monkeypatch.delenv('TRADE_PAPER_PADDLE_LIVE_WEBHOOK_SECRET')
     assert client.post(adapter.WEBHOOK_PATH, content=b'{}').status_code == 503
+    assert not (path / 'paddle_live.sqlite3').exists()
+
+
+def test_missing_offer_contract_is_unavailable_before_database_open(live, monkeypatch):
+    client, path = live
+    monkeypatch.delenv('TRADE_PAPER_PADDLE_LIVE_PRODUCT_ID')
+    assert post(client, completion()).status_code == 503
     assert not (path / 'paddle_live.sqlite3').exists()
 
 
