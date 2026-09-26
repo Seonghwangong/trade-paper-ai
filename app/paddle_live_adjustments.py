@@ -78,6 +78,10 @@ def apply(db, data, event_id, when):
                          'WHERE transaction_id=?', (txn,)).fetchone()
     if renewal and renewal != (sub, customer, binding[0]):
         raise BillingConflict('Adjustment renewal ownership conflict')
+    card = db.execute('SELECT subscription_id, customer_id, account_id FROM live_payment_methods '
+                      'WHERE transaction_id=?', (txn,)).fetchone()
+    if card and card != (sub, customer, binding[0]):
+        raise BillingConflict('Adjustment card-update ownership conflict')
     identities = db.execute('SELECT DISTINCT subscription_id, customer_id, transaction_id, action '
                             'FROM live_adjustment_events WHERE adjustment_id=?', (adj,)).fetchall()
     if identities and identities != [(sub, customer, txn, action)]:

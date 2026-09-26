@@ -56,11 +56,10 @@ Use `no-store` and `no-referrer` throughout.
 - Actual Paddle.js and hosted checkout still need controlled provider QA. Local
   browser QA uses a synthetic widget; no real transaction/charge/card update was
   performed.
-- The existing signed transaction handler treats completions as paid purchases
-  or paid recurring renewals. A **zero-amount payment-method-change completion
-  currently fails its paid-amount validation**. Add a dedicated authenticated,
-  ownership-checked non-entitlement receipt path, plus backup/replay/monitor
-  compatibility, before activating card-update links or the portal feature.
+- Signed zero-amount payment-method-change completions now have a dedicated
+  ownership-checked receipt path, with backup/replay/monitor compatibility. They
+  never grant access or extend a paid period. See `paddle-live-card-updates.md`.
+  Real provider payload and end-to-end portal QA remain required before enabling.
 - Preserve the current sales/access gates until operational reconciliation,
   backups/monitoring and controlled financial tests are complete.
 

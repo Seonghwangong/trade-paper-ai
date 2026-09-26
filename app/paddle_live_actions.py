@@ -254,6 +254,8 @@ class LiveActions:
         with self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             # Registration and response journal commit together, before exposing ID.
+            if db.execute('SELECT 1 FROM live_payment_methods WHERE transaction_id=?', (txn,)).fetchone():
+                raise BillingConflict('Checkout response conflicts with a card update')
             if db.execute('SELECT 1 FROM live_renewals WHERE transaction_id=?', (txn,)).fetchone():
                 raise BillingConflict('Checkout response conflicts with a recorded renewal')
             db.execute('INSERT INTO checkouts VALUES (?, ?, ?)', (txn, account_id, self.store.price_id))

@@ -51,6 +51,10 @@ def local_state(account, txn):
 
 def existing_subscription_terms(data, offer):
     """Accept only zero-value card updates or one full overdue Starter renewal."""
+    if data.get('origin') == 'subscription_payment_method_change':
+        from app.paddle_live_card_updates import validate_zero_transaction
+        terms = validate_zero_transaction(data, offer, statuses=('draft', 'ready'))
+        return 'payment-method', terms['total']
     items = data['items']
     if (data['collection_mode'] != 'automatic' or data['currency_code'] != offer.currency
             or data['discount_id'] is not None or not isinstance(items, list) or len(items) != 1
@@ -63,13 +67,7 @@ def existing_subscription_terms(data, offer):
     values = {key: _money(totals[key]) for key in keys}
     if totals['currency_code'] != offer.currency:
         raise ValueError('Unexpected payment currency')
-    if data['origin'] == 'subscription_payment_method_change':
-        proration = items[0].get('proration')
-        if (data['status'] not in ('draft', 'ready') or any(values.values())
-                or proration is not None and proration.get('rate') != '0'):
-            raise ValueError('Card update must have no charge')
-        kind = 'payment-method'
-    elif data['origin'] == 'subscription_recurring':
+    if data['origin'] == 'subscription_recurring':
         if (data['status'] != 'past_due' or items[0].get('proration') is not None
                 or values['discount'] or values['credit'] or values['credit_to_balance']
                 or values['subtotal'] + values['tax'] != values['total']
@@ -88,8 +86,6 @@ def existing_subscription_terms(data, offer):
     line = lines[0]
     if kind == 'overdue' and line.get('proration') is not None:
         raise ValueError('Unsupported prorated renewal')
-    if kind == 'payment-method' and line.get('proration') is not None and line['proration'].get('rate') != '0':
-        raise ValueError('Unsupported card-update proration')
     expected = {key: totals[key] for key in ('subtotal', 'discount', 'tax', 'total')}
     if (line['price_id'] != offer.price_id or line['product']['id'] != offer.product_id
             or type(line['quantity']) is not int or line['quantity'] != 1

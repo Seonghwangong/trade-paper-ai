@@ -94,6 +94,8 @@ class PaddleLiveStore:
             initialize_renewals(db)
             from app.paddle_live_access import initialize as initialize_access
             initialize_access(db)
+            from app.paddle_live_card_updates import initialize as initialize_card_updates
+            initialize_card_updates(db)
 
     @contextmanager
     def connect(self):
@@ -116,6 +118,8 @@ class PaddleLiveStore:
         _account(account_id)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if db.execute('SELECT 1 FROM live_payment_methods WHERE transaction_id=?', (transaction_id,)).fetchone():
+                raise BillingConflict('Card update cannot be registered as a purchase')
             if db.execute('SELECT 1 FROM live_renewals WHERE transaction_id=?', (transaction_id,)).fetchone():
                 raise BillingConflict('Transaction already recorded as a renewal')
             rows = db.execute("SELECT transaction_id, account_id, price_id FROM checkouts "
@@ -174,9 +178,15 @@ class PaddleLiveStore:
     def _bind_completed(self, db, data, offer, event_id):
         if offer is None or offer.price_id != self.price_id:
             raise ValueError("Live offer contract required")
+        if isinstance(data, dict) and data.get('origin') == 'subscription_payment_method_change':
+            from app.paddle_live_card_updates import record
+            return record(db, data, offer, event_id)
         # Imported lazily to keep identifier validation shared without a module cycle.
         from app.paddle_live_offer import validate_completed_transaction
         validate_completed_transaction(data, offer)
+        if db.execute('SELECT 1 FROM live_payment_methods WHERE transaction_id=?',
+                      (_id(data['id'], 'txn'),)).fetchone():
+            raise BillingConflict('Card update cannot become paid-period evidence')
         if data.get('origin') == 'subscription_recurring':
             from app.paddle_live_renewals import record
             return record(db, data, offer, event_id)

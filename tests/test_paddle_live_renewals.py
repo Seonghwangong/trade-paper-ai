@@ -86,7 +86,14 @@ def test_invalid_owner_period_or_payment_is_atomic(store, changes):
 @pytest.mark.parametrize('origin', ['subscription_charge', 'subscription_update', 'subscription_payment_method_change', None])
 def test_nonrecurring_unknown_transactions_cannot_bind_or_become_renewals(store, origin):
     bound(store)
-    assert send(store, renewal(origin=origin)) == 'unregistered'
+    before = records(store)
+    if origin == 'subscription_payment_method_change':
+        # Card updates now have their own zero-only receipt contract.
+        with pytest.raises(ValueError, match='must not contain money'):
+            send(store, renewal(origin=origin))
+    else:
+        assert send(store, renewal(origin=origin)) == 'unregistered'
+    assert records(store) == before
     assert records(store)['live_renewals'] == []
 
 

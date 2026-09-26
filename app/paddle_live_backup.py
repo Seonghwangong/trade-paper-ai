@@ -38,6 +38,8 @@ COLUMNS = {
     'live_review_coverage': 'event_id review_id',
     'live_renewals': 'transaction_id subscription_id customer_id account_id terms terms_digest',
     'live_renewal_receipts': 'event_id transaction_id',
+    'live_payment_methods': 'transaction_id subscription_id customer_id account_id terms terms_digest',
+    'live_payment_method_receipts': 'event_id transaction_id',
     'live_initial_periods': 'transaction_id event_id starts_at ends_at',
     'live_replay_requests': 'event_id notification_id setting_id account_id event_type occurred_at operator_ref case_ref requested_at evidence_digest replay_id',
     'live_checkout_correlations': 'account_id token created_at',
@@ -50,7 +52,8 @@ PRIMARY_KEYS = {'paddle_live_meta': ['key'], 'checkouts': ['transaction_id'],
                 'live_review_coverage': ['event_id'], 'live_renewals': ['transaction_id'],
                 'live_renewal_receipts': ['event_id'], 'live_initial_periods': ['transaction_id'],
                 'live_replay_requests': ['event_id'], 'live_checkout_correlations': ['account_id'],
-                'live_operation_recoveries': ['recovery_id']}
+                'live_operation_recoveries': ['recovery_id'],
+                'live_payment_methods': ['transaction_id'], 'live_payment_method_receipts': ['event_id']}
 
 
 class BackupError(ValueError):
@@ -192,8 +195,35 @@ def inspect_ledger(path, price_id):
             _id(event, 'evt'); _instant(occurred)
             if (not re.fullmatch(r'[a-f0-9]{64}', digest) or result not in
                     {'bound', 'applied', 'stale', 'equivalent', 'adjustment_review', 'adjustment_recorded',
-                     'renewal_recorded', 'renewal_existing'}):
+                     'renewal_recorded', 'renewal_existing', 'payment_method_recorded', 'payment_method_existing'}):
                 raise BackupError('Invalid event receipt')
+        card_tables = {'live_payment_methods', 'live_payment_method_receipts'} & tables
+        if card_tables and len(card_tables) != 2:
+            raise BackupError('Incomplete card-update schema')
+        if not card_tables and db.execute("SELECT 1 FROM events WHERE result IN ('payment_method_recorded','payment_method_existing') LIMIT 1").fetchone():
+            raise BackupError('Missing card-update evidence')
+        if card_tables:
+            from app.paddle_live_card_updates import validate_terms as validate_card_terms
+            for txn, sub, customer, account, raw, digest in db.execute('SELECT * FROM live_payment_methods'):
+                _id(txn, 'txn'); _id(sub, 'sub'); _id(customer, 'ctm'); _account(account)
+                terms = json.loads(raw)
+                validate_card_terms(terms, price_id)
+                if (hashlib.sha256(_json(terms).encode()).hexdigest() != digest
+                        or db.execute('SELECT customer_id, account_id FROM bindings WHERE subscription_id=?', (sub,)).fetchone() != (customer, account)
+                        or db.execute('SELECT 1 FROM checkouts WHERE transaction_id=?', (txn,)).fetchone()
+                        or ('live_renewals' in tables and db.execute('SELECT 1 FROM live_renewals WHERE transaction_id=?', (txn,)).fetchone())
+                        or ('live_adjustment_events' in tables and db.execute('SELECT 1 FROM live_adjustment_events WHERE transaction_id=? '
+                            'AND (subscription_id<>? OR customer_id<>?)', (txn, sub, customer)).fetchone())
+                        or db.execute("SELECT COUNT(*) FROM live_payment_method_receipts r JOIN events e ON e.event_id=r.event_id "
+                                      "WHERE r.transaction_id=? AND e.result='payment_method_recorded'", (txn,)).fetchone()[0] != 1):
+                    raise BackupError('Card-update ownership or evidence conflict')
+            if db.execute("SELECT 1 FROM live_payment_method_receipts r LEFT JOIN live_payment_methods t ON t.transaction_id=r.transaction_id "
+                          "LEFT JOIN events e ON e.event_id=r.event_id WHERE t.transaction_id IS NULL OR e.event_id IS NULL "
+                          "OR e.result NOT IN ('payment_method_recorded','payment_method_existing') LIMIT 1").fetchone():
+                raise BackupError('Orphaned card-update receipt')
+            if db.execute("SELECT 1 FROM events e LEFT JOIN live_payment_method_receipts r ON r.event_id=e.event_id "
+                          "WHERE e.result IN ('payment_method_recorded','payment_method_existing') AND r.event_id IS NULL LIMIT 1").fetchone():
+                raise BackupError('Missing card-update receipt')
         renewals = {'live_renewals', 'live_renewal_receipts'} & tables
         if 'live_initial_periods' in tables:
             from app.paddle_live_access import period

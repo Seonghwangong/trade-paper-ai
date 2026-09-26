@@ -50,7 +50,7 @@ def _maintenance():
 
 
 def accepted_results(kind):
-    return ({'bound', 'renewal_recorded', 'renewal_existing'} if kind == 'transaction.completed' else
+    return ({'bound', 'renewal_recorded', 'renewal_existing', 'payment_method_recorded', 'payment_method_existing'} if kind == 'transaction.completed' else
             {'applied', 'stale', 'equivalent'} if kind in SUBSCRIPTION_EVENTS else
             {'adjustment_review', 'adjustment_recorded'})
 
@@ -89,15 +89,22 @@ def _ownership(db, payload, account, offer):
     binding = db.execute('SELECT customer_id, account_id, transaction_id FROM bindings WHERE subscription_id=?',
                          (sub,)).fetchone()
     if kind == 'transaction.completed':
-        validate_completed_transaction(data, offer)
         txn = _id(data['id'], 'txn')
         checkout = db.execute('SELECT account_id, price_id FROM checkouts WHERE transaction_id=?', (txn,)).fetchone()
+        if data.get('origin') == 'subscription_payment_method_change':
+            from app.paddle_live_card_updates import validate_zero_transaction
+            validate_zero_transaction(data, offer)
+            if (checkout or not binding or binding[:2] != (customer, account)
+                    or db.execute('SELECT 1 FROM live_renewals WHERE transaction_id=?', (txn,)).fetchone()):
+                raise BillingConflict('Bound card-update ownership required')
+        else:
+            validate_completed_transaction(data, offer)
         if data.get('origin') == 'subscription_recurring':
             if checkout or not binding or binding[:2] != (customer, account):
                 raise BillingConflict('Bound renewal ownership required')
             from app.paddle_live_access import period
             period(data['billing_period'])
-        elif checkout != (account, offer.price_id) or (binding and binding != (customer, account, txn)):
+        elif data.get('origin') != 'subscription_payment_method_change' and (checkout != (account, offer.price_id) or (binding and binding != (customer, account, txn))):
             raise BillingConflict('Existing exact checkout reservation required')
     elif not binding or binding[:2] != (customer, account):
         raise BillingConflict('Existing subscription ownership required')

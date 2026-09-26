@@ -45,6 +45,8 @@ def _scope(event, checkouts, bindings, price_id):
         if entity in checkouts:
             return 'tracked'
         if data.get('subscription_id') in bindings:
+            if data.get('origin') == 'subscription_payment_method_change':
+                return 'payment_method'
             return 'renewal' if data.get('origin') == 'subscription_recurring' else 'unsupported'
     elif kind in SUBSCRIPTION_EVENTS:
         if entity in bindings:
@@ -67,7 +69,7 @@ def _provider_report(report, db, events, since, until, price_id):
         raise ValueError('Incomplete provider window')
     checkouts = {r[0] for r in db.execute('SELECT transaction_id FROM checkouts')}
     bindings = {r[0] for r in db.execute('SELECT subscription_id FROM bindings')}
-    counts = {'tracked': 0, 'renewal': 0, 'unsupported': 0, 'unscoped': 0, 'unrelated': 0}
+    counts = {'tracked': 0, 'renewal': 0, 'payment_method': 0, 'unsupported': 0, 'unscoped': 0, 'unrelated': 0}
     missing, conflicts, seen = [], [], set()
     for event in events:
         identifier = _id(event['event_id'], 'evt')
@@ -79,13 +81,14 @@ def _provider_report(report, db, events, since, until, price_id):
         seen.add(identifier)
         scope = _scope(event, checkouts, bindings, price_id)
         counts[scope] += 1
-        if scope not in ('tracked', 'renewal'):
+        if scope not in ('tracked', 'renewal', 'payment_method'):
             continue
         row = db.execute('SELECT occurred_at, result FROM events WHERE event_id=?', (identifier,)).fetchone()
         if not row:
             missing.append(identifier)
             continue
-        allowed = ({'renewal_recorded', 'renewal_existing'} if scope == 'renewal' else
+        allowed = ({'payment_method_recorded', 'payment_method_existing'} if scope == 'payment_method' else
+                   {'renewal_recorded', 'renewal_existing'} if scope == 'renewal' else
                    {'bound'} if kind == 'transaction.completed' else
                    {'applied', 'stale', 'equivalent'} if kind in SUBSCRIPTION_EVENTS else
                    {'adjustment_review', 'adjustment_recorded'})
@@ -93,6 +96,20 @@ def _provider_report(report, db, events, since, until, price_id):
         if scope == 'renewal':
             receipt = db.execute('SELECT transaction_id FROM live_renewal_receipts WHERE event_id=?', (identifier,)).fetchone()
             mismatch = mismatch or receipt != (event['data']['id'],)
+        if scope == 'payment_method':
+            from app.paddle_live_card_updates import validate_zero_transaction
+            from app.paddle_live_offer import Offer
+            receipt = db.execute('SELECT m.transaction_id, m.subscription_id, m.customer_id, m.terms '
+                                 'FROM live_payment_method_receipts r JOIN live_payment_methods m '
+                                 'ON m.transaction_id=r.transaction_id WHERE r.event_id=?', (identifier,)).fetchone()
+            mismatch = mismatch or not receipt or receipt[:3] != tuple(event['data'].get(k) for k in ('id', 'subscription_id', 'customer_id'))
+            if receipt:
+                terms = json.loads(receipt[3])
+                try:
+                    actual = validate_zero_transaction(event['data'], Offer(price_id, terms['product_id'], terms['tax_mode']))
+                    mismatch = mismatch or actual != terms
+                except ValueError:
+                    mismatch = True
         if mismatch:
             conflicts.append(identifier)
     report['provider'] = {'status': 'complete', 'from': since.isoformat(), 'to': until.isoformat(),
