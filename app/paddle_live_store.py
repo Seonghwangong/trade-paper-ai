@@ -1,7 +1,7 @@
 """Live billing ledger used by the default-off signed webhook adapter.
 
 Only server-created checkout IDs may be registered. Signed transaction completion
-establishes ownership; signed subscription snapshots determine access. No method
+establishes ownership; signed snapshots and matching paid periods determine access. No method
 writes users.json or makes API requests. The opt-in runtime reads access decisions.
 """
 from __future__ import annotations
@@ -92,6 +92,8 @@ class PaddleLiveStore:
             initialize(db)
             from app.paddle_live_renewals import initialize as initialize_renewals
             initialize_renewals(db)
+            from app.paddle_live_access import initialize as initialize_access
+            initialize_access(db)
 
     @contextmanager
     def connect(self):
@@ -196,6 +198,8 @@ class PaddleLiveStore:
             raise BillingConflict("Subscription ownership conflict")
         if not existing:
             db.execute("INSERT INTO bindings VALUES (?, ?, ?, ?)", expected)
+        from app.paddle_live_access import record_initial
+        record_initial(db, data, event_id)
         return "bound"
 
     def _save_snapshot(self, db, data, when, occurred):
@@ -249,15 +253,21 @@ class PaddleLiveStore:
                 pending = extended and db.execute("SELECT 1 FROM live_operations "
                     "WHERE account_id=? AND kind='checkout'", (account_id,)).fetchone()
                 return bool(pending), None
-            from app.paddle_live_adjustments import needs_review
-            review = needs_review(db, row[0])
-        if row[2] is None:
-            return True, None
-        decision = evaluate_snapshot(json.loads(row[2]), subscription_id=row[0], customer_id=row[1],
+            return True, self.decision_in_transaction(db, row, now=now)
+
+    def decision_in_transaction(self, db, row, *, now):
+        """Shared runtime/manage policy in the caller's consistent read transaction."""
+        if row is None or row[2] is None:
+            return None
+        from app.paddle_live_access import gate
+        from app.paddle_live_adjustments import needs_review
+        snapshot = json.loads(row[2])
+        decision = evaluate_snapshot(snapshot, subscription_id=row[0], customer_id=row[1],
                                      price_id=self.price_id, now=now)
-        if review:
+        decision = gate(db, snapshot, decision, self.price_id)
+        if needs_review(db, row[0]):
             decision = replace(decision, starter_access=False, access_until=None)
-        return True, decision
+        return decision
 
     def access_for_account(self, account_id, *, now=None):
         """Read current decision from this account's bound snapshot; no JSON writes."""

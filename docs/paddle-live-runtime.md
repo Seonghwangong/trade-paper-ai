@@ -34,6 +34,10 @@ implemented; delivery failures must be retried and monitored.
 
 ## Authoritative access without users.json copying
 
+Paid coverage now also requires exact initial/recurring completion period evidence.
+An active snapshot alone is insufficient; missing legacy evidence remains denied.
+See [paid-period access](paddle-live-paid-access.md) for ordering and recovery limits.
+
 With access enabled, an existing user whose server-bound snapshot has valid active
 Starter coverage receives Starter/Active. Checkout completion alone grants no
 paid access. Reserved/bound accounts with no valid coverage receive Free/Active,

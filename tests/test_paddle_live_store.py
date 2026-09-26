@@ -37,6 +37,7 @@ def completion(n=1, **changes):
     totals = {**money, 'credit': '0', 'credit_to_balance': '0', 'balance': '0',
               'grand_total': '29000', 'grand_total_tax': '2636', 'currency_code': 'KRW'}
     data = {'id': TXN, 'subscription_id': SUB, 'customer_id': CUSTOMER,
+            'billing_period': snapshot()['current_billing_period'],
             'status': 'completed', 'collection_mode': 'automatic',
             'currency_code': 'KRW', 'discount_id': None,
             'items': [{'price': price, 'quantity': 1, 'proration': None}],

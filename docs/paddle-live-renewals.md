@@ -36,15 +36,15 @@ provider events to the local event and exact transaction mapping. It never repla
 ## Access and remaining launch gates
 
 Completion evidence does not write subscription snapshots, remove refund/dispute
-holds, reactivate a canceled subscription or change account JSON. Access still follows
-the existing signed subscription-state policy and review holds.
+holds, reactivate a canceled subscription or change account JSON. Access now requires
+both the signed active snapshot and [matching completed payment period](paddle-live-paid-access.md),
+with review holds and scheduled stop boundaries still enforced.
 
-This is **not payment-evidence gating of access**. Paddle's renewal sequence can emit
-`subscription.updated` with the new billing period before payment completes. The
-current access policy can therefore see that new active period before its completion
-receipt. A deliberate ordering/grace policy and controlled lifecycle testing remain
-required before enabling Live access. Completion alone cannot extend an expired
-snapshot; a later active subscription update still controls its period.
+Paddle can emit a renewed `subscription.updated` before payment completes. The read
+policy denies access to that period until its payment receipt arrives; receipt-first
+delivery also waits for the matching active snapshot. No unpaid grace period is
+granted. Completion alone cannot extend an expired snapshot. Controlled provider
+lifecycle testing remains required before enabling Live access.
 
 One-time renewal add-ons, prorations, manual collection and changed catalog terms
 remain unsupported and must not be silently accepted. General signed-event recovery,

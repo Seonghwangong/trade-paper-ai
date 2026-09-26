@@ -2,7 +2,7 @@
 
 Preview and apply each fetch fresh canonical state twice. A release covers exact
 signed event IDs, never a subscription-wide exemption or a timestamp watermark.
-Signed subscription snapshots still determine all access and period boundaries.
+Signed snapshots, matching completed periods and review holds determine access.
 """
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -178,8 +178,10 @@ def reconcile(store, client, offer, account, *, operator, case, expected=None, n
         decision = evaluate_snapshot(canonical['subscription'], subscription_id=local['binding'][0],
                     customer_id=local['binding'][1], price_id=offer.price_id,
                     now=datetime.fromtimestamp(finished, timezone.utc))
+        from app.paddle_live_access import gate
+        decision = gate(db, canonical['subscription'], decision, offer.price_id)
         if not decision.starter_access:
-            raise ReviewBlocked('Paid access expired during review')
+            raise ReviewBlocked('Paid period missing or access expired during review')
         if expected:
             db.execute('INSERT INTO live_review_releases VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                        (digest, account, local['binding'][0], operator, case,

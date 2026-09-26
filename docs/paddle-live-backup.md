@@ -14,7 +14,7 @@ The copy is converted to standalone rollback-journal mode; do not copy an active
 
 The ZIP contains only `ledger.sqlite3` and `manifest.json`. It preserves all
 supported Live tables: ownership reservations, event deduplication, subscription
-snapshots, recurring payment terms and their event receipts, ambiguous checkout/cancel operation guards, adjustment evidence and
+snapshots, initial paid periods, recurring payment terms and their event receipts, ambiguous checkout/cancel operation guards, adjustment evidence and
 audited review coverage. Authentication/API keys and unrelated JSON are excluded.
 
 Before publication, the tool independently extracts and validates the ZIP:
@@ -23,6 +23,7 @@ Before publication, the tool independently extracts and validates the ZIP:
 - exact Live environment/schema/price metadata;
 - binding/snapshot/adjustment/event relationships and pending operation guards;
 - renewal ownership, immutable paid-term digests and complete transaction/event mappings;
+- initial paid-period linkage to bound checkout/event receipts and canonical period boundaries;
 - review coverage ownership and canonical audit evidence digest;
 - ZIP CRC, database size/hash and manifest table counts.
 
@@ -36,6 +37,10 @@ Current limits: 512 MiB uncompressed database, 64 KiB manifest, 60 seconds for t
 online copy and a bounded SQLite validation phase. Unknown schemas, partial
 extensions, corrupt evidence and incomplete artifacts fail closed. Existing
 supported schema-1 ledgers can be copied without migrating the source.
+Old backups without initial paid-period evidence remain readable and restorable,
+but restoring them does not restore initial-period paid access automatically. The
+current access gate requires exact signed payment evidence; never infer it from a
+snapshot or receipt timestamp. See [paid-period access](paddle-live-paid-access.md).
 
 ## Create and verify on the trusted application host
 

@@ -110,7 +110,8 @@ def _provider_report(report, db, events, since, until, price_id):
 def _local_report(report, db, now, grace, operation_age):
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     bound = db.execute('SELECT subscription_id FROM bindings').fetchall()
-    no_snapshot, overdue, holds = 0, 0, 0
+    no_snapshot, overdue, holds, unpaid = 0, 0, 0, 0
+    price_id = db.execute("SELECT value FROM paddle_live_meta WHERE key='price_id'").fetchone()[0]
     for sub, in bound:
         holds += int(needs_review(db, sub))
         row = db.execute('SELECT snapshot FROM snapshots WHERE subscription_id=?', (sub,)).fetchone()
@@ -119,6 +120,10 @@ def _local_report(report, db, now, grace, operation_age):
             continue
         snapshot = json.loads(row[0])
         if snapshot['status'] == 'active':
+            from app.paddle_live_access import payment_matches
+            start = _instant(snapshot['current_billing_period']['starts_at'])
+            if start <= now - timedelta(seconds=grace) and not payment_matches(db, snapshot, price_id):
+                unpaid += 1
             due = _instant(snapshot['current_billing_period']['ends_at'])
             change = snapshot['scheduled_change']
             if change and change['action'] in ('cancel', 'pause'):
@@ -130,6 +135,8 @@ def _local_report(report, db, now, grace, operation_age):
         _issue(report, 'subscription_confirmation_overdue', count=overdue)
     if holds:
         _issue(report, 'billing_reviews_pending', count=holds)
+    if unpaid:
+        _issue(report, 'active_period_payment_unconfirmed', 'critical', unpaid)
     pending, waiting, future = 0, 0, 0
     if 'live_operations' in tables:
         for account, kind, started, target, result in db.execute('SELECT * FROM live_operations'):

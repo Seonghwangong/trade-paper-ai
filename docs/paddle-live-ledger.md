@@ -33,7 +33,8 @@ directories. The local JSON recovery export does not include this ledger.
    apply twice. Older occurred_at timestamps cannot replace current snapshots.
    Equal timestamps with identical policy fields are equivalent; conflicts need
    canonical provider reconciliation and do not consume the conflicting event.
-6. `access_for_account` reevaluates expiry at read time. It returns None before a
+6. `access_for_account` requires exact [paid-period evidence](paddle-live-paid-access.md)
+   as well as the signed active snapshot and reevaluates expiry at read time. It returns None before a
    trusted snapshot exists. No callback automatically writes users.json. Only
    required policy fields are stored, excluding customer email/custom_data.
 

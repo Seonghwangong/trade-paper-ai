@@ -86,14 +86,15 @@ errors. Exit 0 is **not** a Live-launch readiness decision or a proof of full hi
 | `ambiguous_operations_overdue` | Checkout/cancel outcome is still uncertain. Query provider state; do not repeat a financial POST. |
 | `cancellation_confirmation_overdue`, `subscription_confirmation_overdue`, `bound_subscriptions_without_snapshot` | Expected signed subscription state is absent/stale. Investigate delivery and canonical provider status. |
 | `billing_reviews_pending` | Existing adjustment evidence requires the audited recovery workflow, not an automatic release. |
+| `active_period_payment_unconfirmed` | An active period has no matching completed initial/recurring payment evidence after delivery grace. Access is withheld immediately. Check signed deliveries and exact period ownership; do not create another payment. |
 | `ledger_clock_ahead`, `backup_clock_ahead` | Check host/provider timestamps before trusting age-based checks. |
 | `verified_backup_not_configured`, `backup_unavailable_or_invalid`, `backup_too_old` | Fix backup inventory/configuration or create and verify a new snapshot; preserve existing evidence. |
 
 No production monitoring scan, scheduler, external alert or real financial operation
 was run during implementation. Synthetic tests exercise the complete CLI and read-only
 comparisons. Standard recurring completions now have [signed payment evidence](paddle-live-renewals.md).
-Before launch, resolve payment-versus-subscription-update ordering for access, safe
-exhausted-event replay/ambiguous-operation recovery, production backup scheduling/retention
+Access now requires exact paid-period evidence as well as the signed active snapshot.
+Before launch, resolve safe exhausted-event replay/ambiguous-operation recovery, production backup scheduling/retention
 and controlled provider lifecycle testing. Monitoring alone does not resolve these conditions.
 
 Sources:

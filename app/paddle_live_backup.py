@@ -38,13 +38,14 @@ COLUMNS = {
     'live_review_coverage': 'event_id review_id',
     'live_renewals': 'transaction_id subscription_id customer_id account_id terms terms_digest',
     'live_renewal_receipts': 'event_id transaction_id',
+    'live_initial_periods': 'transaction_id event_id starts_at ends_at',
 }
 PRIMARY_KEYS = {'paddle_live_meta': ['key'], 'checkouts': ['transaction_id'],
                 'bindings': ['subscription_id'], 'events': ['event_id'],
                 'snapshots': ['subscription_id'], 'live_operations': ['account_id', 'kind'],
                 'live_adjustment_events': ['event_id'], 'live_review_releases': ['review_id'],
                 'live_review_coverage': ['event_id'], 'live_renewals': ['transaction_id'],
-                'live_renewal_receipts': ['event_id']}
+                'live_renewal_receipts': ['event_id'], 'live_initial_periods': ['transaction_id']}
 
 
 class BackupError(ValueError):
@@ -145,6 +146,16 @@ def inspect_ledger(path, price_id):
                      'renewal_recorded', 'renewal_existing'}):
                 raise BackupError('Invalid event receipt')
         renewals = {'live_renewals', 'live_renewal_receipts'} & tables
+        if 'live_initial_periods' in tables:
+            from app.paddle_live_access import period
+            for txn, event, starts, ends in db.execute('SELECT * FROM live_initial_periods'):
+                _id(txn, 'txn'); _id(event, 'evt')
+                if (period({'starts_at': starts, 'ends_at': ends}) != (starts, ends)
+                        or not db.execute('SELECT 1 FROM bindings WHERE transaction_id=?', (txn,)).fetchone()
+                        or db.execute('SELECT result FROM events WHERE event_id=?', (event,)).fetchone() != ('bound',)):
+                    raise BackupError('Invalid initial payment period evidence')
+            if db.execute('SELECT 1 FROM live_initial_periods GROUP BY event_id HAVING COUNT(*)>1 LIMIT 1').fetchone():
+                raise BackupError('Initial payment receipt reused')
         if renewals and len(renewals) != 2:
             raise BackupError('Incomplete renewal schema')
         if not renewals and db.execute("SELECT 1 FROM events WHERE result IN ('renewal_recorded','renewal_existing') LIMIT 1").fetchone():
