@@ -123,6 +123,38 @@ def test_transaction_and_signed_confirmation_flow_uses_only_session_account(read
     assert client.creates == 1 and subscription.USERS_FILE.read_bytes() == before
 
 
+@pytest.mark.parametrize('query', [
+    b'_ptxn=' + TXN.encode(), b'_ptxn=txn_' + b'z' * 26,
+    b'_ptxn=', b'_ptxn', b'%5Fptxn=txn_untrusted',
+    b'campaign=email&_ptxn=txn_untrusted',
+    b'_ptxn=&_ptxn=txn_untrusted',
+])
+def test_payment_link_cannot_bypass_server_transaction_selection(ready, monkeypatch, query):
+    store, client, _ = ready
+    before = store.path.read_bytes()
+    monkeypatch.setattr(buy, 'configuration', lambda: pytest.fail('No provider setup for URL transactions'))
+    monkeypatch.setattr(runtime, 'store', lambda **kw: pytest.fail('No ledger reads for URL transactions'))
+    response = http(buy.PATH, query=query)
+    assert response.status == 400
+    assert response.headers['cache-control'] == 'no-store'
+    assert 'paddle.js' not in response.text and 'live_publictest' not in response.text
+    assert 'txn_' not in response.text
+    assert client.creates == 0 and store.path.read_bytes() == before
+
+
+def test_payment_link_cannot_reopen_even_a_registered_transaction(ready):
+    store, client, _ = ready
+    assert http(buy.PATH, 'POST', headers()).json()['transaction_id'] == TXN
+    assert http(buy.PATH, query=('_ptxn=' + TXN).encode()).status == 400
+    assert http(buy.PATH).status == 200
+    assert http(buy.PATH, 'POST', headers()).json()['transaction_id'] == TXN
+    assert client.creates == 1
+
+
+def test_unrelated_query_preserves_normal_checkout(ready):
+    assert http(buy.PATH, query=b'campaign=email').status == 200
+
+
 @pytest.mark.parametrize('suffix,method', [('', 'GET'), ('/status', 'GET'), ('', 'POST')])
 def test_default_off_returns_404_without_storage_or_provider(ready, monkeypatch, suffix, method):
     monkeypatch.delenv('TRADE_PAPER_PADDLE_LIVE_CHECKOUT')

@@ -101,6 +101,11 @@ def start_checkout(request: Request):
 def checkout_page(request: Request):
     try:
         account = owner(request)
+        # Paddle.js automatically consumes _ptxn during initialization. This
+        # purchase page must open only the transaction returned by our POST,
+        # after account-bound consent and server-side reservation checks.
+        if '_ptxn' in request.query_params:
+            raise HTTPException(400, 'Open My subscription to start or resume your purchase.')
         offer, token, client = configuration()
         ensure_free(account)
         state = checkout_state(account)

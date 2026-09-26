@@ -62,6 +62,26 @@ is open. Existing durable intent rules still prevent duplicate provider writes.
 
 ## Release gates and validation limits
 
+### Default payment link is not this purchase page
+
+Do not configure `/subscription/paddle-buy` as Paddle's default payment link.
+Paddle.js automatically opens a transaction from the `_ptxn` query parameter
+when initialized. This page instead obtains its transaction from an authenticated,
+consent-protected POST and must not allow a URL to select a different transaction.
+GET requests containing `_ptxn` (including blank, duplicate and encoded keys)
+therefore return 400 before loading Paddle.js, exposing the client token, reading
+the ledger or contacting the provider. Normal checkout/reopening remains through
+the server reservation, including when the supplied URL ID happens to match it.
+
+The production default payment link was blank when inspected on 2026-09-26.
+Leave it unset until a separate, reviewed payment-link flow is ready. That flow
+must also handle Paddle's subscription payment-method update and dunning links;
+an initial-purchase page with Free-plan and sales flags cannot substitute for it.
+Validate ownership, transaction purpose and provider state for that flow, and
+test payment-method updates independently of whether new sales are enabled.
+Registering a URL alone does not complete this release gate. See
+https://developer.paddle.com/build/transactions/default-payment-link/.
+
 This pilot remains off. Before opening sales, complete canonical financial/state
 reconciliation (including changes after the checkout opens), refund/chargeback
 policy, durable SQLite backup/recovery, monitoring, catalog/credential provisioning
