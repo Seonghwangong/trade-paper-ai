@@ -77,9 +77,11 @@ ledgers without release tables remain readable and keep their existing holds.
 Two read rounds are not a provider-side atomic snapshot. Provider changes after
 the last read depend on signed notifications reaching the ledger. Reliable Live
 notification delivery, reconciliation monitoring and exhausted-event recovery
-are therefore still release gates. Production-consistent SQLite backup/restore,
-ambiguous checkout/cancellation recovery, final partial-refund policy and actual
-provider end-to-end verification remain unfinished. This tool has been tested
+are therefore still release gates. The [SQLite backup tool](paddle-live-backup.md)
+now creates consistent snapshots and verifies isolated restore staging. Production
+scheduling/off-host retention, post-backup reconciliation/promotion, ambiguous
+checkout/cancellation recovery, final partial-refund policy and actual provider
+end-to-end verification remain unfinished. This tool has been tested
 with isolated synthetic data; it was not run against a real customer or payment.
 
 References:

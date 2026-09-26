@@ -9,8 +9,9 @@ See paddle-live-runtime.md for configuration and response behavior.
 Construct it explicitly with a separate path, environment="live" and the trusted
 Live monthly Starter price ID. Metadata pins schema/environment/price. An existing
 unmarked database (including the sandbox DB) or a mismatched configuration is
-rejected. The future operator must back up this SQLite database consistently;
-the current local JSON recovery export does not include it.
+rejected. The host-only tool in [paddle-live-backup.md](paddle-live-backup.md)
+creates consistent SQLite backups and stages verified restores into new private
+directories. The local JSON recovery export does not include this ledger.
 
 1. After a successful server-created Live checkout transaction, register its ID
    for the authenticated server account before exposing the transaction to the
