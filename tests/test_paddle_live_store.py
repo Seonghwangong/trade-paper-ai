@@ -33,9 +33,9 @@ def completion(n=1, **changes):
              'unit_price': {'amount': '29000', 'currency_code': 'KRW'},
              'unit_price_overrides': [], 'tax_mode': 'internal',
              'quantity': {'minimum': 1, 'maximum': 1}}
-    money = {'subtotal': '29000', 'discount': '0', 'tax': '2900', 'total': '29000'}
+    money = {'subtotal': '26364', 'discount': '0', 'tax': '2636', 'total': '29000'}
     totals = {**money, 'credit': '0', 'credit_to_balance': '0', 'balance': '0',
-              'grand_total': '29000', 'grand_total_tax': '2900', 'currency_code': 'KRW'}
+              'grand_total': '29000', 'grand_total_tax': '2636', 'currency_code': 'KRW'}
     data = {'id': TXN, 'subscription_id': SUB, 'customer_id': CUSTOMER,
             'status': 'completed', 'collection_mode': 'automatic',
             'currency_code': 'KRW', 'discount_id': None,
@@ -239,8 +239,12 @@ def test_explicit_external_tax_offer_accepts_exact_tax_added_total():
                    data['details']['line_items'][0]['totals'],
                    data['details']['line_items'][0]['unit_totals']):
         totals['total'] = '31900'
+        totals['subtotal'] = '29000'
+        totals['tax'] = '2900'
     data['details']['totals']['grand_total'] = '31900'
     data['details']['adjusted_totals']['grand_total'] = '31900'
+    data['details']['totals']['grand_total_tax'] = '2900'
+    data['details']['adjusted_totals']['grand_total_tax'] = '2900'
     data['payments'][0]['amount'] = '31900'
     validate_completed_transaction(data, Offer(PRICE, PRODUCT, 'external'))
 

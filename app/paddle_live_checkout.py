@@ -57,6 +57,8 @@ def checkout_state(account, *, now=None):
                              (account,)).fetchone() if extended else None
     if bound:
         state = manage.status_for(account)
+        if state['billing_review']:
+            return {'phase': 'review', 'can_open': False}
         return {'phase': 'confirmed' if state['starter_access'] else 'linked', 'can_open': False}
     if attempt:
         reusable = (attempt[2] == 'ready' and 0 <= now - attempt[0] <= TTL

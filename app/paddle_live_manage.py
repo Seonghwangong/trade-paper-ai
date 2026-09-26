@@ -89,6 +89,8 @@ def status_for(account, *, now=None):
                          'WHERE c.account_id=?', (account,)).fetchone()
         extended = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_operations'").fetchone()
         operations = dict(db.execute('SELECT kind, result FROM live_operations WHERE account_id=?', (account,))) if extended else {}
+        from app.paddle_live_adjustments import needs_review
+        review = needs_review(db, row[0] if row else None)
     if row is None and 'checkout' not in operations:
         raise HTTPException(404, 'No connected billing record for this account.')
     decision = None
@@ -103,11 +105,12 @@ def status_for(account, *, now=None):
     elif decision and decision.cancellation_pending:
         cancellation = 'scheduled'
     linked = bool(row and row[0])
-    return {'phase': 'confirmed' if decision else 'awaiting_confirmation',
+    return {'phase': 'review' if review else 'confirmed' if decision else 'awaiting_confirmation',
+            'billing_review': review,
             'provider_status': decision.provider_status if decision else None,
-            'starter_access': bool(decision and decision.starter_access
+            'starter_access': bool(not review and decision and decision.starter_access
                                    and os.environ.get('TRADE_PAPER_PADDLE_LIVE_ACCESS') == '1'),
-            'access_until': decision.access_until.isoformat() if decision and decision.access_until else None,
+            'access_until': decision.access_until.isoformat() if not review and decision and decision.access_until else None,
             'cancellation': cancellation,
             'can_cancel': linked and cancellation in ('none', 'pending')
                           and os.environ.get('TRADE_PAPER_PADDLE_LIVE_CANCEL') == '1'}
@@ -173,7 +176,7 @@ function render(s){
  el('subscription-state').textContent=labels[s.provider_status]||'Awaiting confirmation';
  el('access-state').textContent=s.starter_access?'Available':'Not active';
  el('access-end').textContent=s.access_until?new Date(s.access_until).toLocaleString():'Not confirmed';
- el('confirmation').textContent=s.phase==='confirmed'?'Subscription status confirmed by our server.':'Waiting for subscription confirmation. Do not make another payment.';
+ el('confirmation').textContent=s.billing_review?'Starter access is paused while a refund or payment dispute is reviewed. Contact billing support. You can still cancel renewal below.':s.phase==='confirmed'?'Subscription status confirmed by our server.':'Waiting for subscription confirmation. Do not make another payment.';
  const text={none:'No cancellation has been confirmed.',pending:'A previous request is unconfirmed. Check the request below or contact support.',awaiting_update:'Your request was acknowledged. Waiting for the subscription update.',scheduled:'Renewal cancellation is confirmed for the end of the current billing period.',canceled:'This subscription is canceled.'};
  el('cancel-status').textContent=text[s.cancellation];
  el('cancel-controls').hidden=!s.can_cancel;
@@ -188,7 +191,7 @@ async function call(path,options={}){
  if(!r.ok)throw new Error(data.detail||'Unable to complete this request.');
  return data;
 }
-function schedule(){clearTimeout(timer);if((current.phase!=='confirmed'||current.cancellation==='awaiting_update')&&polls++<12)timer=setTimeout(refresh,5000);}
+function schedule(){clearTimeout(timer);if((current.phase==='awaiting_confirmation'||current.cancellation==='awaiting_update')&&polls++<12)timer=setTimeout(refresh,5000);}
 async function refresh(){
  if(busy)return;busy=true;updateButtons();
  try{render(await call(config.path+'/status'));el('message').textContent='';schedule();}

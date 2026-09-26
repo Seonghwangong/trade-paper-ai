@@ -90,14 +90,16 @@ def validate_completed_transaction(data, offer):
         details, totals = data['details'], data['details']['totals']
         amount = _money(offer.amount)
         tax, total = _money(totals['tax']), _money(totals['total'])
+        subtotal = _money(totals['subtotal'])
         if (totals['currency_code'] != offer.currency
-                or totals['subtotal'] != offer.amount or totals['discount'] != '0'
+                or subtotal + tax != total or totals['discount'] != '0'
                 or totals['credit'] != '0' or totals['credit_to_balance'] != '0'
                 or totals['balance'] != '0' or totals['grand_total'] != totals['total']
                 or totals['grand_total_tax'] != totals['tax']):
             raise ValueError('Unexpected completed transaction totals')
-        if ((offer.tax_mode == 'internal' and total != amount)
-                or (offer.tax_mode == 'external' and total != amount + tax)):
+        if (offer.tax_mode not in ('internal', 'external')
+                or (offer.tax_mode == 'internal' and total != amount)
+                or (offer.tax_mode == 'external' and subtotal != amount)):
             raise ValueError('Unexpected completed transaction tax')
 
         lines = details['line_items']
@@ -109,7 +111,7 @@ def validate_completed_transaction(data, offer):
                 or line['product']['id'] != offer.product_id
                 or line['product']['type'] != 'standard' or line['product']['status'] != 'active'):
             raise ValueError('Unexpected completed transaction line')
-        expected_line = {'subtotal': offer.amount, 'discount': '0',
+        expected_line = {'subtotal': totals['subtotal'], 'discount': '0',
                          'tax': totals['tax'], 'total': totals['total']}
         if line['totals'] != expected_line or line['unit_totals'] != expected_line:
             raise ValueError('Unexpected completed transaction line totals')

@@ -7,6 +7,7 @@ writes users.json or makes API requests. The opt-in runtime reads access decisio
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -87,6 +88,8 @@ class PaddleLiveStore:
                 account_id TEXT NOT NULL, kind TEXT NOT NULL,
                 started REAL NOT NULL, target_id TEXT,
                 result TEXT, PRIMARY KEY (account_id, kind))""")
+            from app.paddle_live_adjustments import initialize
+            initialize(db)
 
     @contextmanager
     def connect(self):
@@ -151,6 +154,9 @@ class PaddleLiveStore:
                 result = self._bind_completed(db, event.get("data"), offer)
             elif kind in SUBSCRIPTION_EVENTS:
                 result = self._save_snapshot(db, event.get("data"), when, occurred)
+            elif kind in ('adjustment.created', 'adjustment.updated'):
+                from app.paddle_live_adjustments import apply
+                result = apply(db, event.get('data'), event_id, when)
             else:
                 return "ignored"
             if result == "unregistered":
@@ -236,10 +242,14 @@ class PaddleLiveStore:
                 pending = extended and db.execute("SELECT 1 FROM live_operations "
                     "WHERE account_id=? AND kind='checkout'", (account_id,)).fetchone()
                 return bool(pending), None
+            from app.paddle_live_adjustments import needs_review
+            review = needs_review(db, row[0])
         if row[2] is None:
             return True, None
         decision = evaluate_snapshot(json.loads(row[2]), subscription_id=row[0], customer_id=row[1],
                                      price_id=self.price_id, now=now)
+        if review:
+            decision = replace(decision, starter_access=False, access_until=None)
         return True, decision
 
     def access_for_account(self, account_id, *, now=None):

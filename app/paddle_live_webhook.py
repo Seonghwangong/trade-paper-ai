@@ -1,4 +1,5 @@
 """Default-off Live webhook; signature authentication replaces browser sessions."""
+import json
 import os
 import sqlite3
 import time
@@ -23,7 +24,12 @@ def process(raw, signature, secret):
     now = time.time()
     # Reject unsigned traffic before even opening/creating the Live database.
     verify(raw, signature, secret, now)
-    offer = runtime.offer()
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError('Invalid event envelope')
+    # Refund/cancellation evidence must still work if the sales catalog is
+    # unavailable or changed; only new checkout binding requires its contract.
+    offer = runtime.offer() if payload.get('event_type') == 'transaction.completed' else None
     ledger = runtime.store()
     return ledger.apply_signed_event(raw, signature, secret=secret, offer=offer, now=now)
 
