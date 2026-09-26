@@ -137,7 +137,7 @@ def _local_report(report, db, now, grace, operation_age):
         _issue(report, 'billing_reviews_pending', count=holds)
     if unpaid:
         _issue(report, 'active_period_payment_unconfirmed', 'critical', unpaid)
-    pending, waiting, future = 0, 0, 0
+    pending, waiting, future, checkout_waiting = 0, 0, 0, 0
     if 'live_operations' in tables:
         for account, kind, started, target, result in db.execute('SELECT * FROM live_operations'):
             age = now.timestamp() - started
@@ -146,6 +146,8 @@ def _local_report(report, db, now, grace, operation_age):
                 continue
             if result is None:
                 pending += 1
+            elif kind == 'checkout' and result == 'awaiting_completion':
+                checkout_waiting += int(not db.execute('SELECT 1 FROM bindings WHERE transaction_id=? AND account_id=?', (target, account)).fetchone())
             elif kind == 'cancel':
                 row = db.execute('SELECT snapshot FROM snapshots WHERE subscription_id=?', (target,)).fetchone()
                 data = json.loads(row[0]) if row else None
@@ -157,6 +159,8 @@ def _local_report(report, db, now, grace, operation_age):
         _issue(report, 'ambiguous_operations_overdue', 'critical', pending)
     if waiting:
         _issue(report, 'cancellation_confirmation_overdue', count=waiting)
+    if checkout_waiting:
+        _issue(report, 'checkout_confirmation_overdue', 'critical', checkout_waiting)
     if 'live_replay_requests' in tables:
         delayed = 0
         for event_id, requested in db.execute('SELECT event_id, requested_at FROM live_replay_requests'):

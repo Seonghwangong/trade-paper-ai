@@ -13,6 +13,7 @@ import json
 import math
 import os
 import re
+import secrets
 import time
 from urllib.error import URLError
 from urllib.parse import urlencode
@@ -134,10 +135,13 @@ class LiveClient:
             pass
         raise ProviderUnavailable('Complete event window unavailable')
 
-    def create_checkout(self, price):
+    def create_checkout(self, price, *, intent):
         _id(price, 'pri')
+        if not isinstance(intent, str) or not re.fullmatch(r'[a-f0-9]{64}', intent):
+            raise ValueError('Server checkout correlation required')
         return self._request('POST', '/transactions', {
-            'items': [{'price_id': price, 'quantity': 1}], 'collection_mode': 'automatic', 'currency_code': 'KRW'})
+            'items': [{'price_id': price, 'quantity': 1}], 'collection_mode': 'automatic', 'currency_code': 'KRW',
+            'custom_data': {'trade_paper_intent': intent}})
 
     def price(self, price_id):
         return self._request('GET', '/prices/' + _id(price_id, 'pri') + '?include=product')
@@ -233,12 +237,18 @@ class LiveActions:
                 # Commit intent BEFORE network. A crash/timeout never frees it.
                 db.execute("INSERT INTO live_operations VALUES (?, 'checkout', ?, NULL, NULL)",
                            (account_id, now))
+                from app.paddle_live_operation_recovery import initialize_correlations
+                initialize_correlations(db)
+                intent = secrets.token_hex(32)
+                db.execute('INSERT INTO live_checkout_correlations VALUES (?, ?, ?)', (account_id, intent, now))
         if previous:
             data = self.client.transaction(previous[1])
             txn = _transaction(data, self.store.price_id, previous[1])
             validate_transaction_offer(data, offer)
             return txn
-        data = self.client.create_checkout(self.store.price_id)
+        data = self.client.create_checkout(self.store.price_id, intent=intent)
+        if not isinstance(data.get('custom_data'), dict) or data['custom_data'].get('trade_paper_intent') != intent:
+            raise ProviderUnavailable('Checkout correlation needs operator review')
         txn = _transaction(data, self.store.price_id)
         validate_transaction_offer(data, offer)
         with self.store.connect() as db:

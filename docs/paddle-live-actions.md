@@ -14,7 +14,7 @@ payloads, credentials or private storage details.
 `LiveClient` uses only `https://api.paddle.com`, modern Live-prefixed private API
 keys, version 1, 15-second timeouts and a 256 KiB response limit. Redirects are
 refused. Create calls send only the server price, quantity one and automatic
-collection. No email or custom account metadata is sent. Retrieval and cancel
+collection and a random server intent correlation in custom_data. No email or account ID is sent. Retrieval and cancel
 paths accept strictly validated Paddle identifiers. Tests use a fake transport;
 no real API request or money movement was performed.
 
@@ -32,6 +32,9 @@ supports older ledgers; a writable open creates the new table transactionally.
 A unique account/kind intent is committed before the first external request.
 Parallel requests and a process restart therefore cannot create another draft.
 Valid responses register the transaction and mark the intent ready in one commit.
+New intents also commit a random correlation before the provider request and require
+the response to echo it. See [operation recovery](paddle-live-operation-recovery.md)
+for audited GET-only recovery of an uncertain response without repeating the POST.
 An unbound ready transaction may be reused for 15 minutes only after a fresh
 provider GET confirms the same expected price/quantity and draft/ready status.
 Bound, expired, conflicting or uncertain operations require operator review.
@@ -61,9 +64,10 @@ confirmed. A public adapter must surface unresolved requests as requiring help.
 
 ## Remaining release work
 
-Private configuration, public sales rollout, canonical financial/entitlement reconciliation, recovery
-tools for ambiguous checkout operations, refund/chargeback policy, SQLite-consistent
-backup, monitoring and end-to-end launch verification remain required. Runtime
+Private configuration, public sales rollout, legacy uncorrelated/historical evidence recovery,
+refund/chargeback policy, operational backup/monitor scheduling and end-to-end launch
+verification remain required. Recovery/backup/monitor tools are now implemented but do
+not establish production operational readiness by themselves. Runtime
 ledgers must be backed up consistently before operational use; local JSON/source
 archives do not cover production SQLite data.
 

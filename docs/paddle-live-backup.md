@@ -18,6 +18,8 @@ snapshots, initial paid periods, recurring payment terms and their event receipt
 audited review coverage. Authentication/API keys and unrelated JSON are excluded.
 Controlled notification replay reservations and acknowledgment IDs are also preserved;
 an uncertain request must not be silently cleared by restore.
+Checkout correlations and audited operation recovery records are also included and
+validated against the existing operation/ownership records and canonical audit digest.
 
 Before publication, the tool independently extracts and validates the ZIP:
 

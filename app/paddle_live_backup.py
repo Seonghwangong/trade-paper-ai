@@ -40,6 +40,8 @@ COLUMNS = {
     'live_renewal_receipts': 'event_id transaction_id',
     'live_initial_periods': 'transaction_id event_id starts_at ends_at',
     'live_replay_requests': 'event_id notification_id setting_id account_id event_type occurred_at operator_ref case_ref requested_at evidence_digest replay_id',
+    'live_checkout_correlations': 'account_id token created_at',
+    'live_operation_recoveries': 'recovery_id account_id kind target_id result checked_at operator_ref case_ref evidence_digest evidence',
 }
 PRIMARY_KEYS = {'paddle_live_meta': ['key'], 'checkouts': ['transaction_id'],
                 'bindings': ['subscription_id'], 'events': ['event_id'],
@@ -47,7 +49,8 @@ PRIMARY_KEYS = {'paddle_live_meta': ['key'], 'checkouts': ['transaction_id'],
                 'live_adjustment_events': ['event_id'], 'live_review_releases': ['review_id'],
                 'live_review_coverage': ['event_id'], 'live_renewals': ['transaction_id'],
                 'live_renewal_receipts': ['event_id'], 'live_initial_periods': ['transaction_id'],
-                'live_replay_requests': ['event_id']}
+                'live_replay_requests': ['event_id'], 'live_checkout_correlations': ['account_id'],
+                'live_operation_recoveries': ['recovery_id']}
 
 
 class BackupError(ValueError):
@@ -131,6 +134,32 @@ def inspect_ledger(path, price_id):
         if release_tables and (len(release_tables) != 2 or 'live_adjustment_events' not in tables):
             raise BackupError('Incomplete review schema')
         counts = {table: db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in sorted(tables)}
+        if {'live_checkout_correlations', 'live_operation_recoveries'} & tables and 'live_operations' not in tables:
+            raise BackupError('Missing operation recovery base schema')
+        if 'live_checkout_correlations' in tables:
+            for account, token, created in db.execute('SELECT * FROM live_checkout_correlations'):
+                _account(account)
+                if (not re.fullmatch(r'[a-f0-9]{64}', token) or not isinstance(created, (int, float))
+                        or not math.isfinite(created) or created < 0
+                        or not db.execute("SELECT 1 FROM live_operations WHERE account_id=? AND kind='checkout'", (account,)).fetchone()):
+                    raise BackupError('Invalid checkout correlation')
+            if db.execute('SELECT 1 FROM live_checkout_correlations GROUP BY token HAVING COUNT(*)>1 LIMIT 1').fetchone():
+                raise BackupError('Reused checkout correlation')
+        if 'live_operation_recoveries' in tables:
+            from app.paddle_live_operation_recovery import _reference
+            for rid, account, kind, target, result, checked, actor, case, digest, raw in db.execute('SELECT * FROM live_operation_recoveries'):
+                _account(account); _instant(checked); _reference(actor); _reference(case)
+                evidence = json.loads(raw)
+                if (kind not in ('checkout', 'cancel') or result not in
+                        ({'ready', 'awaiting_completion'} if kind == 'checkout' else {'scheduled', 'canceled'})
+                        or rid != digest or hashlib.sha256(_json(evidence).encode()).hexdigest() != digest
+                        or evidence['policy'] != 'operation-recovery-v1' or evidence['account'] != account
+                        or evidence['kind'] != kind or evidence['target'] != target
+                        or evidence['canonical']['result'] != result or evidence['operator'] != actor or evidence['case'] != case
+                        or evidence['local']['operation'][2] is not None
+                        or not db.execute('SELECT 1 FROM live_operations WHERE account_id=? AND kind=? AND target_id=?', (account, kind, target)).fetchone()):
+                    raise BackupError('Invalid operation recovery audit')
+                _id(target, 'txn' if kind == 'checkout' else 'sub')
         if 'live_replay_requests' in tables:
             from app.paddle_live_replay import KINDS, _reference, _receipt
             for row in db.execute('SELECT * FROM live_replay_requests'):
@@ -213,7 +242,7 @@ def inspect_ledger(path, price_id):
                 if kind == 'checkout':
                     if (target is None and result is None):
                         continue  # Important: preserve ambiguous mutation reservations.
-                    if result != 'ready' or db.execute('SELECT account_id FROM checkouts WHERE transaction_id=?',
+                    if result not in ('ready', 'awaiting_completion') or db.execute('SELECT account_id FROM checkouts WHERE transaction_id=?',
                                                        (target,)).fetchone() != (account,):
                         raise BackupError('Conflicting checkout operation')
                 elif kind == 'cancel':

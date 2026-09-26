@@ -49,11 +49,12 @@ class Client:
         assert price_id == PRICE
         return price()
 
-    def create_checkout(self, price):
+    def create_checkout(self, price, *, intent):
         assert price == PRICE
         self.creates += 1
         if self.create_error:
             raise self.create_error
+        self.checkout_data['custom_data'] = {'trade_paper_intent': intent}
         return deepcopy(self.checkout_data)
 
     def transaction(self, txn):
@@ -115,10 +116,10 @@ def test_concurrent_checkout_commits_intent_before_one_provider_call(store):
     entered, release = Event(), Event()
     client = Client()
     original = client.create_checkout
-    def create(price):
+    def create(price, *, intent):
         entered.set()
         assert release.wait(5)
-        return original(price)
+        return original(price, intent=intent)
     client.create_checkout = create
     service = actions.LiveActions(store, client)
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -324,7 +325,7 @@ def test_transport_fixed_live_host_payload_and_no_redirect(monkeypatch):
         return Opener()
     monkeypatch.setattr(actions, 'build_opener', opener)
     client = actions.LiveClient(KEY)
-    client.create_checkout(PRICE)
+    client.create_checkout(PRICE, intent='a' * 64)
     client.transaction(TXN)
     client.subscription(SUB)
     client.cancel_at_period_end(SUB)
@@ -332,7 +333,7 @@ def test_transport_fixed_live_host_payload_and_no_redirect(monkeypatch):
         actions.API + '/transactions/' + TXN, actions.API + '/subscriptions/' + SUB,
         actions.API + '/subscriptions/' + SUB + '/cancel']
     assert [r.get_method() for r, _ in seen] == ['POST', 'GET', 'GET', 'POST']
-    assert json.loads(seen[0][0].data) == {'items': [{'price_id': PRICE, 'quantity': 1}], 'collection_mode': 'automatic', 'currency_code': 'KRW'}
+    assert json.loads(seen[0][0].data) == {'items': [{'price_id': PRICE, 'quantity': 1}], 'collection_mode': 'automatic', 'currency_code': 'KRW', 'custom_data': {'trade_paper_intent': 'a' * 64}}
     assert json.loads(seen[3][0].data) == {'effective_from': 'next_billing_period'}
     assert all(timeout == 15 and r.get_header('Authorization') == 'Bearer ' + KEY for r, timeout in seen)
     with pytest.raises(ValueError):
@@ -352,7 +353,7 @@ def test_transport_errors_bounded_and_redacted(monkeypatch, bad):
             return Response(bad)
     monkeypatch.setattr(actions, 'build_opener', lambda *args: Opener())
     with pytest.raises(actions.ProviderUnavailable) as caught:
-        actions.LiveClient(KEY).create_checkout(PRICE)
+        actions.LiveClient(KEY).create_checkout(PRICE, intent='a' * 64)
     assert KEY not in str(caught.value)
 
 

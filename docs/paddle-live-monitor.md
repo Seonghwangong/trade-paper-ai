@@ -84,6 +84,7 @@ errors. Exit 0 is **not** a Live-launch readiness decision or a proof of full hi
 | `provider_events_without_local_ownership` | Price/ownership scope is unresolved. Match against trusted checkout records; never bind from email. |
 | `unsupported_subscription_completion` | A bound subscription has an unregistered completion with an origin other than `subscription_recurring`. Investigate unsupported one-time charges or subscription changes; do not bind from metadata. |
 | `ambiguous_operations_overdue` | Checkout/cancel outcome is still uncertain. Query provider state; do not repeat a financial POST. |
+| `checkout_confirmation_overdue` | Recovery registered a completed transaction, but its signed ownership binding is still missing. Inspect signed delivery/replay; do not ask the customer to pay again. |
 | `notification_replay_unconfirmed` | A recorded replay request still lacks its signed local receipt after the operation age limit. Inspect provider delivery logs/local replay status; never automatically repeat an uncertain POST. |
 | `cancellation_confirmation_overdue`, `subscription_confirmation_overdue`, `bound_subscriptions_without_snapshot` | Expected signed subscription state is absent/stale. Investigate delivery and canonical provider status. |
 | `billing_reviews_pending` | Existing adjustment evidence requires the audited recovery workflow, not an automatic release. |
@@ -97,7 +98,9 @@ comparisons. Standard recurring completions now have [signed payment evidence](p
 Access now requires exact paid-period evidence as well as the signed active snapshot.
 The [controlled replay CLI](paddle-live-replay.md) can request a selected missing
 notification through normal signed ingress during access/sales maintenance.
-Before launch, resolve historical evidence/ambiguous-operation recovery, production backup scheduling/retention
+The [operation recovery CLI](paddle-live-operation-recovery.md) can acknowledge proven
+checkout/cancel outcomes using GETs only, with a preserved audit and no second POST.
+Before launch, resolve historical/uncorrelated evidence recovery, production backup scheduling/retention
 and controlled provider lifecycle testing. Monitoring alone does not resolve these conditions.
 
 Sources:
