@@ -15,12 +15,13 @@ import os
 import re
 import time
 from urllib.error import URLError
+from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from fastapi import HTTPException
 
 from app import paddle_live_runtime as runtime
-from app.paddle_live_store import BillingConflict, _account, _id
+from app.paddle_live_store import BillingConflict, SUBSCRIPTION_EVENTS, _account, _id
 from app.paddle_subscription_policy import _instant, evaluate_snapshot
 from app.paddle_live_offer import expected_offer, validate_price, validate_transaction_offer
 
@@ -96,6 +97,42 @@ class LiveClient:
         except (KeyError, TypeError, ValueError):
             pass
         raise ProviderUnavailable('Complete adjustment history unavailable')
+
+    def events(self, since, until):
+        """Complete bounded billing-event window for read-only monitoring."""
+        start, end = _instant(since), _instant(until)
+        if not 0 < (end - start).total_seconds() <= 90 * 86400:
+            raise ValueError('Event window must be positive and at most 90 days')
+        kinds = SUBSCRIPTION_EVENTS | {'transaction.completed', 'adjustment.created', 'adjustment.updated'}
+        query = {'from': start.isoformat(), 'to': end.isoformat(), 'per_page': 20,
+                 'order_by': 'id[ASC]', 'event_type': ','.join(sorted(kinds))}
+        rows, seen, after = [], set(), ''
+        deadline = time.monotonic() + 60
+        try:
+            for _ in range(50):
+                if time.monotonic() > deadline:
+                    break
+                result = self._response('GET', '/events?' + urlencode({**query, **({'after': after} if after else {})}))
+                page, more = result['data'], result['meta']['pagination']['has_more']
+                if not isinstance(page, list) or len(page) > 20 or type(more) is not bool:
+                    raise ValueError()
+                for row in page:
+                    identifier = _id(row['event_id'], 'evt')
+                    if (identifier in seen or (after and identifier <= after)
+                            or row['event_type'] not in kinds
+                            or not start <= _instant(row['occurred_at']) <= end
+                            or not isinstance(row['data'], dict)):
+                        raise ValueError()
+                    seen.add(identifier)
+                    after = identifier
+                    rows.append(row)
+                if not more and time.monotonic() <= deadline:
+                    return rows
+                if not page:
+                    raise ValueError()
+        except (KeyError, TypeError, ValueError):
+            pass
+        raise ProviderUnavailable('Complete event window unavailable')
 
     def create_checkout(self, price):
         _id(price, 'pri')

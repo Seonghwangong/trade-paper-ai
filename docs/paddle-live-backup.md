@@ -63,6 +63,10 @@ encrypted storage and transfer when off-host retention is configured. Retention,
 backup scheduling, off-host replication and failure/staleness alerts are still
 deployment tasks; creating this tool alone does not provide those protections.
 
+The separate [read-only diagnostic CLI](paddle-live-monitor.md) verifies a selected
+archive and reports age/corruption alongside billing findings. It does not schedule
+backups, verify off-host retention or deliver alerts automatically.
+
 ## Restore drill (isolated, never automatic activation)
 
 Restore requires the independently recorded SHA256 and a directory that does not
