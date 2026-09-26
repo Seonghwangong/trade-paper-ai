@@ -5,6 +5,10 @@
 change payment flags or replace the active database. The older code/local-JSON
 recovery ZIP and account-scoped JSON backups do **not** contain this ledger.
 
+The [host job runner](paddle-live-jobs.md) now provides an opt-in backup interval,
+private inventory, diagnostics and failure/freshness receipts for a scheduler.
+It does not install that scheduler, replicate files or delete retained archives.
+
 ## What a backup contains
 
 SQLite's online backup API creates a consistent snapshot, including committed

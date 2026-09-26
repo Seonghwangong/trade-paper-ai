@@ -6,6 +6,10 @@ modifies access, retries a checkout/cancellation, refunds, sends notifications,
 creates a ledger or exposes a public route. Scheduling and alert delivery are not
 configured by this change.
 
+The [host job runner](paddle-live-jobs.md) now combines verified backup inventory
+with these diagnostics and an independent missed-run receipt check. Deployment
+scheduling and outbound alert wiring still require explicit host configuration.
+
 ## Run on the trusted host
 
 Start with local diagnostics and the archive/hash from the trusted backup inventory:
