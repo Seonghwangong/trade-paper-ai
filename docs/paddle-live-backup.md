@@ -14,7 +14,7 @@ The copy is converted to standalone rollback-journal mode; do not copy an active
 
 The ZIP contains only `ledger.sqlite3` and `manifest.json`. It preserves all
 supported Live tables: ownership reservations, event deduplication, subscription
-snapshots, ambiguous checkout/cancel operation guards, adjustment evidence and
+snapshots, recurring payment terms and their event receipts, ambiguous checkout/cancel operation guards, adjustment evidence and
 audited review coverage. Authentication/API keys and unrelated JSON are excluded.
 
 Before publication, the tool independently extracts and validates the ZIP:
@@ -22,6 +22,7 @@ Before publication, the tool independently extracts and validates the ZIP:
 - SQLite integrity, known schema/columns/primary keys and ownership uniqueness;
 - exact Live environment/schema/price metadata;
 - binding/snapshot/adjustment/event relationships and pending operation guards;
+- renewal ownership, immutable paid-term digests and complete transaction/event mappings;
 - review coverage ownership and canonical audit evidence digest;
 - ZIP CRC, database size/hash and manifest table counts.
 

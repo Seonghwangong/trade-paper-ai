@@ -36,12 +36,15 @@ COLUMNS = {
     'live_adjustment_events': 'event_id adjustment_id subscription_id customer_id transaction_id action status adjustment_type currency total occurred_at requires_review',
     'live_review_releases': 'review_id account_id subscription_id operator_ref case_ref checked_at evidence_digest evidence',
     'live_review_coverage': 'event_id review_id',
+    'live_renewals': 'transaction_id subscription_id customer_id account_id terms terms_digest',
+    'live_renewal_receipts': 'event_id transaction_id',
 }
 PRIMARY_KEYS = {'paddle_live_meta': ['key'], 'checkouts': ['transaction_id'],
                 'bindings': ['subscription_id'], 'events': ['event_id'],
                 'snapshots': ['subscription_id'], 'live_operations': ['account_id', 'kind'],
                 'live_adjustment_events': ['event_id'], 'live_review_releases': ['review_id'],
-                'live_review_coverage': ['event_id']}
+                'live_review_coverage': ['event_id'], 'live_renewals': ['transaction_id'],
+                'live_renewal_receipts': ['event_id']}
 
 
 class BackupError(ValueError):
@@ -138,8 +141,33 @@ def inspect_ledger(path, price_id):
         for event, digest, occurred, result in db.execute('SELECT * FROM events'):
             _id(event, 'evt'); _instant(occurred)
             if (not re.fullmatch(r'[a-f0-9]{64}', digest) or result not in
-                    {'bound', 'applied', 'stale', 'equivalent', 'adjustment_review', 'adjustment_recorded'}):
+                    {'bound', 'applied', 'stale', 'equivalent', 'adjustment_review', 'adjustment_recorded',
+                     'renewal_recorded', 'renewal_existing'}):
                 raise BackupError('Invalid event receipt')
+        renewals = {'live_renewals', 'live_renewal_receipts'} & tables
+        if renewals and len(renewals) != 2:
+            raise BackupError('Incomplete renewal schema')
+        if not renewals and db.execute("SELECT 1 FROM events WHERE result IN ('renewal_recorded','renewal_existing') LIMIT 1").fetchone():
+            raise BackupError('Missing renewal evidence')
+        if renewals:
+            from app.paddle_live_renewals import validate_terms
+            for txn, sub, customer, account, raw, digest in db.execute('SELECT * FROM live_renewals'):
+                _id(txn, 'txn')
+                terms = json.loads(raw)
+                validate_terms(terms, price_id)
+                if (hashlib.sha256(_json(terms).encode()).hexdigest() != digest
+                        or db.execute('SELECT customer_id, account_id FROM bindings WHERE subscription_id=?', (sub,)).fetchone() != (customer, account)
+                        or db.execute('SELECT 1 FROM checkouts WHERE transaction_id=?', (txn,)).fetchone()
+                        or db.execute("SELECT COUNT(*) FROM live_renewal_receipts r JOIN events e ON e.event_id=r.event_id "
+                                      "WHERE r.transaction_id=? AND e.result='renewal_recorded'", (txn,)).fetchone()[0] != 1):
+                    raise BackupError('Renewal ownership or evidence conflict')
+            if db.execute("SELECT 1 FROM live_renewal_receipts r LEFT JOIN live_renewals t ON t.transaction_id=r.transaction_id "
+                          "LEFT JOIN events e ON e.event_id=r.event_id WHERE t.transaction_id IS NULL OR e.event_id IS NULL "
+                          "OR e.result NOT IN ('renewal_recorded','renewal_existing') LIMIT 1").fetchone():
+                raise BackupError('Orphaned renewal receipt')
+            if db.execute("SELECT 1 FROM events e LEFT JOIN live_renewal_receipts r ON r.event_id=e.event_id "
+                          "WHERE e.result IN ('renewal_recorded','renewal_existing') AND r.event_id IS NULL LIMIT 1").fetchone():
+                raise BackupError('Missing renewal receipt')
         for sub, occurred, raw in db.execute('SELECT * FROM snapshots'):
             owner = db.execute('SELECT customer_id FROM bindings WHERE subscription_id=?', (sub,)).fetchone()
             if not owner:
@@ -182,6 +210,10 @@ def inspect_ledger(path, price_id):
                 reservation = db.execute('SELECT account_id FROM checkouts WHERE transaction_id=?', (txn,)).fetchone()
                 if reservation and reservation != owner:
                     raise BackupError('Adjustment transaction ownership conflict')
+                if renewals:
+                    renewal = db.execute('SELECT subscription_id, customer_id FROM live_renewals WHERE transaction_id=?', (txn,)).fetchone()
+                    if renewal and renewal != (sub, customer):
+                        raise BackupError('Adjustment renewal ownership conflict')
             if db.execute("SELECT 1 FROM events e LEFT JOIN live_adjustment_events a ON a.event_id=e.event_id "
                           "WHERE e.result IN ('adjustment_review','adjustment_recorded') AND a.event_id IS NULL LIMIT 1").fetchone():
                 raise BackupError('Missing adjustment evidence')

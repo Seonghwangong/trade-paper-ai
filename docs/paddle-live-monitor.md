@@ -49,7 +49,9 @@ errors. Exit 0 is **not** a Live-launch readiness decision or a proof of full hi
   Pagination constructs fixed Paddle API paths and validated cursors; it never
   follows the returned next URL.
 - Initial completed transactions are tracked only when their transaction IDs were
-  registered by the server. Subscription events require an existing binding;
+  registered by the server. Recurring completions require an existing subscription
+  binding and are compared against both event and transaction receipt mappings.
+  Subscription events require an existing binding;
   adjustments are tracked by a known subscription or registered transaction.
   Unknown events for this price or ambiguous ownership produce a warning. Explicit
   other-price entities are counted as unrelated. Emails/custom_data never establish
@@ -80,7 +82,7 @@ errors. Exit 0 is **not** a Live-launch readiness decision or a proof of full hi
 | `provider_events_missing_locally` | Tracked provider events older than grace lack local receipts. Inspect delivery logs and ownership/order conflicts; recover through trusted signed replay. |
 | `provider_receipt_conflict` | Receipt time/type differs from canonical evidence. Escalate for investigation; do not overwrite receipts. |
 | `provider_events_without_local_ownership` | Price/ownership scope is unresolved. Match against trusted checkout records; never bind from email. |
-| `renewal_completion_needs_reconciliation` | A completed renewal belongs to a bound subscription but is not an initial server-registered checkout. The current completion adapter does not reconcile these transactions yet. This remains a release blocker. |
+| `unsupported_subscription_completion` | A bound subscription has an unregistered completion with an origin other than `subscription_recurring`. Investigate unsupported one-time charges or subscription changes; do not bind from metadata. |
 | `ambiguous_operations_overdue` | Checkout/cancel outcome is still uncertain. Query provider state; do not repeat a financial POST. |
 | `cancellation_confirmation_overdue`, `subscription_confirmation_overdue`, `bound_subscriptions_without_snapshot` | Expected signed subscription state is absent/stale. Investigate delivery and canonical provider status. |
 | `billing_reviews_pending` | Existing adjustment evidence requires the audited recovery workflow, not an automatic release. |
@@ -89,9 +91,10 @@ errors. Exit 0 is **not** a Live-launch readiness decision or a proof of full hi
 
 No production monitoring scan, scheduler, external alert or real financial operation
 was run during implementation. Synthetic tests exercise the complete CLI and read-only
-comparisons. Before launch, implement renewal completion handling, safe exhausted-event
-replay/ambiguous-operation recovery, production backup scheduling/retention and controlled
-provider lifecycle testing. Monitoring alone does not resolve these conditions.
+comparisons. Standard recurring completions now have [signed payment evidence](paddle-live-renewals.md).
+Before launch, resolve payment-versus-subscription-update ordering for access, safe
+exhausted-event replay/ambiguous-operation recovery, production backup scheduling/retention
+and controlled provider lifecycle testing. Monitoring alone does not resolve these conditions.
 
 Sources:
 - https://developer.paddle.com/api-reference/events/list-events/

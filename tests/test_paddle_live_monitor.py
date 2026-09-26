@@ -130,10 +130,10 @@ def test_skipped_provider_or_missing_backup_is_explicit_warning(monitored):
 def test_unknown_ownership_and_renewals_are_not_silently_skipped(monitored):
     unknown = event(3)
     unknown['data']['id'] = 'sub_' + 'z' * 26
-    renewal = completion(4, id='txn_' + 'r' * 26)
+    renewal = completion(4, id='txn_' + 'r' * 26, origin='subscription_recurring')
     result = check(monitored, client=Provider([unknown, renewal]))
-    assert result['status'] == 'warning'
-    assert codes(result) == {'provider_events_without_local_ownership', 'renewal_completion_needs_reconciliation'}
+    assert result['status'] == 'critical'
+    assert codes(result) == {'provider_events_without_local_ownership', 'provider_events_missing_locally'}
     assert result['provider']['unscoped'] == result['provider']['renewal'] == 1
 
 

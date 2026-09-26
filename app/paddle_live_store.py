@@ -90,6 +90,8 @@ class PaddleLiveStore:
                 result TEXT, PRIMARY KEY (account_id, kind))""")
             from app.paddle_live_adjustments import initialize
             initialize(db)
+            from app.paddle_live_renewals import initialize as initialize_renewals
+            initialize_renewals(db)
 
     @contextmanager
     def connect(self):
@@ -112,6 +114,8 @@ class PaddleLiveStore:
         _account(account_id)
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            if db.execute('SELECT 1 FROM live_renewals WHERE transaction_id=?', (transaction_id,)).fetchone():
+                raise BillingConflict('Transaction already recorded as a renewal')
             rows = db.execute("SELECT transaction_id, account_id, price_id FROM checkouts "
                               "WHERE transaction_id=? OR account_id=?", (transaction_id, account_id)).fetchall()
             expected = (transaction_id, account_id, self.price_id)
@@ -151,7 +155,7 @@ class PaddleLiveStore:
             if db.execute("SELECT 1 FROM events WHERE event_id=?", (event_id,)).fetchone():
                 return "duplicate"
             if kind == "transaction.completed":
-                result = self._bind_completed(db, event.get("data"), offer)
+                result = self._bind_completed(db, event.get("data"), offer, event_id)
             elif kind in SUBSCRIPTION_EVENTS:
                 result = self._save_snapshot(db, event.get("data"), when, occurred)
             elif kind in ('adjustment.created', 'adjustment.updated'):
@@ -165,12 +169,15 @@ class PaddleLiveStore:
             db.execute("INSERT INTO events VALUES (?, ?, ?, ?)", (event_id, digest, when, result))
             return result
 
-    def _bind_completed(self, db, data, offer):
+    def _bind_completed(self, db, data, offer, event_id):
         if offer is None or offer.price_id != self.price_id:
             raise ValueError("Live offer contract required")
         # Imported lazily to keep identifier validation shared without a module cycle.
         from app.paddle_live_offer import validate_completed_transaction
         validate_completed_transaction(data, offer)
+        if data.get('origin') == 'subscription_recurring':
+            from app.paddle_live_renewals import record
+            return record(db, data, offer, event_id)
         try:
             txn = _id(data["id"], "txn")
             row = db.execute("SELECT account_id, price_id FROM checkouts WHERE transaction_id=?", (txn,)).fetchone()
