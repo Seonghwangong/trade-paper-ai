@@ -157,6 +157,14 @@ def _local_report(report, db, now, grace, operation_age):
         _issue(report, 'ambiguous_operations_overdue', 'critical', pending)
     if waiting:
         _issue(report, 'cancellation_confirmation_overdue', count=waiting)
+    if 'live_replay_requests' in tables:
+        delayed = 0
+        for event_id, requested in db.execute('SELECT event_id, requested_at FROM live_replay_requests'):
+            future += int(_instant(requested) > now + timedelta(seconds=grace))
+            if (now - _instant(requested)).total_seconds() > operation_age:
+                delayed += int(not db.execute('SELECT 1 FROM events WHERE event_id=?', (event_id,)).fetchone())
+        if delayed:
+            _issue(report, 'notification_replay_unconfirmed', 'critical', delayed)
     latest = None
     for when, in db.execute('SELECT occurred_at FROM events'):
         stamp = _instant(when)

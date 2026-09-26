@@ -19,7 +19,7 @@ import tempfile
 import time
 import zipfile
 
-from app.paddle_live_store import _account, _id, _json
+from app.paddle_live_store import BillingConflict, _account, _id, _json
 from app.paddle_subscription_policy import _instant, evaluate_snapshot
 
 MAX_DB = 512 * 1024 * 1024
@@ -39,13 +39,15 @@ COLUMNS = {
     'live_renewals': 'transaction_id subscription_id customer_id account_id terms terms_digest',
     'live_renewal_receipts': 'event_id transaction_id',
     'live_initial_periods': 'transaction_id event_id starts_at ends_at',
+    'live_replay_requests': 'event_id notification_id setting_id account_id event_type occurred_at operator_ref case_ref requested_at evidence_digest replay_id',
 }
 PRIMARY_KEYS = {'paddle_live_meta': ['key'], 'checkouts': ['transaction_id'],
                 'bindings': ['subscription_id'], 'events': ['event_id'],
                 'snapshots': ['subscription_id'], 'live_operations': ['account_id', 'kind'],
                 'live_adjustment_events': ['event_id'], 'live_review_releases': ['review_id'],
                 'live_review_coverage': ['event_id'], 'live_renewals': ['transaction_id'],
-                'live_renewal_receipts': ['event_id'], 'live_initial_periods': ['transaction_id']}
+                'live_renewal_receipts': ['event_id'], 'live_initial_periods': ['transaction_id'],
+                'live_replay_requests': ['event_id']}
 
 
 class BackupError(ValueError):
@@ -129,6 +131,24 @@ def inspect_ledger(path, price_id):
         if release_tables and (len(release_tables) != 2 or 'live_adjustment_events' not in tables):
             raise BackupError('Incomplete review schema')
         counts = {table: db.execute('SELECT COUNT(*) FROM ' + table).fetchone()[0] for table in sorted(tables)}
+        if 'live_replay_requests' in tables:
+            from app.paddle_live_replay import KINDS, _reference, _receipt
+            for row in db.execute('SELECT * FROM live_replay_requests'):
+                event, notice, setting, account, kind, occurred, actor, case, requested, digest, replay = row
+                _id(event, 'evt'); _id(notice, 'ntf'); _id(setting, 'ntfset'); _account(account)
+                _reference(actor); _reference(case)
+                if (kind not in KINDS or not 0 <= (_instant(requested) - _instant(occurred)).total_seconds() <= 90 * 86400
+                        or not re.fullmatch(r'[a-f0-9]{64}', digest)
+                        or not db.execute('SELECT 1 FROM checkouts WHERE account_id=?', (account,)).fetchone()):
+                    raise BackupError('Invalid replay reservation evidence')
+                if replay is not None:
+                    _id(replay, 'ntf')
+                    if replay == notice:
+                        raise BackupError('Replay must be a distinct notification')
+                try:
+                    _receipt(db, event, kind, occurred)
+                except BillingConflict:
+                    raise BackupError('Conflicting replay event receipt') from None
         # The ledger has no SQL foreign keys. Check its cross-table invariants.
         if db.execute('SELECT 1 FROM bindings b LEFT JOIN checkouts c ON c.transaction_id=b.transaction_id '
                       'WHERE c.transaction_id IS NULL OR c.account_id<>b.account_id LIMIT 1').fetchone():

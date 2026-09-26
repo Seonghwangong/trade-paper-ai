@@ -46,7 +46,7 @@ class LiveClient:
             raise ValueError('Live API key required')
         self._key = key
 
-    def _response(self, method, path, body=None):
+    def _response(self, method, path, body=None, *, statuses=(200, 201)):
         req = Request(API + path, method=method,
                       data=None if body is None else json.dumps(body).encode(),
                       headers={'Authorization': 'Bearer ' + self._key,
@@ -54,7 +54,7 @@ class LiveClient:
         try:
             with build_opener(NoRedirect()).open(req, timeout=15) as response:
                 raw = response.read(MAX_RESPONSE + 1)
-                if response.status not in (200, 201) or len(raw) > MAX_RESPONSE:
+                if response.status not in statuses or len(raw) > MAX_RESPONSE:
                     raise ValueError()
                 data = json.loads(raw)
                 if not isinstance(data, dict):
@@ -147,6 +147,20 @@ class LiveClient:
 
     def subscription(self, subscription_id):
         return self._request('GET', '/subscriptions/' + _id(subscription_id, 'sub'))
+
+    def notification(self, notification_id):
+        return self._request('GET', '/notifications/' + _id(notification_id, 'ntf'))
+
+    def notification_setting(self, setting_id):
+        return self._request('GET', '/notification-settings/' + _id(setting_id, 'ntfset'))
+
+    def replay_notification(self, notification_id):
+        result = self._response('POST', '/notifications/' + _id(notification_id, 'ntf') + '/replay',
+                                statuses=(202,))
+        try:
+            return _id(result['data']['notification_id'], 'ntf')
+        except (KeyError, TypeError, ValueError):
+            raise ProviderUnavailable('Notification replay outcome is unconfirmed') from None
 
     def cancel_at_period_end(self, subscription_id):
         return self._request('POST', '/subscriptions/' + _id(subscription_id, 'sub') + '/cancel',

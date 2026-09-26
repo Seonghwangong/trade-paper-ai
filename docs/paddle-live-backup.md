@@ -16,6 +16,8 @@ The ZIP contains only `ledger.sqlite3` and `manifest.json`. It preserves all
 supported Live tables: ownership reservations, event deduplication, subscription
 snapshots, initial paid periods, recurring payment terms and their event receipts, ambiguous checkout/cancel operation guards, adjustment evidence and
 audited review coverage. Authentication/API keys and unrelated JSON are excluded.
+Controlled notification replay reservations and acknowledgment IDs are also preserved;
+an uncertain request must not be silently cleared by restore.
 
 Before publication, the tool independently extracts and validates the ZIP:
 
