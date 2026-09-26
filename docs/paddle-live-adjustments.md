@@ -40,19 +40,21 @@ status, type, currency, total, event time and review flag are stored; reasons,
 customer details, card data and full payloads are not. Evidence and the event
 receipt commit atomically. Event IDs deduplicate repeated deliveries.
 
-Review is deliberately monotonic. Late pending/rejected evidence, subscription
-updates, later completed checkouts and reversal evidence cannot restore access.
+Review is monotonic unless an explicit audited operator recovery covers its exact
+event IDs. Late pending/rejected evidence, subscription updates, later completed
+checkouts and reversal evidence cannot restore access on their own.
 This avoids restoring access when delivery order differs from occurrence order.
 Do not delete evidence rows to resolve a case.
 
 ## Remaining release gates
 
-An audited recovery workflow still needs to compare current provider
-subscription, transaction and adjustment state before resolving a review.
-That workflow, alerting/replay of exhausted or unbound notifications, and
-production SQLite backup/restore are not implemented by this change. Until those
-are ready and the actual provider lifecycle is verified, keep Live activation
-flags off. All lifecycle tests here use synthetic signed events and isolated DBs.
+The default-off host operator workflow in [paddle-live-review-recovery.md](paddle-live-review-recovery.md)
+now compares current provider subscription, transaction and adjustment state and
+records exact-event review coverage. It only supports resolved cases with fully
+restored payments; approved partial/tax refunds stay blocked. Alerting/replay of
+exhausted or unbound notifications and production SQLite backup/restore remain
+unfinished. Until those are ready and the actual provider lifecycle is verified,
+keep Live activation flags off. Tests use synthetic events and isolated DBs.
 
 ## Completed-transaction tax correction
 

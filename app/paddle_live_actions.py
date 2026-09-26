@@ -45,7 +45,7 @@ class LiveClient:
             raise ValueError('Live API key required')
         self._key = key
 
-    def _request(self, method, path, body=None):
+    def _response(self, method, path, body=None):
         req = Request(API + path, method=method,
                       data=None if body is None else json.dumps(body).encode(),
                       headers={'Authorization': 'Bearer ' + self._key,
@@ -55,12 +55,47 @@ class LiveClient:
                 raw = response.read(MAX_RESPONSE + 1)
                 if response.status not in (200, 201) or len(raw) > MAX_RESPONSE:
                     raise ValueError()
-                data = json.loads(raw)['data']
+                data = json.loads(raw)
                 if not isinstance(data, dict):
                     raise ValueError()
                 return data
         except (URLError, OSError, HTTPTransportError, ValueError, KeyError, TypeError):
             raise ProviderUnavailable('Billing provider unavailable; operator review may be required') from None
+
+    def _request(self, method, path, body=None):
+        envelope = self._response(method, path, body)
+        data = envelope.get('data')
+        if not isinstance(data, dict):
+            raise ProviderUnavailable('Billing provider unavailable; operator review may be required')
+        return data
+
+    def adjustments(self, subscription_id):
+        """Bounded complete scan; never follow a provider-supplied next URL."""
+        sub = _id(subscription_id, 'sub')
+        rows, seen, after = [], set(), ''
+        try:
+            for _ in range(20):
+                path = '/adjustments?subscription_id=' + sub + '&per_page=50&order_by=id%5BASC%5D'
+                if after:
+                    path += '&after=' + after
+                result = self._response('GET', path)
+                page, more = result['data'], result['meta']['pagination']['has_more']
+                if not isinstance(page, list) or len(page) > 50 or type(more) is not bool:
+                    raise ValueError()
+                for row in page:
+                    identifier = _id(row['id'], 'adj')
+                    if identifier in seen or (after and identifier <= after):
+                        raise ValueError()
+                    seen.add(identifier)
+                    after = identifier
+                    rows.append(row)
+                if not more:
+                    return rows
+                if not page:
+                    raise ValueError()
+        except (KeyError, TypeError, ValueError):
+            pass
+        raise ProviderUnavailable('Complete adjustment history unavailable')
 
     def create_checkout(self, price):
         _id(price, 'pri')

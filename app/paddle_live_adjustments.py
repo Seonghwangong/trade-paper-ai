@@ -24,6 +24,13 @@ def initialize(db):
                'ON live_adjustment_events (subscription_id, requires_review)')
     db.execute('CREATE INDEX IF NOT EXISTS adjustment_identity ON live_adjustment_events (adjustment_id)')
     db.execute('CREATE INDEX IF NOT EXISTS adjustment_transaction ON live_adjustment_events (transaction_id)')
+    db.execute('''CREATE TABLE IF NOT EXISTS live_review_releases (
+        review_id TEXT PRIMARY KEY, account_id TEXT NOT NULL,
+        subscription_id TEXT NOT NULL, operator_ref TEXT NOT NULL,
+        case_ref TEXT NOT NULL, checked_at TEXT NOT NULL, evidence_digest TEXT NOT NULL,
+        evidence TEXT NOT NULL)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS live_review_coverage (
+        event_id TEXT PRIMARY KEY, review_id TEXT NOT NULL)''')
 
 
 def needs_review(db, subscription_id):
@@ -31,9 +38,14 @@ def needs_review(db, subscription_id):
     if not subscription_id or not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
                                             "AND name='live_adjustment_events'").fetchone():
         return False
-    return bool(db.execute('SELECT 1 FROM live_adjustment_events '
-                           'WHERE subscription_id=? AND requires_review=1 LIMIT 1',
-                           (subscription_id,)).fetchone())
+    covered = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                         "AND name='live_review_coverage'").fetchone()
+    return bool(db.execute('SELECT 1 FROM live_adjustment_events e '
+                          'WHERE subscription_id=? AND requires_review=1 ' +
+                          ('AND NOT EXISTS (SELECT 1 FROM live_review_coverage c '
+                           'JOIN live_review_releases r ON r.review_id=c.review_id '
+                           'WHERE c.event_id=e.event_id AND r.subscription_id=e.subscription_id) '
+                           if covered else '') + 'LIMIT 1', (subscription_id,)).fetchone())
 
 
 def apply(db, data, event_id, when):
