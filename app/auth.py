@@ -427,7 +427,8 @@ class AuthenticationMiddleware:
             setup_allowed = (
                 path in COMPANY_SETUP_PATHS
                 or path in {'/subscription/paddle', '/subscription/paddle/status', '/subscription/paddle/cancel',
-                            '/subscription/paddle/payment-method'}
+                            '/subscription/paddle/payment-method', '/subscription/paddle-payment',
+                            '/subscription/paddle-payment/open'}
                 or path == "/static"
                 or path.startswith("/static/")
                 or request.method == "OPTIONS"

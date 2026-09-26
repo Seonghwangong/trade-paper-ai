@@ -46,6 +46,7 @@ from app.toss_payments import router as toss_payments_router
 from app.paddle_live_webhook import router as paddle_live_router
 from app.paddle_live_manage import router as paddle_manage_router
 from app.paddle_live_checkout import router as paddle_buy_router
+from app.paddle_live_payment_link import router as paddle_payment_link_router
 from app.paddle_sandbox_webhook import router as paddle_sandbox_router
 from app.paddle_sandbox_checkout import router as paddle_checkout_router
 from app.admin_dashboard import router as admin_dashboard_router
@@ -710,6 +711,7 @@ app.include_router(toss_payments_router)
 app.include_router(paddle_live_router)
 app.include_router(paddle_manage_router)
 app.include_router(paddle_buy_router)
+app.include_router(paddle_payment_link_router)
 app.include_router(paddle_sandbox_router)
 app.include_router(paddle_checkout_router)
 app.include_router(admin_dashboard_router)
