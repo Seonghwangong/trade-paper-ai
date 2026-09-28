@@ -109,10 +109,10 @@ def empty_state(message: object, action_html: str = "") -> str:
     return f'<div class="tp-empty"><p>{html_escape(message)}</p>{action}</div>'
 
 
-def page_shell(title: object, content: str, *, subtitle: object = "", navigation: str = "", styles: str = "", main_class: str = "tp-page") -> str:
+def page_shell(title: object, content: str, *, subtitle: object = "", navigation: str = "", styles: str = "", main_class: str = "tp-page", lang: str = "en") -> str:
     subtitle_html = f'<p>{html_escape(subtitle)}</p>' if subtitle else ""
     css = styles or shared_css()
-    return f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(title)}</title><style>{css}</style></head><body><main class="{html_escape(main_class, attribute=True)}">{navigation}<h1>{html_escape(title)}</h1>{subtitle_html}{content}</main>{release_footer()}</body></html>'
+    return f'<!doctype html><html lang="{html_escape(lang, attribute=True)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(title)}</title><style>{css}</style></head><body><main class="{html_escape(main_class, attribute=True)}">{navigation}<h1>{html_escape(title)}</h1>{subtitle_html}{content}</main>{release_footer()}</body></html>'
 
 
 def release_footer() -> str:

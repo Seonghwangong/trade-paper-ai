@@ -12,6 +12,53 @@ def _request(admin=True, query=""):
     return Request({"type": "http", "headers": [], "query_string": query.encode(), "trade_paper_user": {"account_id": "test-account", "is_admin": admin}})
 
 
+def test_korean_application_keeps_language_through_submission_and_welcome_draft(tmp_path, monkeypatch):
+    from html import unescape
+    import re
+    from urllib.parse import parse_qs, urlsplit
+
+    path = tmp_path / "beta_applications.json"
+    legacy = {"company_name": "Legacy", "email": "legacy@example.com"}
+    path.write_text(json.dumps([legacy]))
+    monkeypatch.setattr(founding_beta, "BETA_APPLICATION_FILE", path)
+    form = founding_beta.founding_beta_page(lang="ko").body.decode()
+    assert '<html lang="ko">' in form
+    assert 'name="lang" value="ko"' in form
+    assert '<option value="Disquiet">디스콰이엇</option>' in form
+    response = founding_beta.submit_founding_beta(
+        "가상 수출회사", "테스터", "tester@example.com", "대한민국", "", "1–10", "Disquiet", "ko",
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/founding-beta/thank-you?lang=ko"
+    thanks = founding_beta.founding_beta_thank_you(lang="ko").body.decode()
+    assert '<html lang="ko">' in thanks
+    assert "신청이 접수되었습니다" in thanks
+    assert '/getting-started#sample-documents' in thanks
+    rows = json.loads(path.read_text())
+    assert rows[0] == legacy
+    assert rows[1]["preferred_language"] == "ko" and rows[1]["referral_source"] == "Disquiet"
+    founding_beta.update_founding_beta_status(1, _request(), "Contacted")
+    body = founding_beta.founding_beta_admin(_request()).body.decode()
+    draft = re.search(r'href="([^"]+)" aria-label="Draft welcome email for 가상 수출회사"', body)
+    params = parse_qs(urlsplit(unescape(draft.group(1))).query)
+    assert params['subject'] == ['[Trade Paper AI] 베타 신청 감사합니다 — 샘플 체험 안내']
+    assert '안녕하세요, 테스터님.' in params['body'][0]
+    assert 'https://www.tradepaper.ai/getting-started#sample-documents' in params['body'][0]
+    assert json.loads(path.read_text())[1]['preferred_language'] == 'ko'
+
+
+def test_unknown_beta_language_falls_back_without_echoing_or_redirecting(tmp_path, monkeypatch):
+    language = '\"><script>alert(1)</script>https://outside.example'
+    path = tmp_path / "beta_applications.json"
+    monkeypatch.setattr(founding_beta, "BETA_APPLICATION_FILE", path)
+    for page in (founding_beta.founding_beta_page, founding_beta.founding_beta_thank_you):
+        body = page(lang=language).body.decode()
+        assert '<html lang="en">' in body and language not in body
+    response = founding_beta.submit_founding_beta("A", "B", "a@example.com", "Korea", "", "", "", language)
+    assert response.headers["location"] == "/founding-beta/thank-you"
+    assert "preferred_language" not in json.loads(path.read_text())[0]
+
+
 @pytest.mark.parametrize("identity", [{}, {"account_id": "ordinary-user"}, {"account_id": "ordinary-user", "is_admin": False}])
 def test_beta_admin_denies_read_and_write_before_storage_access(monkeypatch, identity):
     request = Request({"type": "http", "headers": [], "trade_paper_user": identity})
