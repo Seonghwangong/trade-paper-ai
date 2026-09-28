@@ -17,6 +17,7 @@ router = APIRouter()
 BETA_APPLICATION_FILE = data_path("beta_applications.json")
 MONTHLY_DOCUMENT_OPTIONS = ("1–10", "11–50", "51+")
 APPLICATION_STATUSES = ("New", "Contacted", "Demo Scheduled", "Beta Customer", "Closed")
+REFERRAL_SOURCES = ("Product Hunt", "Disquiet", "ExportersIndia", "Reddit", "Search engine", "Recommendation", "Other")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
@@ -32,6 +33,7 @@ def founding_beta_page():
         f'<option value="{html_escape(value, attribute=True)}">{html_escape(value)}</option>'
         for value in MONTHLY_DOCUMENT_OPTIONS
     )
+    source_options = "".join(f'<option value="{value}">{value}</option>' for value in REFERRAL_SOURCES)
     content = f"""
 <div class="intro"><h2>Stop retyping the same details between export documents</h2><p>For small exporters and trade teams who prepare Commercial Invoices and Packing Lists themselves.</p><p>Reuse buyer and product details, continue from an Invoice to a Packing List, then review both PDFs.</p></div>
 <section class="card" style="margin-bottom:20px"><h2>Try one sample shipment with us</h2><ol class="next-steps"><li>Tell us what you export and how many documents you prepare.</li><li>Walk through a sample Invoice and Packing List, with direct onboarding if you need help.</li><li>Tell us where you had to retype information or found a step unclear.</li></ol><p>Use fictional details for your first test. Do not submit confidential customer or shipment information.</p><p>The Free plan includes 5 documents per month. Saving sample documents counts toward that limit. Online paid checkout is not active; this application does not create an account or charge you.</p><p><a href="/getting-started#sample-documents">Preview a sample Invoice and Packing List before signing up</a>. No account required.</p><p>Prefer to explore first? <a href="/getting-started">Read the walkthrough</a>, or <a href="/register?next=%2Fdemo">create an account to try the demo</a>. Already registered? <a href="/login?next=%2Fdemo">Log in to the demo</a>.</p></section>
@@ -42,6 +44,7 @@ def founding_beta_page():
 <label for="country">Country <span class="required">*</span></label><input id="country" name="country" autocomplete="country-name" required>
 <label for="exports">What do you export?</label><textarea id="exports" name="exports" aria-describedby="exports-help"></textarea><p id="exports-help">Optional: add the step where you repeat the most typing, such as buyer details, item quantities, or packing information. A general description is enough.</p>
 <label for="monthly_export_documents">Monthly export documents</label><select id="monthly_export_documents" name="monthly_export_documents"><option value="">Select</option>{options}</select>
+<label for="referral_source">How did you hear about us? (optional)</label><select id="referral_source" name="referral_source"><option value="">Prefer not to say</option>{source_options}</select>
 <button type="submit">Apply for Founding Beta</button>
 </form></section>"""
     return HTMLResponse(page_shell("Founding Beta Application", content, styles=_styles()))
@@ -55,6 +58,7 @@ def submit_founding_beta(
     country: str = Form(""),
     exports: str = Form(""),
     monthly_export_documents: str = Form(""),
+    referral_source: str = Form(""),
 ):
     company_name = require_text("Company Name", company_name)
     contact_name = require_text("Contact Name", contact_name)
@@ -65,6 +69,9 @@ def submit_founding_beta(
     monthly = str(monthly_export_documents or "").strip()
     if monthly and monthly not in MONTHLY_DOCUMENT_OPTIONS:
         raise DataValidationError("Monthly export documents", "The selected range is invalid.", "Choose one of the available ranges.")
+    source = referral_source.strip() if isinstance(referral_source, str) else ""
+    if source and source not in REFERRAL_SOURCES:
+        raise DataValidationError("How did you hear about us?", "The selected source is invalid.", "Choose one of the available options or leave it blank.")
     application = {
         "company_name": company_name,
         "contact_name": contact_name,
@@ -75,6 +82,8 @@ def submit_founding_beta(
         "status": "New",
         "submitted_at": datetime.now(timezone.utc).isoformat(),
     }
+    if source:
+        application["referral_source"] = source
     locked_json_mutation(
         BETA_APPLICATION_FILE, [], lambda applications: applications.append(application), list
     )
@@ -170,9 +179,13 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
         mailto = f"mailto:{quote(email, safe='@._+-')}?{urlencode({'subject': 'Trade Paper AI Founding Beta'})}"
         company = str(record.get("company_name", "") or "")
         contact_name = str(record.get("contact_name", "") or "").strip() or "there"
+        source = record.get("referral_source")
+        source_label = source if source in REFERRAL_SOURCES else "Not provided"
         draft_body = (
             f"Hi {contact_name},\r\n\r\n"
             "Thank you for applying to the Trade Paper AI Founding Beta.\r\n\r\n"
+            "Preview a matching Invoice and Packing List before signing up (no account needed): "
+            "https://www.tradepaper.ai/getting-started#sample-documents\r\n\r\n"
             "Read the step-by-step guide: https://www.tradepaper.ai/getting-started\r\n\r\n"
             "To try the workflow, create an account at https://www.tradepaper.ai/register?next=%2Fdemo, "
             "then sign in at https://www.tradepaper.ai/login?next=%2Fdemo. "
@@ -193,17 +206,19 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
 <td>{html_escape(record.get('country', ''))}</td>
 <td>{html_escape(record.get('exports', ''))}</td>
 <td>{html_escape(record.get('monthly_export_documents', ''))}</td>
+<td>{html_escape(source_label)}</td>
 <td><form method="post" action="/admin/founding-beta/{index}/status?{html_escape(return_query, attribute=True)}" data-native-submit="true"><select name="status" aria-label="Status for {html_escape(record.get('company_name', ''), attribute=True)}">{_status_options(status)}</select><button type="submit">Update</button></form></td></tr>"""
     if not rows:
-        rows = '<tr><td class="empty" colspan="8">No Founding Beta applications found.</td></tr>'
+        rows = '<tr><td class="empty" colspan="9">No Founding Beta applications found.</td></tr>'
     feedback = "Status updated successfully." if updated == 1 else ""
     content = f"""
 <p class="follow-up-summary"><a href="/admin/founding-beta?status_filter=New&amp;sort=oldest">{new_count} new applications awaiting first contact</a></p>
 <div class="admin-nav"><a href="/">← Dashboard</a><form class="search" action="/admin/founding-beta" method="get"><input type="search" name="search" value="{html_escape(query, attribute=True)}" placeholder="Search company, contact, or email" aria-label="Search applications"><select name="status_filter" aria-label="Filter applications by status">{filter_options}</select><select name="sort" aria-label="Application order">{sort_options}</select><button type="submit">Search</button></form><span class="count">{len(entries)} applications</span></div>
 <p>Draft welcome email opens your email app for review. Send it there, then update the application status to Contacted.</p>
+<p>Referral source is optional and supplied by the applicant. It is separate from anonymous page-view analytics.</p>
 <div id="admin-feedback" class="feedback" role="status" aria-live="polite">{feedback}</div>
 <p class="table-hint">Swipe the table sideways to see email actions and application status.</p>
-<div class="table-wrap" role="region" aria-label="Beta applications" tabindex="0"><table><thead><tr><th>Application Date</th><th>Company</th><th>Contact Name</th><th>Email</th><th>Country</th><th>Export Item</th><th>Monthly Documents</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>
+<div class="table-wrap" role="region" aria-label="Beta applications" tabindex="0"><table><thead><tr><th>Application Date</th><th>Company</th><th>Contact Name</th><th>Email</th><th>Country</th><th>Export Item</th><th>Monthly Documents</th><th>Referral source</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table></div>
 <script>(function(){{const feedback=document.getElementById('admin-feedback');async function copyEmail(value){{if(navigator.clipboard&&navigator.clipboard.writeText){{try{{await navigator.clipboard.writeText(value);return;}}catch(error){{}}}}const input=document.createElement('textarea');input.value=value;input.setAttribute('readonly','');input.style.position='fixed';input.style.opacity='0';document.body.appendChild(input);input.select();document.execCommand('copy');input.remove();}}document.querySelectorAll('.copy-email').forEach(function(button){{button.addEventListener('click',function(){{feedback.textContent='Email copied.';copyEmail(button.dataset.email||'');}});}});}})();</script>"""
     return HTMLResponse(page_shell("Founding Beta Admin", content, subtitle="Manage application follow-up status.", styles=_admin_styles()))
 

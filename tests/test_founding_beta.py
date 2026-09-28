@@ -228,6 +228,8 @@ def test_beta_followup_order_draft_and_return_context(tmp_path, monkeypatch):
     assert 'Hi Kim & Co,' in params['body'][0]
     assert 'https://www.tradepaper.ai/login?next=%2Fdemo' in params['body'][0]
     assert 'Your beta application does not create an account.' in params['body'][0]
+    assert 'https://www.tradepaper.ai/getting-started#sample-documents' in params['body'][0]
+    assert 'no account needed' in params['body'][0]
     assert json.loads(application_file.read_text()) == records
 
     context = urlencode({'search': 'Oldest & Korea', 'status_filter': 'New', 'sort': 'oldest', 'next': 'https://external.example'})
@@ -242,3 +244,29 @@ def test_beta_followup_order_draft_and_return_context(tmp_path, monkeypatch):
     assert '<td>Oldest</td>' not in filtered
     with pytest.raises(DataValidationError):
         founding_beta.founding_beta_admin(_request(), sort='bad')
+
+
+def test_optional_referral_survives_followup_and_legacy_rows_remain_unchanged(tmp_path, monkeypatch):
+    path = tmp_path / 'beta_applications.json'
+    legacy = {'company_name': 'Legacy', 'email': 'legacy@example.com', 'status': 'New'}
+    path.write_text(json.dumps([legacy]))
+    monkeypatch.setattr(founding_beta, 'BETA_APPLICATION_FILE', path)
+    response = founding_beta.submit_founding_beta('Sample', 'Tester', 'test@example.com', 'Korea', '', '', ' Product Hunt ')
+    assert response.status_code == 303
+    rows = json.loads(path.read_text())
+    assert rows[0] == legacy and rows[1]['referral_source'] == 'Product Hunt'
+    body = founding_beta.founding_beta_admin(_request()).body.decode()
+    assert '<th>Referral source</th>' in body and '<td>Product Hunt</td>' in body and '<td>Not provided</td>' in body
+    founding_beta.update_founding_beta_status(1, _request(), 'Contacted')
+    updated = json.loads(path.read_text())
+    assert updated[0] == legacy and updated[1]['referral_source'] == 'Product Hunt'
+    assert updated[1]['status'] == 'Contacted'
+
+
+@pytest.mark.parametrize('value', ['https://private.example/person', '<script>alert(1)</script>', 'arbitrary campaign'])
+def test_referral_rejects_unlisted_values_before_saving(tmp_path, monkeypatch, value):
+    path = tmp_path / 'beta_applications.json'
+    monkeypatch.setattr(founding_beta, 'BETA_APPLICATION_FILE', path)
+    with pytest.raises(DataValidationError):
+        founding_beta.submit_founding_beta('Sample', 'Tester', 'test@example.com', 'Korea', '', '', value)
+    assert not path.exists()
