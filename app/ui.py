@@ -883,9 +883,13 @@ class ReleaseFooterMiddleware:
             )
             body = b"".join(body_parts)
             if "application/pdf" in content_type:
+                public_sample_filename = {
+                    "/static/samples/commercial-invoice.pdf": "commercial-invoice.pdf",
+                    "/static/samples/packing-list.pdf": "packing-list.pdf",
+                }.get(request_path)
                 disposition = next(
                     (value.decode("latin-1") for key, value in headers if key.lower() == b"content-disposition"),
-                    "attachment; filename=document.pdf",
+                    f"attachment; filename={public_sample_filename or 'document.pdf'}",
                 )
                 fallback_match = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';]+)', disposition, re.I)
                 fallback = fallback_match.group(1) if fallback_match else "document.pdf"
@@ -894,7 +898,7 @@ class ReleaseFooterMiddleware:
                     fallback,
                     scope.get("trade_paper_pdf_record"),
                 )
-                mode = "inline" if query.get("view", [""])[0] == "1" else "attachment"
+                mode = "inline" if public_sample_filename or query.get("view", [""])[0] == "1" else "attachment"
                 headers = [(key, value) for key, value in headers if key.lower() != b"content-disposition"]
                 headers.append((b"content-disposition", f'{mode}; filename="{filename}"'.encode("latin-1")))
             if "text/html" in content_type:
