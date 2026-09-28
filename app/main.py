@@ -49,6 +49,7 @@ from app.paddle_live_checkout import router as paddle_buy_router
 from app.paddle_live_payment_link import router as paddle_payment_link_router
 from app.paddle_sandbox_webhook import router as paddle_sandbox_router
 from app.paddle_sandbox_checkout import router as paddle_checkout_router
+from app.paddle_sandbox_payment_link import router as paddle_test_payment_router
 from app.admin_dashboard import router as admin_dashboard_router
 from app.audit_log import router as audit_log_router
 from app.backup_restore import router as backup_restore_router
@@ -714,6 +715,7 @@ app.include_router(paddle_buy_router)
 app.include_router(paddle_payment_link_router)
 app.include_router(paddle_sandbox_router)
 app.include_router(paddle_checkout_router)
+app.include_router(paddle_test_payment_router)
 app.include_router(admin_dashboard_router)
 app.include_router(audit_log_router)
 app.include_router(backup_restore_router)
