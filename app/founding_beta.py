@@ -23,7 +23,7 @@ _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 def _styles():
     return """
-*{box-sizing:border-box}body{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}.tp-page{width:min(720px,calc(100% - 32px));margin:40px auto}.intro{text-align:center;margin-bottom:26px}.intro p{color:#64748B;line-height:1.6}.card{background:#fff;border:1px solid #E5E7EB;border-radius:18px;padding:28px;box-shadow:0 14px 35px rgba(15,23,42,.07)}form{display:grid;gap:9px}label{margin-top:8px;font-weight:750}input,select,textarea{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}textarea{min-height:100px;resize:vertical}input:focus,select:focus,textarea:focus{border-color:#2563EB;outline:3px solid #DBEAFE}button,.back{display:inline-flex;min-height:48px;align-items:center;justify-content:center;margin-top:16px;padding:12px 18px;border:0;border-radius:11px;background:#111827;color:#fff;text-decoration:none;font-size:16px;font-weight:800;cursor:pointer}.required{color:#B91C1C}.benefits{list-style:none;padding:0;margin:20px 0}.benefits li{padding:8px 0;color:#334155}.promise{font-size:18px;font-weight:800}.next-steps{padding-left:24px;line-height:1.7}.next-steps li{margin:12px 0}.card p{line-height:1.6}.tp-release-footer{width:min(720px,calc(100% - 32px));margin:34px auto 20px;padding:20px 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}.tp-release-footer strong{display:block;color:#374151}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}@media(max-width:600px){.tp-page{margin:20px auto}.card{padding:22px}}
+*{box-sizing:border-box}body{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}.tp-page{width:min(720px,calc(100% - 32px));margin:40px auto}.intro{text-align:center;margin-bottom:26px}.intro p{color:#64748B;line-height:1.6}.card{background:#fff;border:1px solid #E5E7EB;border-radius:18px;padding:28px;box-shadow:0 14px 35px rgba(15,23,42,.07)}form{display:grid;gap:9px}label{margin-top:8px;font-weight:750}input,select,textarea{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}textarea{min-height:100px;resize:vertical}input:focus,select:focus,textarea:focus{border-color:#2563EB;outline:3px solid #DBEAFE}button,.back{display:inline-flex;min-height:48px;align-items:center;justify-content:center;margin-top:16px;padding:12px 18px;border:0;border-radius:11px;background:#111827;color:#fff;text-decoration:none;font-size:16px;font-weight:800;cursor:pointer}.required{color:#B91C1C}.form-error{padding:16px;margin-bottom:18px;border:1px solid #FECACA;border-radius:10px;background:#FEF2F2;color:#991B1B}.form-error p{margin:8px 0}.form-error a{color:#991B1B;font-weight:700}.benefits{list-style:none;padding:0;margin:20px 0}.benefits li{padding:8px 0;color:#334155}.promise{font-size:18px;font-weight:800}.next-steps{padding-left:24px;line-height:1.7}.next-steps li{margin:12px 0}.card p{line-height:1.6}.tp-release-footer{width:min(720px,calc(100% - 32px));margin:34px auto 20px;padding:20px 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}.tp-release-footer strong{display:block;color:#374151}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}@media(max-width:600px){.tp-page{margin:20px auto}.card{padding:22px}}
 """
 
 
@@ -37,19 +37,20 @@ def _language_navigation(path: str, lang: str) -> str:
     )
 
 
-def _korean_application(options: str) -> str:
+def _korean_application(options: str, values, error_html: str) -> str:
     labels = {"Disquiet": "디스콰이엇", "Search engine": "검색", "Recommendation": "지인 추천", "Other": "기타"}
-    sources = "".join(f'<option value="{value}">{labels.get(value, value)}</option>' for value in REFERRAL_SOURCES)
+    sources = "".join(f'<option value="{value}"{_selected(values, "referral_source", value)}>{labels.get(value, value)}</option>' for value in REFERRAL_SOURCES)
     return f"""
+{error_html}
 <div class="intro"><h2>수출 서류에 같은 정보를 반복 입력하고 계신가요?</h2><p>Commercial Invoice와 Packing List를 직접 작성하는 소규모 수출업체·무역팀을 위한 체험입니다.</p><p>저장한 바이어·품목 정보를 재사용해 Invoice에서 Packing List로 이어서 작성하고, 두 PDF를 검토해 보세요.</p></div>
 <section class="card" style="margin-bottom:20px"><h2>샘플 거래 한 건으로 시작해 보세요</h2><ol class="next-steps"><li>수출 품목과 작성하는 서류 수를 알려 주세요.</li><li>샘플 Invoice와 Packing List를 만들어 보세요. 필요한 경우 첫 사용을 안내해 드립니다.</li><li>다시 입력해야 했던 정보나 막히는 단계를 알려 주세요.</li></ol><p>첫 체험에는 가상 정보를 사용해 주세요. 실제 고객 정보나 비공개 거래 자료는 신청서에 넣지 마세요.</p><p>Free 플랜은 월 5개 문서를 지원하며, 저장한 샘플 문서도 포함됩니다. 온라인 유료 결제는 아직 활성화되지 않았습니다. 이 신청으로 계정이 만들어지거나 요금이 청구되지는 않습니다.</p><p><a href="/getting-started#sample-documents">가입 없이 샘플 Invoice·Packing List 먼저 보기</a></p><p>먼저 둘러보고 싶으신가요? <a href="/getting-started">체험 안내</a>를 읽거나 <a href="/register?next=%2Fdemo">계정을 만들어 데모를 시작</a>하세요. 계정이 있다면 <a href="/login?next=%2Fdemo">로그인</a>하세요.</p></section>
 <section class="card"><form method="post" action="/founding-beta" data-native-submit="true">
 <input type="hidden" name="lang" value="ko">
-<label for="company_name">회사명 <span class="required">*</span></label><input id="company_name" name="company_name" autocomplete="organization" required>
-<label for="contact_name">담당자 이름 <span class="required">*</span></label><input id="contact_name" name="contact_name" autocomplete="name" required>
-<label for="email">이메일 <span class="required">*</span></label><input id="email" name="email" type="email" autocomplete="email" required>
-<label for="country">국가 <span class="required">*</span></label><input id="country" name="country" autocomplete="country-name" required>
-<label for="exports">어떤 품목을 수출하시나요? (선택)</label><textarea id="exports" name="exports" aria-describedby="exports-help"></textarea><p id="exports-help">바이어 정보, 품목 수량, 포장 정보 등 반복 입력이 많은 단계도 알려 주세요. 일반적인 설명이면 충분합니다.</p>
+<label for="company_name">회사명 <span class="required">*</span></label><input id="company_name" name="company_name" value="{_value(values, "company_name")}" autocomplete="organization" required>
+<label for="contact_name">담당자 이름 <span class="required">*</span></label><input id="contact_name" name="contact_name" value="{_value(values, "contact_name")}" autocomplete="name" required>
+<label for="email">이메일 <span class="required">*</span></label><input id="email" name="email" value="{_value(values, "email")}" type="email" autocomplete="email" required>
+<label for="country">국가 <span class="required">*</span></label><input id="country" name="country" value="{_value(values, "country")}" autocomplete="country-name" required>
+<label for="exports">어떤 품목을 수출하시나요? (선택)</label><textarea id="exports" name="exports" aria-describedby="exports-help">{_value(values, "exports")}</textarea><p id="exports-help">바이어 정보, 품목 수량, 포장 정보 등 반복 입력이 많은 단계도 알려 주세요. 일반적인 설명이면 충분합니다.</p>
 <label for="monthly_export_documents">월 수출 서류 작성량 (선택)</label><select id="monthly_export_documents" name="monthly_export_documents"><option value="">선택 안 함</option>{options}</select>
 <label for="referral_source">어디에서 알게 되셨나요? (선택)</label><select id="referral_source" name="referral_source"><option value="">선택 안 함</option>{sources}</select>
 <button type="submit">베타 체험 신청하기</button>
@@ -58,29 +59,75 @@ def _korean_application(options: str) -> str:
 
 @router.get("/founding-beta", response_class=HTMLResponse)
 def founding_beta_page(lang: str = "en"):
+    return _application_page(lang)
+
+
+def _value(values, name):
+    return html_escape(values.get(name, ""), attribute=True)
+
+
+def _selected(values, name, option):
+    return " selected" if values.get(name) == option else ""
+
+
+def _application_page(lang="en", values=None, error=None):
+    values = values or {}
     options = "".join(
-        f'<option value="{html_escape(value, attribute=True)}">{html_escape(value)}</option>'
+        f'<option value="{html_escape(value, attribute=True)}"{_selected(values, "monthly_export_documents", value)}>{html_escape(value)}</option>'
         for value in MONTHLY_DOCUMENT_OPTIONS
     )
-    source_options = "".join(f'<option value="{value}">{value}</option>' for value in REFERRAL_SOURCES)
+    source_options = "".join(f'<option value="{value}"{_selected(values, "referral_source", value)}>{value}</option>' for value in REFERRAL_SOURCES)
     language = "ko" if lang == "ko" else "en"
     navigation = _language_navigation("/founding-beta", language)
+    error_html = _application_error(error, language) if error else ""
+    status_code = 409 if error else 200
     if language == "ko":
-        return HTMLResponse(page_shell("베타 체험 신청", _korean_application(options), styles=_styles(), navigation=navigation, lang="ko"))
+        return HTMLResponse(page_shell("베타 체험 신청", _korean_application(options, values, error_html), styles=_styles(), navigation=navigation, lang="ko"), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
     content = f"""
+{error_html}
 <div class="intro"><h2>Stop retyping the same details between export documents</h2><p>For small exporters and trade teams who prepare Commercial Invoices and Packing Lists themselves.</p><p>Reuse buyer and product details, continue from an Invoice to a Packing List, then review both PDFs.</p></div>
 <section class="card" style="margin-bottom:20px"><h2>Try one sample shipment with us</h2><ol class="next-steps"><li>Tell us what you export and how many documents you prepare.</li><li>Walk through a sample Invoice and Packing List, with direct onboarding if you need help.</li><li>Tell us where you had to retype information or found a step unclear.</li></ol><p>Use fictional details for your first test. Do not submit confidential customer or shipment information.</p><p>The Free plan includes 5 documents per month. Saving sample documents counts toward that limit. Online paid checkout is not active; this application does not create an account or charge you.</p><p><a href="/getting-started#sample-documents">Preview a sample Invoice and Packing List before signing up</a>. No account required.</p><p>Prefer to explore first? <a href="/getting-started">Read the walkthrough</a>, or <a href="/register?next=%2Fdemo">create an account to try the demo</a>. Already registered? <a href="/login?next=%2Fdemo">Log in to the demo</a>.</p></section>
 <section class="card"><form method="post" action="/founding-beta" data-native-submit="true">
-<label for="company_name">Company Name <span class="required">*</span></label><input id="company_name" name="company_name" autocomplete="organization" required>
-<label for="contact_name">Contact Name <span class="required">*</span></label><input id="contact_name" name="contact_name" autocomplete="name" required>
-<label for="email">Email <span class="required">*</span></label><input id="email" name="email" type="email" autocomplete="email" required>
-<label for="country">Country <span class="required">*</span></label><input id="country" name="country" autocomplete="country-name" required>
-<label for="exports">What do you export?</label><textarea id="exports" name="exports" aria-describedby="exports-help"></textarea><p id="exports-help">Optional: add the step where you repeat the most typing, such as buyer details, item quantities, or packing information. A general description is enough.</p>
+<label for="company_name">Company Name <span class="required">*</span></label><input id="company_name" name="company_name" value="{_value(values, "company_name")}" autocomplete="organization" required>
+<label for="contact_name">Contact Name <span class="required">*</span></label><input id="contact_name" name="contact_name" value="{_value(values, "contact_name")}" autocomplete="name" required>
+<label for="email">Email <span class="required">*</span></label><input id="email" name="email" value="{_value(values, "email")}" type="email" autocomplete="email" required>
+<label for="country">Country <span class="required">*</span></label><input id="country" name="country" value="{_value(values, "country")}" autocomplete="country-name" required>
+<label for="exports">What do you export?</label><textarea id="exports" name="exports" aria-describedby="exports-help">{_value(values, "exports")}</textarea><p id="exports-help">Optional: add the step where you repeat the most typing, such as buyer details, item quantities, or packing information. A general description is enough.</p>
 <label for="monthly_export_documents">Monthly export documents</label><select id="monthly_export_documents" name="monthly_export_documents"><option value="">Select</option>{options}</select>
 <label for="referral_source">How did you hear about us? (optional)</label><select id="referral_source" name="referral_source"><option value="">Prefer not to say</option>{source_options}</select>
 <button type="submit">Apply for Founding Beta</button>
 </form></section>"""
-    return HTMLResponse(page_shell("Founding Beta Application", content, styles=_styles(), navigation=navigation))
+    return HTMLResponse(page_shell("Founding Beta Application", content, styles=_styles(), navigation=navigation), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
+
+
+def _expects_json(request):
+    accept = request.headers.get("accept", "")
+    return "application/json" in accept and "text/html" not in accept
+
+
+def _application_error(error, language):
+    fields = {
+        "Company Name": ("company_name", "회사명"),
+        "Contact Name": ("contact_name", "담당자 이름"),
+        "Email": ("email", "이메일"),
+        "Country": ("country", "국가"),
+        "Monthly export documents": ("monthly_export_documents", "월 수출 서류 작성량"),
+        "How did you hear about us?": ("referral_source", "알게 된 경로"),
+    }
+    field_id, korean_label = fields.get(error.field, ("company_name", "입력 내용"))
+    if language == "ko":
+        heading = "아직 신청이 접수되지 않았습니다"
+        correction = ("올바른 이메일 주소를 입력해 주세요." if error.field == "Email" else
+                      "목록에서 항목을 선택하거나 선택하지 않은 상태로 두세요." if error.field in {"Monthly export documents", "How did you hear about us?"} else
+                      f"{korean_label}을(를) 입력해 주세요.")
+        message = f"{correction} 다른 입력 내용은 유지했습니다. 수정한 뒤 다시 제출해 주세요."
+        label = korean_label
+    else:
+        heading = "Your application has not been submitted"
+        message = f"{error.reason} {error.correction} Your other entries have been kept. Correct the field and submit again."
+        label = error.field
+    return (f'<div class="form-error" role="alert"><strong>{html_escape(heading)}</strong>'
+            f'<p>{html_escape(message)}</p><a href="#{field_id}">{html_escape(label)}</a></div>')
 
 
 @router.post("/founding-beta")
@@ -93,19 +140,31 @@ def submit_founding_beta(
     monthly_export_documents: str = Form(""),
     referral_source: str = Form(""),
     lang: str = Form("en"),
+    request: Request = None,
 ):
-    company_name = require_text("Company Name", company_name)
-    contact_name = require_text("Contact Name", contact_name)
-    email = require_text("Email", email).strip()
-    country = require_text("Country", country)
-    if not _EMAIL_PATTERN.fullmatch(email):
-        raise DataValidationError("Email", "Enter a valid email address.", "Use an address such as name@company.com.")
-    monthly = str(monthly_export_documents or "").strip()
-    if monthly and monthly not in MONTHLY_DOCUMENT_OPTIONS:
-        raise DataValidationError("Monthly export documents", "The selected range is invalid.", "Choose one of the available ranges.")
-    source = referral_source.strip() if isinstance(referral_source, str) else ""
-    if source and source not in REFERRAL_SOURCES:
-        raise DataValidationError("How did you hear about us?", "The selected source is invalid.", "Choose one of the available options or leave it blank.")
+    values = {
+        "company_name": company_name, "contact_name": contact_name, "email": email,
+        "country": country, "exports": exports, "monthly_export_documents": monthly_export_documents,
+        "referral_source": referral_source,
+    }
+    values = {key: value if isinstance(value, str) else "" for key, value in values.items()}
+    try:
+        company_name = require_text("Company Name", company_name)
+        contact_name = require_text("Contact Name", contact_name)
+        email = require_text("Email", email).strip()
+        country = require_text("Country", country)
+        if not _EMAIL_PATTERN.fullmatch(email):
+            raise DataValidationError("Email", "Enter a valid email address.", "Use an address such as name@company.com.")
+        monthly = str(monthly_export_documents or "").strip()
+        if monthly and monthly not in MONTHLY_DOCUMENT_OPTIONS:
+            raise DataValidationError("Monthly export documents", "The selected range is invalid.", "Choose one of the available ranges.")
+        source = referral_source.strip() if isinstance(referral_source, str) else ""
+        if source and source not in REFERRAL_SOURCES:
+            raise DataValidationError("How did you hear about us?", "The selected source is invalid.", "Choose one of the available options or leave it blank.")
+    except DataValidationError as exc:
+        if request is None or _expects_json(request):
+            raise
+        return _application_page(lang, values, exc)
     application = {
         "company_name": company_name,
         "contact_name": contact_name,

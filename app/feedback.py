@@ -29,32 +29,47 @@ _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 def _styles():
     return """
-*{box-sizing:border-box}body{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}.tp-page{width:min(760px,calc(100% - 32px));margin:40px auto}.intro{text-align:center;color:#64748B;line-height:1.6;margin-bottom:24px}.card{background:#fff;border:1px solid #E5E7EB;border-radius:18px;padding:28px;box-shadow:0 14px 35px rgba(15,23,42,.07)}form{display:grid;gap:9px}label,.field-label{margin-top:8px;font-weight:750}input,select,textarea{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}textarea{min-height:150px;resize:vertical}input:focus,select:focus,textarea:focus{border-color:#2563EB;outline:3px solid #DBEAFE}.rating{display:flex;gap:5px;flex-wrap:wrap}.rating input{position:absolute;opacity:0;width:1px;height:1px}.rating label{display:grid;width:48px;height:46px;place-items:center;margin:0;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#D97706;font-size:24px;cursor:pointer}.rating input:checked+label{border-color:#D97706;background:#FFFBEB}.rating input:focus-visible+label{outline:3px solid #DBEAFE}button,.back{display:inline-flex;min-height:48px;align-items:center;justify-content:center;margin-top:16px;padding:12px 18px;border:0;border-radius:11px;background:#111827;color:#fff;text-decoration:none;font-size:16px;font-weight:800;cursor:pointer}.required{color:#B91C1C}.tp-release-footer{width:min(760px,calc(100% - 32px));margin:34px auto 20px;padding:20px 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}.tp-release-footer strong{display:block;color:#374151}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}@media(max-width:600px){.tp-page{margin:20px auto}.card{padding:22px}}
+*{box-sizing:border-box}body{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}.tp-page{width:min(760px,calc(100% - 32px));margin:40px auto}.intro{text-align:center;color:#64748B;line-height:1.6;margin-bottom:24px}.card{background:#fff;border:1px solid #E5E7EB;border-radius:18px;padding:28px;box-shadow:0 14px 35px rgba(15,23,42,.07)}form{display:grid;gap:9px}label,.field-label{margin-top:8px;font-weight:750}input,select,textarea{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}textarea{min-height:150px;resize:vertical}input:focus,select:focus,textarea:focus{border-color:#2563EB;outline:3px solid #DBEAFE}.rating{display:flex;gap:5px;flex-wrap:wrap}.rating input{position:absolute;opacity:0;width:1px;height:1px}.rating label{display:grid;width:48px;height:46px;place-items:center;margin:0;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#D97706;font-size:24px;cursor:pointer}.rating input:checked+label{border-color:#D97706;background:#FFFBEB}.rating input:focus-visible+label{outline:3px solid #DBEAFE}button,.back{display:inline-flex;min-height:48px;align-items:center;justify-content:center;margin-top:16px;padding:12px 18px;border:0;border-radius:11px;background:#111827;color:#fff;text-decoration:none;font-size:16px;font-weight:800;cursor:pointer}.required{color:#B91C1C}.form-error{padding:16px;margin-bottom:18px;border:1px solid #FECACA;border-radius:10px;background:#FEF2F2;color:#991B1B}.form-error p{margin:8px 0;line-height:1.6}.tp-release-footer{width:min(760px,calc(100% - 32px));margin:34px auto 20px;padding:20px 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}.tp-release-footer strong{display:block;color:#374151}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}@media(max-width:600px){.tp-page{margin:20px auto}.card{padding:22px}}
 """
 
 
 @router.get("/feedback", response_class=HTMLResponse)
 def feedback_page():
+    return _feedback_page()
+
+
+def _feedback_page(values=None, error=None):
+    values = values or {}
+    def value(name):
+        return html_escape(values.get(name, ""), attribute=True)
+
+    def selected(name, option):
+        return " selected" if values.get(name) == option else ""
     categories = "".join(
-        f'<option value="{html_escape(category, attribute=True)}">{html_escape(category)}</option>'
+        f'<option value="{html_escape(category, attribute=True)}"{selected("category", category)}>{html_escape(category)}</option>'
         for category in FEEDBACK_CATEGORIES
     )
     ratings = "".join(
-        f'<input id="rating-{rating}" name="rating" type="radio" value="{rating}"><label for="rating-{rating}" aria-label="{rating} star rating">★</label>'
+        f'<input id="rating-{rating}" name="rating" type="radio" value="{rating}"{" checked" if values.get("rating") == str(rating) else ""}><label for="rating-{rating}" aria-label="{rating} star rating">★</label>'
         for rating in range(1, 6)
     )
+    error_html = ""
+    if error:
+        error_html = (f'<div class="form-error" role="alert"><strong>Your feedback has not been submitted</strong>'
+                      f'<p>{html_escape(error.reason)} {html_escape(error.correction)}</p>'
+                      '<p>Your text and valid selections have been kept. If you attached a screenshot, select it again before resubmitting.</p></div>')
     content = f"""
 <p class="intro">Tell us what is working and what would make Trade Paper AI better. This form records feedback only.</p>
-<section class="card"><form method="post" action="/feedback" enctype="multipart/form-data" data-native-submit="true">
-<label for="name">Name</label><input id="name" name="name" autocomplete="name">
-<label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email">
+<section class="card">{error_html}<form method="post" action="/feedback" enctype="multipart/form-data" data-native-submit="true">
+<label for="name">Name</label><input id="name" name="name" value="{value("name")}" autocomplete="name">
+<label for="email">Email</label><input id="email" name="email" value="{value("email")}" type="email" autocomplete="email">
 <span class="field-label">Rating</span><div class="rating" role="radiogroup" aria-label="Rating">{ratings}</div>
 <label for="category">Category</label><select id="category" name="category"><option value="">Select</option>{categories}</select>
-<label for="feedback">Feedback <span class="required">*</span></label><textarea id="feedback" name="feedback" required></textarea>
+<label for="feedback">Feedback <span class="required">*</span></label><textarea id="feedback" name="feedback" required>{value("feedback")}</textarea>
 <label for="screenshot">Screenshot <span class="field-help">(optional · PNG, JPEG, or WebP · max 3 MB)</span></label><input id="screenshot" name="screenshot" type="file" accept="image/png,image/jpeg,image/webp">
 <button type="submit">Send Feedback</button>
 </form></section>"""
-    return HTMLResponse(page_shell("Feedback Center", content, styles=_styles()))
+    return HTMLResponse(page_shell("Feedback Center", content, styles=_styles()), status_code=409 if error else 200, headers={"Cache-Control": "no-store"} if error else None)
 
 
 @router.post("/feedback")
@@ -67,21 +82,29 @@ def submit_feedback(
     screenshot: UploadFile = File(None),
     request: Request = None,
 ):
-    message = require_text("Feedback", feedback)
-    name = name if isinstance(name, str) else ""
-    email = email if isinstance(email, str) else ""
-    rating = rating if isinstance(rating, str) else ""
-    category = category if isinstance(category, str) else ""
-    normalized_email = email.strip()
-    if normalized_email and not _EMAIL_PATTERN.fullmatch(normalized_email):
-        raise DataValidationError("Email", "Enter a valid email address.", "Use an address such as name@company.com.")
-    normalized_rating = str(rating or "").strip()
-    if normalized_rating and normalized_rating not in {"1", "2", "3", "4", "5"}:
-        raise DataValidationError("Rating", "The selected rating is invalid.", "Choose a rating from 1 to 5.")
-    normalized_category = str(category or "").strip()
-    if normalized_category and normalized_category not in FEEDBACK_CATEGORIES:
-        raise DataValidationError("Category", "The selected category is invalid.", "Choose one of the available categories.")
-    screenshot_id = _save_screenshot(screenshot)
+    values = {"feedback": feedback, "name": name, "email": email, "rating": rating, "category": category}
+    values = {key: value if isinstance(value, str) else "" for key, value in values.items()}
+    try:
+        message = require_text("Feedback", feedback)
+        name = name if isinstance(name, str) else ""
+        email = email if isinstance(email, str) else ""
+        rating = rating if isinstance(rating, str) else ""
+        category = category if isinstance(category, str) else ""
+        normalized_email = email.strip()
+        if normalized_email and not _EMAIL_PATTERN.fullmatch(normalized_email):
+            raise DataValidationError("Email", "Enter a valid email address.", "Use an address such as name@company.com.")
+        normalized_rating = str(rating or "").strip()
+        if normalized_rating and normalized_rating not in {"1", "2", "3", "4", "5"}:
+            raise DataValidationError("Rating", "The selected rating is invalid.", "Choose a rating from 1 to 5.")
+        normalized_category = str(category or "").strip()
+        if normalized_category and normalized_category not in FEEDBACK_CATEGORIES:
+            raise DataValidationError("Category", "The selected category is invalid.", "Choose one of the available categories.")
+        screenshot_id = _save_screenshot(screenshot)
+    except DataValidationError as exc:
+        accept = request.headers.get("accept", "") if request is not None else ""
+        if request is None or ("application/json" in accept and "text/html" not in accept):
+            raise
+        return _feedback_page(values, exc)
     identity = (request.scope.get("trade_paper_user") or {}) if request is not None else {}
     record = {
         "submitted_at": datetime.now(timezone.utc).isoformat(),
