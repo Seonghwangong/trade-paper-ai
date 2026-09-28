@@ -38,7 +38,7 @@ def test_buyer_and_product_demo_prefills_are_query_scoped():
     product_demo = _body(product.product_form(demo=1))
     assert 'value="Sakura Retail Co."' in buyer_demo
     assert 'value="Tokyo, Japan"' in buyer_demo
-    assert 'value="buyer@example.jp"' in buyer_demo
+    assert 'value="buyer@example.com"' in buyer_demo
     assert 'value="Japan"' in buyer_demo
     assert 'name="default_currency" value="USD"' in buyer_demo
     assert 'value="Notebook Computer"' in product_demo

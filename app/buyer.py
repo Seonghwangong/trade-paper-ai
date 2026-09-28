@@ -220,13 +220,14 @@ def buyer_form(demo: int = 0):
     demo_values = {
         "name": "Sakura Retail Co.",
         "address": "Tokyo, Japan",
-        "email": "buyer@example.jp",
+        "email": "buyer@example.com",
         "country": "Japan",
         "status": "Lead",
     } if demo == 1 else {"name": "", "address": "", "email": "", "country": "", "status": "Lead"}
     demo_notice = (
         '<div class="demo-preview"><b>Demo Preview</b><br>'
-        'Temporary values — nothing is saved until you press Save.</div>'
+        'Temporary values — nothing is saved until you press Save.<br>'
+        'The buyer email is a sample address. For a test delivery, enter your own email in the Send Email screen.</div>'
         if demo == 1 else ""
     )
     html = """
