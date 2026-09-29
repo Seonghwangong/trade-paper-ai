@@ -28,6 +28,7 @@ class Settings:
     timeout: int = 120
     backup_hours: int = 6
     with_provider: bool = False
+    alerts: bool = False
 
     def command(self):
         args = [sys.executable, '-m', 'app.paddle_live_jobs', 'run',
@@ -59,7 +60,9 @@ def _settings():
     provider = os.environ.get(PREFIX + 'MONITOR') == '1'
     if provider:
         LiveClient(os.environ.get(PREFIX + 'API_KEY', ''))  # Format only, no request.
-    return Settings(ledger, directory, price, interval, timeout, hours, provider)
+    from app.paddle_live_alerts import configuration
+    alerts = configuration() is not None
+    return Settings(ledger, directory, price, interval, timeout, hours, provider, alerts)
 
 
 class Scheduler:
@@ -89,11 +92,11 @@ class Scheduler:
                 pass
             await process.wait()
 
-    async def _cycle(self):
+    async def _cycle(self, *, command=None, timeout=None, label='paddle_job'):
         # Fixed command, no shell or credentials in arguments. Job diagnostics are
         # saved privately; even an unexpected child traceback cannot enter logs.
         spawning = asyncio.create_task(asyncio.create_subprocess_exec(
-            *self.settings.command(), cwd=PROJECT_ROOT,
+            *(self.settings.command() if command is None else command), cwd=PROJECT_ROOT,
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL))
         try:
@@ -107,30 +110,46 @@ class Scheduler:
         stopping = asyncio.create_task(self.stopped.wait())
         try:
             done, _ = await asyncio.wait(
-                (waiter, stopping), timeout=self.settings.timeout,
+                (waiter, stopping), timeout=self.settings.timeout if timeout is None else timeout,
                 return_when=asyncio.FIRST_COMPLETED)
             if waiter in done:
                 code = waiter.result()
                 status = {0: 'ok', 1: 'warning', 2: 'critical'}.get(code, 'critical')
                 logger.log(logging.INFO if code == 0 else logging.WARNING if code == 1
-                           else logging.ERROR, 'paddle_job status=%s exit=%d', status, code)
+                           else logging.ERROR, '%s status=%s exit=%d', label, status, code)
+                return status, 'job_exit'
             elif self.stopped.is_set():
-                logger.warning('paddle_job status=warning reason=shutdown_interrupted')
+                logger.warning('%s status=warning reason=shutdown_interrupted', label)
+                return None
             else:
-                logger.error('paddle_job status=critical reason=timeout')
+                logger.error('%s status=critical reason=timeout', label)
+                return 'critical', 'timeout'
         finally:
             await self._reap(process)
             stopping.cancel()
             await asyncio.gather(waiter, stopping, return_exceptions=True)
+
+    async def _alert(self, outcome):
+        if not self.settings.alerts or outcome is None or self.stopped.is_set():
+            return
+        status, reason = outcome
+        try:
+            await self._cycle(command=[sys.executable, '-m', 'app.paddle_live_alerts',
+                                      '--status', status, '--reason', reason],
+                              timeout=20, label='paddle_alert')
+        except Exception:
+            logger.error('paddle_alert status=critical reason=process_failure')
 
     async def _loop(self):
         try:
             while not self.stopped.is_set():
                 started = asyncio.get_running_loop().time()
                 try:
-                    await self._cycle()
+                    outcome = await self._cycle()
                 except OSError:
                     logger.error('paddle_job status=critical reason=launch_or_process_failure')
+                    outcome = ('critical', 'launch_failure')
+                await self._alert(outcome)
                 # Monotonic start-to-start cadence; never run concurrent cycles or
                 # catch up a burst of missed runs after downtime/slow execution.
                 remaining = max(0, self.settings.interval -
@@ -141,6 +160,7 @@ class Scheduler:
                     pass
         except Exception:
             logger.error('paddle_scheduler status=critical reason=loop_failed')
+            await self._alert(('critical', 'loop_failed'))
         finally:
             os.close(self.lock_fd)
             self.lock_fd = None

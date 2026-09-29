@@ -40,6 +40,10 @@ any later release; do not paste the key into this runbook.
 - Select an encrypted off-host destination and independently observed alert
   channel. Verify a copied archive, interruption/staleness detection and isolated
   restore. Require adequate disk capacity and an explicit retention policy.
+- The default-off [operator mail extension](paddle-live-alerts.md) can report
+  local cycle failures/recovery using the existing email adapter. Its recipient
+  must be explicit and actual delivery verified. It cannot detect a dead host or
+  replace independent missed-run monitoring; those connections remain open.
 - Treat an empty-ledger drill as scaffolding only. After the controlled Live flow,
   repeat backup/restore against actual recorded evidence before public rollout.
 

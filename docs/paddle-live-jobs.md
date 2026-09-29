@@ -127,8 +127,9 @@ Official sources:
 
 `app.paddle_live_scheduler` is connected to FastAPI startup and shutdown. The
 default-off path starts no task or child process and touches no billing storage.
-It never creates/migrates the ledger, changes payment flags, uploads an archive,
-sends an alert or deletes a backup. No public status/control route is added.
+It never creates/migrates the ledger, changes payment flags, uploads an archive
+or deletes a backup. A separately opted-in [operator email extension](paddle-live-alerts.md)
+can report cycle failures/recovery. No public status/control route is added.
 
 After the ledger and private directory have been deliberately prepared and the
 release gates reviewed, the integration accepts these service environment values:
@@ -144,6 +145,8 @@ release gates reviewed, the integration accepts these service environment values
 | `BACKUP_HOURS` | Default 6; integer 1–24 |
 | `MONITOR` | Exactly `1` adds read-only provider comparison; otherwise local-only warning |
 | `API_KEY` | Existing secret Live key required when MONITOR=1; never a command-line argument |
+| `ALERTS` | Default off; exactly `1` enables the separate operator mail extension |
+| `ALERT_RECIPIENT` | Explicit single operator address when ALERTS=1; no fallback recipient |
 
 The ledger is always `paddle_live.sqlite3` in the application's configured
 `TRADE_PAPER_DATA_DIR`; a separate scheduler ledger path is not accepted. Enabled

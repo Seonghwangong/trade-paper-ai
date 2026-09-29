@@ -254,3 +254,53 @@ def test_abrupt_host_process_death_releases_scheduler_lock_and_preserves_backup(
     asyncio.run(restart())
     assert receipt(root)['latest'] == saved['latest']
     assert jobs.check(ledger, root, price_id=PRICE)['status'] == 'warning'
+
+
+def test_notifications_receive_job_outcome_and_are_skipped_when_disabled_or_stopping(configured, monkeypatch):
+    from app import paddle_live_alerts
+    from tests.test_email_delivery import _environment
+    for key, value in _environment('api').items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv(scheduler.PREFIX + 'ALERTS', '1')
+    monkeypatch.setenv(scheduler.PREFIX + 'ALERT_RECIPIENT', 'operator@example.com')
+    settings = scheduler._settings()
+    assert settings.alerts
+    commands = []
+    async def cycle(self, **kwargs):
+        commands.append(kwargs)
+    monkeypatch.setattr(scheduler.Scheduler, '_cycle', cycle)
+    async def run():
+        runner = scheduler.Scheduler(settings, None)
+        await runner._alert(('critical', 'timeout'))
+        assert commands[0]['command'] == [sys.executable, '-m', 'app.paddle_live_alerts',
+                                         '--status', 'critical', '--reason', 'timeout']
+        assert commands[0]['timeout'] == 20 and commands[0]['label'] == 'paddle_alert'
+        runner.stopped.set()
+        await runner._alert(('critical', 'timeout'))
+        disabled = scheduler.Scheduler(replace(settings, alerts=False), None)
+        await disabled._alert(('critical', 'timeout'))
+        assert len(commands) == 1
+    asyncio.run(run())
+    monkeypatch.setenv(scheduler.PREFIX + 'ALERT_RECIPIENT', '')
+    with pytest.raises(RuntimeError):
+        asyncio.run(scheduler.start_from_environment())
+
+
+def test_loop_notifies_launch_failure_and_keeps_job_failure_visible(configured, monkeypatch, caplog):
+    settings = replace(scheduler._settings(), alerts=True)
+    monkeypatch.setattr(scheduler, '_settings', lambda: settings)
+    outcomes = []
+    async def cycle(self):
+        raise OSError('private launch path')
+    async def alert(self, outcome):
+        outcomes.append(outcome)
+        self.stopped.set()
+    monkeypatch.setattr(scheduler.Scheduler, '_cycle', cycle)
+    monkeypatch.setattr(scheduler.Scheduler, '_alert', alert)
+    async def run():
+        runner = await scheduler.start_from_environment()
+        await runner.task
+        assert runner.lock_fd is None
+    asyncio.run(run())
+    assert outcomes == [('critical', 'launch_failure')]
+    assert 'launch_or_process_failure' in caplog.text and 'private launch path' not in caplog.text
