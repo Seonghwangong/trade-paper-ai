@@ -94,3 +94,31 @@ and leave an incomplete receipt when the initial write succeeded.
 No production schedule, alert recipient, off-host destination or retention deletion
 was configured during implementation. Complete that wiring and a controlled
 production drill before relying on this job for operations.
+
+## Render deployment constraint (reviewed September 29, 2026)
+
+Render cron jobs cannot mount or access persistent disks. A service's disk is
+accessible only by its own running instance, not another worker, one-off job,
+build command or pre-deploy command. Creating a separate scheduled service with
+the same path string therefore does not back up this application's SQLite ledger.
+
+For the current single-instance SQLite deployment, the backup cycle must execute
+on the running application instance. A supervisor/scheduling integration for that
+instance is still to be implemented and validated, including restart behavior,
+bounded execution, missed runs and disk pressure. Merely starting a background
+shell process is not a durable scheduling solution. No scheduler was installed
+by this documentation update.
+
+After a verified online backup is published, copy it to an approved encrypted
+off-host destination and compare its checksum there. The existing ZIP is not
+itself encrypted. The destination, scoped transfer credentials, retention policy
+and independent alert destination remain deployment decisions. Do not put the
+archive behind a public application route to work around disk access restrictions.
+
+The independent availability/missed-run observer must run outside the application
+instance. A successful `/health` response alone does not prove backup freshness.
+See the consolidated [release gates](paddle-live-release-gates.md).
+
+Official sources:
+- https://render.com/docs/cronjobs
+- https://render.com/docs/disks

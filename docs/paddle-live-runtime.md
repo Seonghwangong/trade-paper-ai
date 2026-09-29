@@ -4,7 +4,7 @@ The production app registers POST `/webhooks/paddle-live`, but returns 404 until
 `TRADE_PAPER_PADDLE_LIVE_WEBHOOK=1`. The route has its own signature authentication;
 only this exact POST path bypasses browser session/company setup authentication.
 
-Required private configuration, not currently enabled in production:
+Required private configuration (these are requirements, not a current deployment status report):
 - `TRADE_PAPER_PADDLE_LIVE_PRICE_ID`: actual Live monthly Starter price ID.
 - `TRADE_PAPER_PADDLE_LIVE_WEBHOOK_SECRET`: Live destination signing secret.
 - `TRADE_PAPER_PADDLE_LIVE_WEBHOOK=1`: receive authenticated Live notifications.
@@ -60,7 +60,9 @@ Support links remain available. The default-off owner management adapter now
 connects cancellation/status (paddle-live-management.md). An allowlisted checkout
 pilot is documented in paddle-live-checkout.md. Flags do not cancel charges.
 
-Both flags remain off in production. Do not enable access for customers before
+Both flags default to off in code. The September 28 operator verification found
+WEBHOOK on and ACCESS off; see the dated [release gates](paddle-live-release-gates.md).
+Do not enable access for customers before
 Live checkout, reconciliation, cancellation/portal, refunds, backup and operational
 verification are completed. Existing paid-plan purchase notices still describe
 checkout as unavailable; opening sales requires a coordinated release.

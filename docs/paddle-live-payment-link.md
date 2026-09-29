@@ -53,15 +53,20 @@ Use `no-store` and `no-referrer` throughout.
   links display an error. Users must log in and reopen their original link if
   their session expires. Verify the real Paddle/email/login sequence before
   registering this candidate URL.
-- Actual Paddle.js and hosted checkout still need controlled provider QA. Local
-  browser QA uses a synthetic widget; no real transaction/charge/card update was
-  performed.
+- Live Paddle.js and hosted checkout still need controlled Live provider QA.
+  On September 28 the deployed, allowlisted Sandbox adapter completed actual
+  zero-value card updates and overdue recovery through Paddle's test SDK.
+  That closes the Sandbox UI gap, not Live configuration or financial validation.
 - Signed zero-amount payment-method-change completions now have a dedicated
   ownership-checked receipt path, with backup/replay/monitor compatibility. They
   never grant access or extend a paid period. See `paddle-live-card-updates.md`.
-  Real provider payload and end-to-end portal QA remain required before enabling.
+  Actual Sandbox payload and app UI checks were completed on September 28.
+  Live end-to-end validation remains required before enabling.
 - Preserve the current sales/access gates until operational reconciliation,
   backups/monitoring and controlled financial tests are complete.
+
+Use the dated [release gates](paddle-live-release-gates.md) to distinguish completed
+Sandbox evidence from outstanding Live work instead of repeating completed tests.
 
 References reviewed 2026-09-27:
 - https://developer.paddle.com/build/transactions/default-payment-link/
