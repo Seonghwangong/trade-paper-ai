@@ -74,8 +74,9 @@ Configuration identity is a digest, and reports exclude secrets, object names an
 customer data. A malformed receipt fails closed. Child timeouts/interruption are
 still bounded by the existing scheduler; a killed process leaves durable pending
 evidence. Local disk failure can prevent receipt writes, and complete host failure
-cannot alert from this same process. An independently configured external watchdog
-is still required. No Healthchecks integration is included here.
+cannot alert from this same process. The separately configured
+[external job watchdog](paddle-live-watchdog.md) can detect missed scheduler
+signals; it is not enabled or provisioned by the offsite adapter.
 
 ## Verification before production
 

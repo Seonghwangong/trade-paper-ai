@@ -147,6 +147,8 @@ release gates reviewed, the integration accepts these service environment values
 | `API_KEY` | Existing secret Live key required when MONITOR=1; never a command-line argument |
 | `ALERTS` | Default off; exactly `1` enables the separate operator mail extension |
 | `ALERT_RECIPIENT` | Explicit single operator address when ALERTS=1; no fallback recipient |
+| `WATCHDOG` | Default off; exactly `1` enables the separate external completion signal |
+| `WATCHDOG_URL` | Secret Healthchecks HTTPS UUID URL; see [watchdog setup](paddle-live-watchdog.md) |
 
 The ledger is always `paddle_live.sqlite3` in the application's configured
 `TRADE_PAPER_DATA_DIR`; a separate scheduler ledger path is not accepted. Enabled

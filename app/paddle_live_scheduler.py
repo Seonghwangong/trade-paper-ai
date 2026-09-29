@@ -29,6 +29,7 @@ class Settings:
     backup_hours: int = 6
     with_provider: bool = False
     alerts: bool = False
+    watchdog: bool = False
 
     def command(self):
         args = [sys.executable, '-m', 'app.paddle_live_jobs', 'run',
@@ -64,7 +65,9 @@ def _settings():
     alerts = configuration() is not None
     from app.paddle_live_offsite import configuration as offsite_configuration
     offsite_configuration()  # Offline validation only; no request or key issuance.
-    return Settings(ledger, directory, price, interval, timeout, hours, provider, alerts)
+    from app.paddle_live_watchdog import configuration as watchdog_configuration
+    watchdog = watchdog_configuration() is not None
+    return Settings(ledger, directory, price, interval, timeout, hours, provider, alerts, watchdog)
 
 
 class Scheduler:
@@ -142,6 +145,16 @@ class Scheduler:
         except Exception:
             logger.error('paddle_alert status=critical reason=process_failure')
 
+    async def _watchdog(self, outcome):
+        if not self.settings.watchdog or outcome is None or self.stopped.is_set():
+            return
+        try:
+            await self._cycle(command=[sys.executable, '-m', 'app.paddle_live_watchdog',
+                                      '--status', outcome[0]],
+                              timeout=10, label='paddle_watchdog')
+        except Exception:
+            logger.error('paddle_watchdog status=critical reason=process_failure')
+
     async def _loop(self):
         try:
             while not self.stopped.is_set():
@@ -151,6 +164,7 @@ class Scheduler:
                 except OSError:
                     logger.error('paddle_job status=critical reason=launch_or_process_failure')
                     outcome = ('critical', 'launch_failure')
+                await self._watchdog(outcome)
                 await self._alert(outcome)
                 # Monotonic start-to-start cadence; never run concurrent cycles or
                 # catch up a burst of missed runs after downtime/slow execution.
@@ -162,6 +176,7 @@ class Scheduler:
                     pass
         except Exception:
             logger.error('paddle_scheduler status=critical reason=loop_failed')
+            await self._watchdog(('critical', 'loop_failed'))
             await self._alert(('critical', 'loop_failed'))
         finally:
             os.close(self.lock_fd)
