@@ -31,10 +31,12 @@ any later release; do not paste the key into this runbook.
   check green.
 - Run the existing [backup job](paddle-live-jobs.md) on the same service instance
   as the disk. Render Cron/one-off jobs cannot read this disk.
-- Implement controlled startup/restart/shutdown scheduling before enabling it.
-  Proposed cadence: one diagnostic cycle every 15 minutes, backup every six
-  hours and a 30-minute missed-run threshold. These are proposals, not active jobs
-  or a promised recovery objective.
+- The default-off application scheduler now supplies controlled startup/restart/
+  shutdown wiring, with local subprocess tests for timeout, overlap and recovery.
+  Configure and drill it deliberately before relying on it. Defaults: one
+  diagnostic cycle every 15 minutes, backup every six hours and a separately
+  configured 30-minute missed-run threshold. These are not active production
+  jobs or a promised recovery objective.
 - Select an encrypted off-host destination and independently observed alert
   channel. Verify a copied archive, interruption/staleness detection and isolated
   restore. Require adequate disk capacity and an explicit retention policy.

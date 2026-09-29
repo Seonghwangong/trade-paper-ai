@@ -507,6 +507,20 @@ def startup_stability_audit():
             )
             if key not in known or len(entries) > known[key]:
                 raise RuntimeError("A newly introduced route conflict was detected.")
+@app.on_event("startup")
+async def start_billing_scheduler():
+    from app.paddle_live_scheduler import start_from_environment
+    app.state.billing_scheduler = await start_from_environment()
+
+
+@app.on_event("shutdown")
+async def stop_billing_scheduler():
+    scheduler = getattr(app.state, "billing_scheduler", None)
+    if scheduler is not None:
+        await scheduler.stop()
+        app.state.billing_scheduler = None
+
+
 @app.get("/company")
 def company_page():
     with open(BASE_DIR / "static" / "company.html", "r") as f:

@@ -3,7 +3,8 @@
 `python -m app.paddle_live_jobs` supplies a default-off, one-shot job for a trusted
 host scheduler. It does not install a schedule, send alerts, upload archives,
 delete old backups, change payment flags, replay events or activate a restore.
-Importing it starts no background task. This alone is not production automation.
+Importing it starts no background task. An optional application-lifecycle
+integration is described below; it is disabled unless explicitly configured.
 
 ## One cycle
 
@@ -80,7 +81,7 @@ and leave an incomplete receipt when the initial write succeeded.
    Live price on the application host. Local code/JSON ZIPs are not this backup.
 2. Run a cycle and verify its archive/checksum. Prove isolated recovery using the
    [backup runbook](paddle-live-backup.md), never a production route.
-3. Configure an approved host scheduler, for example every 15 minutes with the
+3. Configure the opt-in same-instance scheduler below, for example every 15 minutes with the
    default overlapping 24-hour event window. Capture every nonzero exit, including
    pre-receipt failures and overlap skips. A separate worker without access to the
    app's durable ledger cannot perform this backup.
@@ -103,11 +104,10 @@ build command or pre-deploy command. Creating a separate scheduled service with
 the same path string therefore does not back up this application's SQLite ledger.
 
 For the current single-instance SQLite deployment, the backup cycle must execute
-on the running application instance. A supervisor/scheduling integration for that
-instance is still to be implemented and validated, including restart behavior,
-bounded execution, missed runs and disk pressure. Merely starting a background
-shell process is not a durable scheduling solution. No scheduler was installed
-by this documentation update.
+on the running application instance. The optional integration below provides
+startup/restart/shutdown wiring. Its local subprocess tests do not establish
+production scheduling, host recovery, capacity or off-host protection. Merely
+deploying its code does not enable it.
 
 After a verified online backup is published, copy it to an approved encrypted
 off-host destination and compare its checksum there. The existing ZIP is not
@@ -122,3 +122,62 @@ See the consolidated [release gates](paddle-live-release-gates.md).
 Official sources:
 - https://render.com/docs/cronjobs
 - https://render.com/docs/disks
+
+## Optional same-instance application scheduler
+
+`app.paddle_live_scheduler` is connected to FastAPI startup and shutdown. The
+default-off path starts no task or child process and touches no billing storage.
+It never creates/migrates the ledger, changes payment flags, uploads an archive,
+sends an alert or deletes a backup. No public status/control route is added.
+
+After the ledger and private directory have been deliberately prepared and the
+release gates reviewed, the integration accepts these service environment values:
+
+| Variable (prefix `TRADE_PAPER_PADDLE_LIVE_`) | Requirement/default |
+|---|---|
+| `SCHEDULER` | Exactly `1` to enable; absent/other values disable |
+| `JOBS` | Must also be exactly `1` |
+| `JOBS_DIRECTORY` | Existing absolute directory, service-owned mode 0700, trusted parents |
+| `PRICE_ID` | Existing distinct Live price matching ledger metadata |
+| `SCHEDULER_INTERVAL_SECONDS` | Default 900; integer 60–3600 |
+| `SCHEDULER_TIMEOUT_SECONDS` | Default 120; integer 10–300, less than interval |
+| `BACKUP_HOURS` | Default 6; integer 1–24 |
+| `MONITOR` | Exactly `1` adds read-only provider comparison; otherwise local-only warning |
+| `API_KEY` | Existing secret Live key required when MONITOR=1; never a command-line argument |
+
+The ledger is always `paddle_live.sqlite3` in the application's configured
+`TRADE_PAPER_DATA_DIR`; a separate scheduler ledger path is not accepted. Enabled
+startup validates an existing read-only ledger and refuses invalid settings,
+an unsafe directory/lock, or an already-held scheduler lock with a sanitized
+startup error. Do not enable against the currently absent production ledger.
+
+The first cycle starts immediately in a subprocess using the app's Python
+interpreter and environment. Subsequent cycles use a monotonic start-to-start
+interval, run serially and do not replay missed intervals. Work cannot block the
+HTTP event loop. A lifetime `scheduler.lock` coordinates enabled instances on
+the same directory; the existing `job.lock` also prevents overlap with manual
+cycles or a previous child that outlives an abruptly killed parent.
+
+Timeout/shutdown sends terminate, waits up to five seconds, then kills and reaps
+the child. A normal stop interrupts the interval wait immediately. A restart
+uses the existing inventory: it rechecks/reuses fresh archives and reports a
+previous running receipt as incomplete. Files interrupted during backup are not
+automatically cleaned up; preserve orphan archives/temporary files for inspection.
+SIGKILL of the parent cannot run shutdown cleanup, so an existing child may
+outlive it. The next process still honors the job lock; a stuck orphan requires
+operator action and must be detected through the independent stale-run check.
+
+Logs expose only sanitized lifecycle/reason codes and numeric job exit status.
+The detailed sanitized job report remains in private `state.json`; child stdout
+and stderr (including unexpected tracebacks) are discarded. A launch failure is
+logged as critical and retried on the next interval. An unexpected scheduler-loop
+failure is logged as critical and stops scheduling until service restart. Neither
+case makes `/health` prove backup health. Capture ERROR and WARNING results and
+check freshness independently, including failures before a new receipt exists.
+Adjust the missed-run threshold when changing interval/timeout; the default
+15-minute interval, two-minute timeout and 30-minute threshold are a starting
+configuration, not a recovery guarantee.
+
+These settings are deployment instructions, not evidence that the production
+flags are enabled. Off-host storage, alert routing, capacity monitoring, retention
+and a controlled production drill remain separate release requirements.
