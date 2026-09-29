@@ -64,7 +64,7 @@ def test_disabled_fastapi_hooks_do_not_touch_storage_or_spawn(monkeypatch):
 
 @pytest.mark.parametrize('kind', ['jobs_off', 'missing_ledger', 'wrong_price',
     'public_directory', 'symlink_directory', 'relative_directory', 'interval',
-    'timeout', 'overlap_bounds', 'backup_hours', 'provider_no_key', 'symlink_lock'])
+    'timeout', 'overlap_bounds', 'backup_hours', 'provider_no_key', 'symlink_lock', 'offsite_missing_key'])
 def test_bad_enabled_configuration_fails_before_starting(configured, monkeypatch, kind):
     ledger, root = configured
     if kind == 'jobs_off':
@@ -86,6 +86,9 @@ def test_bad_enabled_configuration_fails_before_starting(configured, monkeypatch
     elif kind == 'provider_no_key':
         monkeypatch.setenv(scheduler.PREFIX + 'MONITOR', '1')
         monkeypatch.setenv(scheduler.PREFIX + 'API_KEY', '')
+    elif kind == 'offsite_missing_key':
+        monkeypatch.setenv(scheduler.PREFIX + 'OFFSITE', '1')
+        monkeypatch.delenv(scheduler.PREFIX + 'OFFSITE_B2_KEY_ID', raising=False)
     else:
         name, value = {'interval': ('SCHEDULER_INTERVAL_SECONDS', 'nan'),
                        'timeout': ('SCHEDULER_TIMEOUT_SECONDS', '301'),

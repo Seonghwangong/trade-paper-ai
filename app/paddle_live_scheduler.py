@@ -62,6 +62,8 @@ def _settings():
         LiveClient(os.environ.get(PREFIX + 'API_KEY', ''))  # Format only, no request.
     from app.paddle_live_alerts import configuration
     alerts = configuration() is not None
+    from app.paddle_live_offsite import configuration as offsite_configuration
+    offsite_configuration()  # Offline validation only; no request or key issuance.
     return Settings(ledger, directory, price, interval, timeout, hours, provider, alerts)
 
 

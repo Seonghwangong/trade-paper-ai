@@ -21,6 +21,7 @@ from app.paddle_live_backup import create_backup, verify_backup, _sync_dir
 from app.paddle_live_monitor import diagnose, INVALID
 from app.paddle_live_store import _id
 from app.paddle_subscription_policy import _instant
+from app import paddle_live_offsite as offsite
 
 
 def _private(info, directory=False):
@@ -80,6 +81,8 @@ def _read(root, identity):
         _instant(value['finished_at'])
         if value['report']['status'] not in ('ok', 'warning', 'critical'):
             raise ValueError('Invalid result')
+    if 'offsite' in value:
+        offsite.validate_receipt(value['offsite'])
     return value
 
 
@@ -117,6 +120,8 @@ def run(ledger, directory, *, price_id, client=None, now=None, backup_hours=6):
         latest = previous['latest'] if previous else None
         state = {'schema': 1, 'identity': identity, 'phase': 'running',
                  'started_at': now.isoformat(), 'latest': latest}
+        if previous and 'offsite' in previous:
+            state['offsite'] = previous['offsite']
         # Durable start receipt prevents a killed job from retaining an old green result.
         _write(root, state)
         issues = []
@@ -153,6 +158,28 @@ def run(ledger, directory, *, price_id, client=None, now=None, backup_hours=6):
                               archive_sha256=latest['sha256'] if latest else None)
         except INVALID:
             report = _result('diagnostic_attempt_failed')
+        remote_attempt = 'disabled'
+        try:
+            settings = offsite.configuration()
+            if settings is not None:
+                remote_attempt = 'failed'
+                if latest is None or backup_result == 'failed':
+                    raise ValueError('No successful current local backup')
+                def save_pending(receipt):
+                    state['offsite'] = receipt
+                    _write(root, state)
+                mirrored = offsite.mirror(root / latest['name'], price_id=price_id,
+                    expected_sha256=latest['sha256'], settings=settings,
+                    prior=state.get('offsite'), save_pending=save_pending,
+                    now=now, max_age_hours=backup_hours)
+                state['offsite'] = mirrored
+                remote_attempt = mirrored['attempt']
+        except Exception:
+            # Network and malformed provider replies must not leak credentials,
+            # URLs, object names or ledger content to the scheduler/mail logs.
+            remote_attempt = 'failed'
+            issues.append({'code': 'offsite_backup_failed', 'severity': 'critical'})
+        report['offsite_backup'] = remote_attempt
         report['issues'].extend(issues)
         severity = {item['severity'] for item in report['issues']}
         report['status'] = 'critical' if 'critical' in severity else 'warning' if severity else 'ok'
