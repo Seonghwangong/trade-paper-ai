@@ -40,6 +40,7 @@ class Provider:
         self.expiry = (NOW + timedelta(days=30)).timestamp() * 1000
         self.api_url = 'https://api005.backblazeb2.com'
         self.download_url = 'https://f005.backblazeb2.com'
+        self.absent_reply = (404, {}, b'{"status":404,"code":"not_found","message":"File with such name does not exist."}')
 
     def request(self, method, url, headers=None, body=None, **kwargs):
         self.calls.append((method, url))
@@ -69,7 +70,7 @@ class Provider:
             if not headers and not self.public:
                 return 401, {}, b'{}'
             if self.content is None:
-                return 404, {}, b'{"code":"file_not_present"}'
+                return self.absent_reply
             return 200, {'x-bz-server-side-encryption': 'none' if self.bad_encryption else 'AES256',
                          'x-bz-file-id': 'wrong' if self.wrong_version else 'synthetic-version-1'}, (
                              b'corrupted' if self.bad_bytes else self.content)
@@ -127,6 +128,25 @@ def test_real_archive_roundtrip_private_encryption_and_cache(archive, settings, 
     renewed = mirror(archive, settings, prior=cached, now=NOW + timedelta(hours=6))
     assert renewed['attempt'] == 'verified' and provider.uploads == 1
     assert settings.application_key not in json.dumps(receipt)
+
+
+@pytest.mark.parametrize('status,body', [
+    (404, b'{"status":404,"code":"file_not_present"}'),
+    (404, b'{"status":404,"code":"unknown"}'),
+    (404, b'{"status":500,"code":"not_found"}'),
+    (404, b'{"code":"not_found"}'),
+    (404, b'[]'),
+    (404, b'<html>Not found</html>'),
+    (401, b'{"status":404,"code":"not_found"}'),
+    (503, b'{"status":404,"code":"not_found"}'),
+])
+def test_only_documented_file_absence_allows_upload(archive, settings, provider, status, body):
+    provider.absent_reply = status, {}, body
+    pending = []
+    with pytest.raises(ValueError):
+        mirror(archive, settings, save_pending=pending.append)
+    assert provider.uploads == 0 and pending == []
+    assert not any('b2_get_upload_url' in url for _, url in provider.calls)
 
 
 @pytest.mark.parametrize('kind', ['deleteFiles', 'writeBuckets', 'writeBucketEncryption',

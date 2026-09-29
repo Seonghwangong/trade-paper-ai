@@ -128,7 +128,10 @@ class B2Client:
         status, received_headers, received = fetch()
         uploaded_id = None
         if status == 404:
-            if json.loads(received).get('code') != 'file_not_present' or not allow_upload:
+            missing = json.loads(received)
+            # Download-by-name documents not_found, not file_not_present.
+            if (not isinstance(missing, dict) or missing.get('code') != 'not_found'
+                    or missing.get('status') != 404 or not allow_upload):
                 raise ValueError('Remote absence unconfirmed or prior upload uncertain')
             upload = api('GET', base + '/b2api/v4/b2_get_upload_url?' +
                          urlencode({'bucketId': cfg.bucket_id}), headers)

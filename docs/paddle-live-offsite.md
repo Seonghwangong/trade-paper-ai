@@ -45,8 +45,9 @@ this module does not rotate credentials or send independent expiry reminders.
   cause a critical job result; they are not truncated or silently skipped. Revisit
   this deliberate worker-memory bound before growth beyond it.
 - Object names are the configured prefix plus the ZIP SHA256 and `.zip`.
-- First read the object. Only a specific `file_not_present` response permits a new
-  upload. Save a pending receipt durably **before** POST; upload once, then read
+- First read the object. Only HTTP 404 with JSON `status: 404, code: not_found`
+  from the authenticated download-by-name endpoint permits a new upload. Generic
+  errors and an uncertain prior upload remain blocked. Save a pending receipt durably **before** POST; upload once, then read
   back. No transparent POST retry or overwrite of mismatching existing bytes.
 - Verify upload receipt, SSE-B2/AES256 encryption, downloaded bytes, object
   version, SHA256, ZIP/SQLite integrity and denial of unauthenticated downloads.
@@ -85,6 +86,15 @@ secret-safe diagnostics, and scheduler opt-in validation. They send no customer
 data and make no live provider requests. The separate September 29 synthetic
 manual B2 drill is evidence for the storage account; it does not activate or
 certify this new adapter against a production-scoped key.
+
+The subsequent September 29 scoped-key drill exercised `mirror` and `B2Client`
+with only `readFiles,writeFiles` against the `ledger/` prefix. A 2,629-byte
+synthetic ZIP passed encrypted/private round-trip and isolated all-table row
+comparison, pending recovery without another POST, and cache reuse without
+network requests. It exposed the documented download-by-name `not_found` code;
+the earlier fake provider incorrectly used `file_not_present`. The correction
+also rejects mismatched status/code, malformed JSON and unrelated errors before
+requesting an upload URL. This drill did not enable production jobs or billing.
 
 Official references: [authorize](https://www.backblaze.com/apidocs/b2-authorize-account),
 [upload URL](https://www.backblaze.com/apidocs/b2-get-upload-url),
