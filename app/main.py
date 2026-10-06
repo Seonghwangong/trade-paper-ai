@@ -60,6 +60,7 @@ from app import subscription as subscription_module
 from app.auth import AuthenticationMiddleware, router as auth_router
 from app import email_delivery
 from app import analytics as analytics_module
+from app.intake_quality import application_status
 from app import dashboard_insights as dashboard_insights_module
 from app.account_company import load_account_company
 from app.routers import company as company_module
@@ -206,9 +207,9 @@ class ProductAnalyticsMiddleware:
                 analytics_module.record_event(event, owner, once=once)
             except Exception:
                 logger.exception("Product analytics event could not be recorded: %s", event)
-        if method == "GET" and status["code"] == 200 and not account_id and path in {"/", "/register"}:
+        if method == "GET" and status["code"] == 200 and not account_id and path in analytics_module.VISITOR_PATHS:
             headers = {key.decode("latin-1").casefold(): value.decode("latin-1") for key, value in scope.get("headers", [])}
-            page = "Landing" if path == "/" else "Signup"
+            page = analytics_module.VISITOR_PATHS[path]
             source = analytics_module.classify_source(headers.get("referer", ""), bytes(scope.get("query_string", b"")).decode("latin-1"))
             try:
                 analytics_module.record_visit(page, source)
@@ -811,18 +812,19 @@ def operations_dashboard_summary(applications, feedback_records, limit=5):
     feedback_records = [record for record in feedback_records if isinstance(record, dict)]
     beta_counts = {status: 0 for status in ("New", "Contacted", "Demo Scheduled", "Beta Customer")}
     for record in applications:
-        status = str(record.get("status", "") or "").strip() or "New"
+        status = application_status(record)
         if status in beta_counts:
             beta_counts[status] += 1
     return {
         "beta_counts": beta_counts,
+        "beta_review_count": sum(application_status(record) == "Needs review" for record in applications),
         "feedback_counts": {
             "Total": len(feedback_records),
             "Bug": sum(record.get("category") == "Bug" for record in feedback_records),
             "Feature": sum(record.get("category") == "Feature Request" for record in feedback_records),
             "UI/UX": sum(record.get("category") == "UI/UX" for record in feedback_records),
         },
-        "recent_applications": list(reversed(applications))[:limit],
+        "recent_applications": [record for record in reversed(applications) if application_status(record) not in {"Needs review", "Spam"}][:limit],
         "recent_feedback": list(reversed(feedback_records))[:limit],
     }
 
@@ -1331,7 +1333,7 @@ def home(request: Request):
         f'{dashboard_text(record.get("contact_name", "") or "—")} · {dashboard_text(record.get("email", "") or "—")}</span></div>'
         f'<span class="status-pill">{dashboard_text(record.get("status", "") or "New")}</span></article>'
         for record in operations_summary["recent_applications"]
-    ) or '<div class="activity-empty">아직 Founding Beta 신청이 없습니다.</div>'
+    ) or '<div class="activity-empty">표시할 일반 신청이 없습니다. 검토가 필요한 신청은 별도로 확인해 주세요.</div>'
     recent_feedback_rows = "".join(
         '<article class="operations-row"><div><strong>'
         f'{dashboard_text(record.get("category", "") or "Other")}</strong><span>{dashboard_text(record.get("feedback", ""))}</span></div>'
@@ -1340,7 +1342,7 @@ def home(request: Request):
     ) or '<div class="activity-empty">아직 Feedback이 없습니다.</div>'
 
     operations_html = f'''<section class="section"><div class="operations-grid">
-<div class="operations-panel"><h2>Founding Beta</h2><div class="operations-stat-grid">{beta_cards}</div></div>
+<div class="operations-panel"><h2>Founding Beta</h2><div class="operations-stat-grid">{beta_cards}</div><p><a href="/admin/founding-beta?status_filter=Needs+review">검토 필요: {operations_summary["beta_review_count"]}건</a></p></div>
 <div class="operations-panel"><h2>Feedback</h2><div class="operations-stat-grid">{feedback_cards}</div></div>
 </div><div class="operations-recent-grid">
 <div class="operations-list"><h3>최근 신청 5건</h3>{recent_beta_rows}</div>

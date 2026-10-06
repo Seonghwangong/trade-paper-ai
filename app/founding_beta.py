@@ -8,6 +8,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import auth
+from app.intake_quality import APPLICATION_STATUSES, HONEYPOT_HTML, application_status, honeypot_filled
 from app.storage import data_path, load_json_strict, locked_json_mutation
 from app.ui import html_escape, page_shell, section_card
 from app.validation import DataValidationError, require_text
@@ -16,7 +17,6 @@ from app.validation import DataValidationError, require_text
 router = APIRouter()
 BETA_APPLICATION_FILE = data_path("beta_applications.json")
 MONTHLY_DOCUMENT_OPTIONS = ("1–10", "11–50", "51+")
-APPLICATION_STATUSES = ("New", "Contacted", "Demo Scheduled", "Beta Customer", "Closed")
 REFERRAL_SOURCES = ("Product Hunt", "Disquiet", "ExportersIndia", "Reddit", "Search engine", "Recommendation", "Other")
 _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -44,7 +44,7 @@ def _korean_application(options: str, values, error_html: str) -> str:
 {error_html}
 <div class="intro"><h2>수출 서류에 같은 정보를 반복 입력하고 계신가요?</h2><p>Commercial Invoice와 Packing List를 직접 작성하는 소규모 수출업체·무역팀을 위한 체험입니다.</p><p>저장한 바이어·품목 정보를 재사용해 Invoice에서 Packing List로 이어서 작성하고, 두 PDF를 검토해 보세요.</p></div>
 <section class="card" style="margin-bottom:20px"><h2>샘플 거래 한 건으로 시작해 보세요</h2><ol class="next-steps"><li>수출 품목과 작성하는 서류 수를 알려 주세요.</li><li>샘플 Invoice와 Packing List를 만들어 보세요. 필요한 경우 첫 사용을 안내해 드립니다.</li><li>다시 입력해야 했던 정보나 막히는 단계를 알려 주세요.</li></ol><p>첫 체험에는 가상 정보를 사용해 주세요. 실제 고객 정보나 비공개 거래 자료는 신청서에 넣지 마세요.</p><p>Free 플랜은 월 5개 문서를 지원하며, 저장한 샘플 문서도 포함됩니다. 온라인 유료 결제는 아직 활성화되지 않았습니다. 이 신청으로 계정이 만들어지거나 요금이 청구되지는 않습니다.</p><p><a href="/getting-started#sample-documents">가입 없이 샘플 Invoice·Packing List 먼저 보기</a></p><p>먼저 둘러보고 싶으신가요? <a href="/getting-started">체험 안내</a>를 읽거나 <a href="/register?next=%2Fdemo">계정을 만들어 데모를 시작</a>하세요. 계정이 있다면 <a href="/login?next=%2Fdemo">로그인</a>하세요.</p></section>
-<section class="card"><form method="post" action="/founding-beta" data-native-submit="true">
+<section class="card"><form method="post" action="/founding-beta" data-native-submit="true">{HONEYPOT_HTML}
 <input type="hidden" name="lang" value="ko">
 <label for="company_name">회사명 <span class="required">*</span></label><input id="company_name" name="company_name" value="{_value(values, "company_name")}" autocomplete="organization" required>
 <label for="contact_name">담당자 이름 <span class="required">*</span></label><input id="contact_name" name="contact_name" value="{_value(values, "contact_name")}" autocomplete="name" required>
@@ -87,7 +87,7 @@ def _application_page(lang="en", values=None, error=None):
 {error_html}
 <div class="intro"><h2>Stop retyping the same details between export documents</h2><p>For small exporters and trade teams who prepare Commercial Invoices and Packing Lists themselves.</p><p>Reuse buyer and product details, continue from an Invoice to a Packing List, then review both PDFs.</p></div>
 <section class="card" style="margin-bottom:20px"><h2>Try one sample shipment with us</h2><ol class="next-steps"><li>Tell us what you export and how many documents you prepare.</li><li>Walk through a sample Invoice and Packing List, with direct onboarding if you need help.</li><li>Tell us where you had to retype information or found a step unclear.</li></ol><p>Use fictional details for your first test. Do not submit confidential customer or shipment information.</p><p>The Free plan includes 5 documents per month. Saving sample documents counts toward that limit. Online paid checkout is not active; this application does not create an account or charge you.</p><p><a href="/getting-started#sample-documents">Preview a sample Invoice and Packing List before signing up</a>. No account required.</p><p>Prefer to explore first? <a href="/getting-started">Read the walkthrough</a>, or <a href="/register?next=%2Fdemo">create an account to try the demo</a>. Already registered? <a href="/login?next=%2Fdemo">Log in to the demo</a>.</p></section>
-<section class="card"><form method="post" action="/founding-beta" data-native-submit="true">
+<section class="card"><form method="post" action="/founding-beta" data-native-submit="true">{HONEYPOT_HTML}
 <label for="company_name">Company Name <span class="required">*</span></label><input id="company_name" name="company_name" value="{_value(values, "company_name")}" autocomplete="organization" required>
 <label for="contact_name">Contact Name <span class="required">*</span></label><input id="contact_name" name="contact_name" value="{_value(values, "contact_name")}" autocomplete="name" required>
 <label for="email">Email <span class="required">*</span></label><input id="email" name="email" value="{_value(values, "email")}" type="email" autocomplete="email" required>
@@ -120,6 +120,8 @@ def _application_error(error, language):
         correction = ("올바른 이메일 주소를 입력해 주세요." if error.field == "Email" else
                       "목록에서 항목을 선택하거나 선택하지 않은 상태로 두세요." if error.field in {"Monthly export documents", "How did you hear about us?"} else
                       f"{korean_label}을(를) 입력해 주세요.")
+        if error.field == "Form":
+            correction = "신청서를 새로 열어 다시 시도하거나 문의하기로 알려 주세요."
         message = f"{correction} 다른 입력 내용은 유지했습니다. 수정한 뒤 다시 제출해 주세요."
         label = korean_label
     else:
@@ -141,6 +143,7 @@ def submit_founding_beta(
     referral_source: str = Form(""),
     lang: str = Form("en"),
     request: Request = None,
+    website_confirm: str = Form(""),
 ):
     values = {
         "company_name": company_name, "contact_name": contact_name, "email": email,
@@ -149,6 +152,8 @@ def submit_founding_beta(
     }
     values = {key: value if isinstance(value, str) else "" for key, value in values.items()}
     try:
+        if honeypot_filled(website_confirm):
+            raise DataValidationError("Form", "The application could not be submitted.", "Reload the form and try again, or contact us for help.")
         company_name = require_text("Company Name", company_name)
         contact_name = require_text("Contact Name", contact_name)
         email = require_text("Email", email).strip()
@@ -175,6 +180,7 @@ def submit_founding_beta(
         "status": "New",
         "submitted_at": datetime.now(timezone.utc).isoformat(),
     }
+    application["status"] = application_status(application)
     if source:
         application["referral_source"] = source
     if lang == "ko":
@@ -246,11 +252,10 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
     if selected_sort not in ("newest", "oldest"):
         raise DataValidationError("Sort", "The selected order is invalid.", "Choose newest or oldest first.")
     records = load_json_strict(BETA_APPLICATION_FILE, [], list)
-    def record_status(record):
-        value = str(record.get("status", "") or "").strip()
-        return value if value in APPLICATION_STATUSES else "New"
+    record_status = application_status
 
     new_count = sum(1 for record in records if isinstance(record, dict) and record_status(record) == "New")
+    review_count = sum(1 for record in records if isinstance(record, dict) and record_status(record) == "Needs review")
     filter_options = '<option value="">All statuses</option>' + "".join(
         f'<option value="{value}"{" selected" if value == selected_filter else ""}>{value}</option>'
         for value in APPLICATION_STATUSES
@@ -286,7 +291,7 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
     return_query = urlencode({"search": query, "status_filter": selected_filter, "sort": selected_sort})
     rows = ""
     for index, record in entries:
-        status = str(record.get("status", "") or "").strip()
+        status = record_status(record)
         email = str(record.get("email", "") or "").strip()
         mailto = f"mailto:{quote(email, safe='@._+-')}?{urlencode({'subject': 'Trade Paper AI Founding Beta'})}"
         company = str(record.get("company_name", "") or "")
@@ -327,11 +332,14 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
                 "첫 체험에 도움이 필요하면 답장해 주세요.\r\n\r\n감사합니다.\r\n공성환 | Trade Paper AI"
             )
         draft_url = f"mailto:{quote(email, safe='@._+-')}?{urlencode({'subject': draft_subject, 'body': draft_body}, quote_via=quote)}"
+        email_actions = f' <div class="email-actions"><a href="{html_escape(mailto, attribute=True)}">{html_escape(email)}</a><button class="copy-email" type="button" data-email="{html_escape(email, attribute=True)}" aria-label="Copy email for {html_escape(company, attribute=True)}">Copy</button><a href="{html_escape(draft_url, attribute=True)}" aria-label="Draft welcome email for {html_escape(company, attribute=True)}">Draft welcome email</a></div>'
+        if status in {"Needs review", "Spam"}:
+            email_actions = f'{html_escape(email)}<p>Review this application before contacting. Set status to New to restore follow-up actions.</p>'
         rows += f"""
 <tr><td>{html_escape(record.get('submitted_at', ''))}</td>
 <td>{html_escape(company)}</td>
 <td>{html_escape(record.get('contact_name', ''))}</td>
-<td><div class="email-actions"><a href="{html_escape(mailto, attribute=True)}">{html_escape(email)}</a><button class="copy-email" type="button" data-email="{html_escape(email, attribute=True)}" aria-label="Copy email for {html_escape(company, attribute=True)}">Copy</button><a href="{html_escape(draft_url, attribute=True)}" aria-label="Draft welcome email for {html_escape(company, attribute=True)}">Draft welcome email</a></div></td>
+<td>{email_actions}</td>
 <td>{html_escape(record.get('country', ''))}</td>
 <td>{html_escape(record.get('exports', ''))}</td>
 <td>{html_escape(record.get('monthly_export_documents', ''))}</td>
@@ -342,6 +350,7 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
     feedback = "Status updated successfully." if updated == 1 else ""
     content = f"""
 <p class="follow-up-summary"><a href="/admin/founding-beta?status_filter=New&amp;sort=oldest">{new_count} new applications awaiting first contact</a></p>
+<p><a href="/admin/founding-beta?status_filter=Needs+review">{review_count} applications need review</a>. Review flags are suggestions, not confirmed spam. Records are preserved; select Spam to set aside or New to restore.</p>
 <div class="admin-nav"><a href="/">← Dashboard</a><form class="search" action="/admin/founding-beta" method="get"><input type="search" name="search" value="{html_escape(query, attribute=True)}" placeholder="Search company, contact, or email" aria-label="Search applications"><select name="status_filter" aria-label="Filter applications by status">{filter_options}</select><select name="sort" aria-label="Application order">{sort_options}</select><button type="submit">Search</button></form><span class="count">{len(entries)} applications</span></div>
 <p>Draft welcome email opens your email app for review. Send it there, then update the application status to Contacted.</p>
 <p>Referral source is optional and supplied by the applicant. It is separate from anonymous page-view analytics.</p>
@@ -363,6 +372,8 @@ def update_founding_beta_status(index: int, request: Request, status: str = Form
         if index < 0 or index >= len(records) or not isinstance(records[index], dict):
             raise HTTPException(status_code=404, detail="Founding Beta application not found")
         records[index]["status"] = normalized_status
+        if normalized_status == "New":
+            records[index]["intake_reviewed"] = True
 
     return_params = {"updated": "1"}
     search = request.query_params.get("search", "").strip()

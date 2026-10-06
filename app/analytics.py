@@ -22,8 +22,14 @@ EVENTS = (
 )
 ALLOWED_FIELDS = ("time", "event", "account_id")
 VISITOR_FIELDS = ("time", "page", "source")
-VISITOR_PAGES = ("Landing", "Pricing", "FAQ", "Signup")
-VISITOR_SOURCES = ("Direct", "Google", "Product Hunt", "Reddit", "Other")
+VISITOR_PATHS = {
+    "/": "Landing", "/register": "Signup", "/getting-started": "Getting Started",
+    "/founding-beta": "Founding Beta",
+    "/static/samples/commercial-invoice.pdf": "Sample Invoice",
+    "/static/samples/packing-list.pdf": "Sample Packing List",
+}
+VISITOR_PAGES = ("Landing", "Pricing", "FAQ", "Signup", "Getting Started", "Founding Beta", "Sample Invoice", "Sample Packing List")
+VISITOR_SOURCES = ("Direct", "Google", "Product Hunt", "Reddit", "Disquiet", "Other")
 
 
 def record_event(event, account_id="", now=None, path=None, once=False):
@@ -98,6 +104,8 @@ def classify_source(referer="", query_string=""):
     value = f"{campaign} {host}"
     if "producthunt" in value or "product hunt" in value:
         return "Product Hunt"
+    if "disquiet" in value:
+        return "Disquiet"
     if "reddit" in value:
         return "Reddit"
     if "google" in value:

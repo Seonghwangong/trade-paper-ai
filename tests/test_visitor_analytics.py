@@ -27,7 +27,7 @@ def test_visit_count_page_funnel_and_daily_trend_without_personal_data(tmp_path,
     analytics.record_event("Onboarding Started", "account-a", now=now, path=event_file)
     metrics = analytics.visitor_metrics(now=now, path=visitor_file)
     assert metrics["visits"] == 5
-    assert metrics["pages"] == {"Landing": 2, "Pricing": 1, "FAQ": 1, "Signup": 1}
+    assert metrics["pages"] == {page: {"Landing": 2, "Pricing": 1, "FAQ": 1, "Signup": 1}.get(page, 0) for page in analytics.VISITOR_PAGES}
     assert metrics["landing_to_signup_rate"] == 50.0
     assert metrics["signup_to_onboarding_rate"] == 100.0
     assert metrics["landing_to_onboarding_rate"] == 50.0

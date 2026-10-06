@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.intake_quality import HONEYPOT_HTML, honeypot_filled, needs_intake_review
+
 import base64
 from collections import OrderedDict
 import hashlib
@@ -500,7 +502,7 @@ def _auth_page(mode, *, error="", registered=False, reset=False, company="", ema
     next_html = f'<input type="hidden" name="next" value="{_escape(next_path, True)}">' if next_path else ""
     return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} · {APP_NAME}</title><style>
 *{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}.auth-page{{min-height:100vh;display:grid;place-items:center;padding:28px}}.auth-card{{width:min(440px,100%);padding:34px;background:#fff;border:1px solid #E5E7EB;border-radius:18px;box-shadow:0 18px 44px rgba(15,23,42,.1)}}.brand{{margin:0 0 30px;text-align:center}}.brand span{{display:block;color:#64748B;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}}h1{{margin:9px 0 8px;font-size:30px}}.subtitle{{margin:0;color:#6B7280;line-height:1.5}}form{{display:grid;gap:9px}}label{{margin-top:7px;font-size:14px;font-weight:700}}input{{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}}input:focus{{border-color:#2563EB;outline:3px solid #DBEAFE}}.field-help{{margin:0;color:#64748B;font-size:13px;line-height:1.45}}button{{min-height:46px;margin-top:13px;border:0;border-radius:10px;background:#111827;color:#fff;font-size:15px;font-weight:800;cursor:pointer}}button:hover{{background:#1F2937}}button:focus-visible,a:focus-visible{{outline:3px solid #2563EB;outline-offset:3px}}.message{{margin-bottom:16px;padding:12px 14px;border-radius:10px;font-size:14px;font-weight:700}}.error{{border:1px solid #FECACA;background:#FEF2F2;color:#991B1B}}.success{{border:1px solid #BBF7D0;background:#F0FDF4;color:#166534}}.alternate{{margin:22px 0 0;text-align:center;color:#64748B;font-size:14px}}.alternate a{{color:#1D4ED8;font-weight:700}}@media(max-width:520px){{.auth-page{{padding:16px}}.auth-card{{padding:25px 20px}}}}
-</style></head><body><main class="auth-page"><section class="auth-card"><header class="brand"><span>{APP_NAME}</span><h1>{title}</h1><p class="subtitle">{subtitle}</p></header>{success_html}{error_html}<form method="post" action="/{mode}" data-native-submit="true">{next_html}{company_html}<label for="email">Email</label><input id="email" name="email" type="email" value="{_escape(email, True)}" autocomplete="email" required><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="{password_autocomplete}"{password_constraints} required>{password_help}{confirm_html}<button type="submit">{"Register" if register else "Login"}</button></form>{alternate}</section></main></body></html>''', status_code=status_code)
+</style></head><body><main class="auth-page"><section class="auth-card"><header class="brand"><span>{APP_NAME}</span><h1>{title}</h1><p class="subtitle">{subtitle}</p></header>{success_html}{error_html}<form method="post" action="/{mode}" data-native-submit="true">{next_html}{HONEYPOT_HTML if register else ""}{company_html}<label for="email">Email</label><input id="email" name="email" type="email" value="{_escape(email, True)}" autocomplete="email" required><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="{password_autocomplete}"{password_constraints} required>{password_help}{confirm_html}<button type="submit">{"Register" if register else "Login"}</button></form>{alternate}</section></main></body></html>''', status_code=status_code)
 
 
 def _escape(value, attribute=False):
@@ -750,10 +752,15 @@ def register(
     password: str = Form(""),
     confirm_password: str = Form(""),
     next_path: str = Form("", alias="next"),
+    website_confirm: str = Form(""),
 ):
     next_path = safe_next_path(next_path) if isinstance(next_path, str) and next_path else ""
     company = str(company or "").strip()
     normalized_email = _normalized_email(email)
+    if honeypot_filled(website_confirm):
+        return _auth_page("register", error="Registration could not be completed. Reload the form and try again, or contact us for help.", company=company, email=email, next_path=next_path, status_code=400)
+    if needs_intake_review(company):
+        return _auth_page("register", error="Please enter your company name without promotional messages or reward links.", company=company, email=email, next_path=next_path, status_code=400)
     if not company:
         return _auth_page("register", error="Please enter your Company Name.", company=company, email=email, next_path=next_path, status_code=400)
     if not _EMAIL_PATTERN.match(normalized_email):
