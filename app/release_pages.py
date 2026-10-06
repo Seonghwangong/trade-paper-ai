@@ -23,11 +23,11 @@ def release_navigation():
     )
 
 
-def information_page(title, subtitle, content):
+def information_page(title, subtitle, content, *, lang="en", navigation=None):
     styles = """
 *{box-sizing:border-box}body{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}.tp-page{width:min(920px,calc(100% - 32px));margin:40px auto}.card{background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:24px;margin:18px 0}.card h2{margin-top:0}.card p,.card li{color:#475569;line-height:1.7}.tp-toolbar,.tp-toolbar-actions{display:flex;gap:10px;flex-wrap:wrap}.tp-btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:12px;background:#111827;color:#fff;text-decoration:none;font-weight:700}.tp-btn-secondary{background:#E5E7EB;color:#111827}.tp-release-footer{width:min(920px,calc(100% - 32px));margin:34px auto 20px;padding:20px 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}.tp-release-footer strong{display:block;color:#374151}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}.version{display:inline-block;padding:8px 11px;border-radius:999px;background:#DCFCE7;color:#166534;font-weight:700}@media(max-width:640px){.tp-page{margin:20px auto}.tp-btn{width:100%}}
 """
-    return HTMLResponse(page_shell(title, content, subtitle=subtitle, navigation=release_navigation(), styles=styles))
+    return HTMLResponse(page_shell(title, content, subtitle=subtitle, navigation=release_navigation() if navigation is None else navigation, styles=styles, lang=lang))
 
 
 @router.get("/release-notes")
@@ -94,8 +94,32 @@ def version_history_page():
     return information_page("Version History", f"Current: Version {APP_VERSION} · {RELEASE_STAGE}", content)
 
 
+def getting_started_navigation(lang):
+    english_current = ' aria-current="page"' if lang != "ko" else ""
+    korean_current = ' aria-current="page"' if lang == "ko" else ""
+    return (
+        '<nav aria-label="Language / 언어" class="tp-toolbar">'
+        f'<a href="/getting-started" lang="en" hreflang="en"{english_current}>English</a>'
+        f'<a href="/getting-started?lang=ko" lang="ko" hreflang="ko"{korean_current}>한국어</a></nav>'
+    )
+
+
+def korean_getting_started_page():
+    content = (
+        section_card("1. 가입 없이 완성된 샘플 보기", '<div id="sample-documents"><p>같은 가상 거래로 만든 Invoice와 Packing List를 먼저 확인하세요. Invoice 금액은 USD 1,000이며, Packing List에는 총 수량 150개와 7 cartons가 표시됩니다.</p><div class="tp-toolbar"><a class="tp-btn" href="/static/samples/commercial-invoice.pdf" target="_blank" rel="noopener">Invoice 샘플 PDF</a><a class="tp-btn tp-btn-secondary" href="/static/samples/packing-list.pdf" target="_blank" rel="noopener">Packing List 샘플 PDF</a></div><p>실제 출하에 사용하는 서류가 아닌 가상 예시입니다. 열람만으로 문서가 저장되거나 무료 한도가 차감되지 않습니다.</p><p>첫 사용에 도움이 필요하면 <a href="/founding-beta?lang=ko">한국어로 체험을 신청</a>하세요. 신청만으로 계정이 생성되거나 요금이 청구되지는 않습니다.</p></div>')
+        + section_card("2. 직접 작성하려면 계정 만들기", '<p>Free 플랜은 월 5개 문서를 지원하며, 저장한 샘플 문서도 포함됩니다. 온라인 유료 결제는 아직 활성화되지 않았습니다.</p><p>아래에서 가입·로그인하면 안내형 데모로 이어집니다. 실제 작성 화면의 버튼은 영어로 표시됩니다.</p><div class="tp-toolbar"><a class="tp-btn" href="/register?next=%2Fdemo">무료 계정 만들기</a><a class="tp-btn tp-btn-secondary" href="/login?next=%2Fdemo">기존 계정으로 데모 시작</a></div>')
+        + section_card("3. 가상 거래로 첫 문서 작성", '<ol><li><b>Start with Company:</b> 회사 정보를 확인합니다. 기존 정보가 있다면 그대로 유지하세요.</li><li><b>Continue to Buyer:</b> 샘플 바이어와 통화 USD를 확인하고 Save Buyer로 저장합니다.</li><li><b>Continue to Product:</b> 샘플 품목과 단가를 확인하고 Save Product로 저장합니다.</li><li><b>Create Demo Invoice:</b> 바이어·품목·수량·금액을 검토하고 저장합니다.</li><li><b>Open Invoice List → Create Packing:</b> 방금 만든 Invoice에서 이어서 Packing List를 작성합니다. 포장 수량과 무게를 입력하고 검토하세요.</li><li><b>Download PDF:</b> 두 문서의 거래처·품목·수량·금액·포장 정보를 확인하면 첫 체험이 끝납니다.</li></ol><p>안내형 데모는 Save를 눌러야 저장됩니다. 데모의 Notebook Computer 1개·USD 850 예시는 위 공개 PDF와 다른 가상 거래입니다. 첫 체험에 Shipment 설정은 필수가 아닙니다.</p>')
+        + section_card("이메일 발송은 선택 사항입니다", '<p>Send Email을 시험한다면 수신자를 본인 이메일로 바꾸고 첨부파일을 확인한 뒤 발송하세요. 데모의 buyer@example.com은 예제 주소입니다. 받은편지함에서 도착과 PDF 열림을 확인하세요.</p>')
+        + section_card("수정 후에는 두 문서를 함께 확인하세요", '<p>Invoice를 수정해도 이미 저장한 Packing List는 자동으로 바뀌지 않습니다. 해당 Packing List의 Edit에서 내용을 비교·수정하고 두 PDF를 다시 내려받으세요. 이전에 내려받거나 발송한 PDF도 자동으로 바뀌지 않습니다.</p><p>통화를 바꾸면 단가도 직접 확인하세요. 환율에 따른 금액 환산은 수행하지 않습니다. 샘플 HS Code는 실제 품목의 분류를 보장하지 않습니다.</p>')
+        + section_card("막힌 단계 한 가지만 알려 주세요", '<p><a href="/feedback">의견 남기기</a>에 한국어로 화면 이름과 기대한 동작을 적어 주세요. 가입 없이 작성할 수 있고, 답변이 필요하면 Email도 입력해 주세요. 실제 고객 정보나 비공개 거래 자료는 필요하지 않습니다.</p><div class="tp-toolbar"><a class="tp-btn" href="/founding-beta?lang=ko">첫 사용 도움 신청</a><a class="tp-btn tp-btn-secondary" href="/contact">문의하기</a></div>')
+    )
+    return information_page("Trade Paper AI 첫 체험 안내", "샘플 확인부터 Invoice·Packing List PDF 검토까지", content, lang="ko", navigation=getting_started_navigation("ko"))
+
+
 @router.get("/getting-started")
-def getting_started_page():
+def getting_started_page(lang: str = "en"):
+    if lang == "ko":
+        return korean_getting_started_page()
     content = (
         section_card("Before you start", '<p>Read this guide without an account. To create documents, create a free account and sign in. The Free plan supports up to five documents per month. Online paid checkout is not active yet.</p><p>Use fictional company, buyer, and product details for your first test. Saving a sample document adds it to your workspace and counts toward your plan limit.</p>')
         + section_card("Preview the finished documents", '<div id="sample-documents"><p>See one fictional shipment in both documents before you sign up. The Invoice totals USD 1,000; the matching Packing List references SAMPLE-INV-001 and shows 150 pieces across 7 cartons.</p><p><a class="tp-btn tp-btn-secondary" href="/static/samples/commercial-invoice.pdf" target="_blank" rel="noopener">View sample Invoice (PDF)</a> <a class="tp-btn tp-btn-secondary" href="/static/samples/packing-list.pdf" target="_blank" rel="noopener">View sample Packing List (PDF)</a></p><p>No account is required. These are fictional examples, not documents for an actual shipment. Opening them does not save anything to your workspace or use your document allowance.</p><p lang="ko">가입 없이 샘플 Invoice와 Packing List를 열어 보세요. 가상 거래 예시이며, 열람만으로 문서가 저장되거나 무료 한도가 차감되지 않습니다.</p><h3>Want to try this with your workflow?</h3><p>Request help with your first sample Invoice and Packing List. Applying does not create an account or charge you.</p><div class="tp-toolbar"><a class="tp-btn" href="/founding-beta">Request a sample walkthrough</a><a class="tp-btn tp-btn-secondary" href="/founding-beta?lang=ko" lang="ko">한국어로 체험 신청</a></div><p>Is something missing from the sample? <a href="/feedback">Tell us which field or step you need</a>. No account is required to leave feedback. Please leave out confidential customer or shipment details.</p><p lang="ko">샘플에서 빠진 항목이나 실제 업무에 필요한 내용을 알려 주세요. 신청·의견 제출만으로 계정이 생성되거나 요금이 청구되지는 않습니다.</p></div>')
@@ -104,7 +128,7 @@ def getting_started_page():
         + section_card("한국어 체험 안내", '<div lang="ko"><p>가입 전에는 이 안내를 읽고, 가입·로그인 후 샘플 데이터로 체험하세요. 회사 → 바이어·품목 → Invoice → Packing List → PDF 검토 → 본인 이메일로 시험 발송 순서입니다.</p><p>샘플 문서도 저장하면 계정에 남고 무료 플랜의 월 5개 문서 한도에 포함됩니다. 기존 회사 정보가 있다면 그대로 유지하세요. 온라인 유료 결제는 아직 활성화되지 않았습니다.</p></div>')
         + section_card("Need help?", '<p>Tell us which step was unclear and what you expected to happen. Leave out confidential customer or shipment details.</p><a class="tp-btn" href="/founding-beta">Request guided onboarding</a> <a class="tp-btn tp-btn-secondary" href="/contact">Contact us</a>')
     )
-    return information_page("Getting Started with Trade Paper AI", "From your first sample invoice to PDF delivery", content)
+    return information_page("Getting Started with Trade Paper AI", "From your first sample invoice to PDF delivery", content, navigation=getting_started_navigation("en") + release_navigation())
 
 
 @router.get("/demo")
