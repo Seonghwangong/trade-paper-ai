@@ -111,3 +111,16 @@ def test_signed_in_viewer_without_setup_can_practice_without_billing(monkeypatch
 def test_pdf_still_returns_if_activity_logging_fails(monkeypatch):
     monkeypatch.setattr(analytics, "record_visit", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("unavailable")))
     assert request("/try-sample/documents", VALID)[0] == 200
+
+
+def test_practice_actions_are_not_reported_as_additional_page_visits(monkeypatch, tmp_path):
+    monkeypatch.setattr(analytics, "ANALYTICS_FILE", tmp_path / "events.json")
+    analytics.record_visit("Practice Page", "Reddit")
+    for event in analytics.PRACTICE_EVENTS:
+        analytics.record_visit(event, "Reddit")
+    metrics = analytics.visitor_metrics()
+    assert metrics["visits"] == 1
+    assert metrics["sources"]["Reddit"] == 1
+    assert metrics["pages"]["Practice Page"] == 1
+    assert metrics["practice"] == {event: 1 for event in analytics.PRACTICE_EVENTS}
+    assert sum(day["total"] for day in metrics["trend"]) == 1

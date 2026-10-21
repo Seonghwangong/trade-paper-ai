@@ -29,7 +29,8 @@ VISITOR_PATHS = {
     "/static/samples/commercial-invoice.pdf": "Sample Invoice",
     "/static/samples/packing-list.pdf": "Sample Packing List",
 }
-VISITOR_PAGES = ("Landing", "Pricing", "FAQ", "Signup", "Getting Started", "Founding Beta", "Sample Invoice", "Sample Packing List", "Practice Page", "Practice Started", "Practice Pair Generated", "Practice Invoice Download Click", "Practice Packing Download Click")
+VISITOR_PAGES = ("Landing", "Pricing", "FAQ", "Signup", "Getting Started", "Founding Beta", "Sample Invoice", "Sample Packing List", "Practice Page")
+PRACTICE_EVENTS = ("Practice Started", "Practice Pair Generated", "Practice Invoice Download Click", "Practice Packing Download Click")
 VISITOR_SOURCES = ("Direct", "Google", "Product Hunt", "Reddit", "Disquiet", "Other")
 
 
@@ -117,7 +118,7 @@ def classify_source(referer="", query_string=""):
 
 
 def record_visit(page, source="Direct", now=None, path=None):
-    if page not in VISITOR_PAGES:
+    if page not in VISITOR_PAGES + PRACTICE_EVENTS:
         raise ValueError("Unsupported visitor page")
     if source not in VISITOR_SOURCES:
         raise ValueError("Unsupported visitor source")
@@ -137,9 +138,11 @@ def visitor_metrics(now=None, path=None):
         {field: str(row.get(field, "") or "") for field in VISITOR_FIELDS}
         for row in load_json_strict(path or VISITOR_ANALYTICS_FILE, [], list)
         if isinstance(row, dict)
-        and row.get("page") in VISITOR_PAGES
+        and row.get("page") in VISITOR_PAGES + PRACTICE_EVENTS
         and row.get("source") in VISITOR_SOURCES
     ]
+    practice_counts = {event: sum(row["page"] == event for row in rows) for event in PRACTICE_EVENTS}
+    rows = [row for row in rows if row["page"] in VISITOR_PAGES]
     page_counts = {page: sum(row["page"] == page for row in rows) for page in VISITOR_PAGES}
     source_counts = {source: sum(row["source"] == source for row in rows) for source in VISITOR_SOURCES}
     onboarding_started = analytics_metrics(now=current)["counts"]["Onboarding Started"]
@@ -153,6 +156,7 @@ def visitor_metrics(now=None, path=None):
     return {
         "visits": len(rows),
         "pages": page_counts,
+        "practice": practice_counts,
         "sources": source_counts,
         "landing_to_signup_rate": min(100.0, _rate(page_counts["Signup"], page_counts["Landing"])),
         "signup_to_onboarding_rate": min(100.0, _rate(onboarding_started, page_counts["Signup"])),
