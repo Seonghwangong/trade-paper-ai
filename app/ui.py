@@ -753,6 +753,10 @@ def _ux_script(path: str) -> str:
 
 def inject_user_experience(source: str, path: str = "", success_message: str = "", demo_mode: bool = False, empty_search: bool = False, success_kind: str = "") -> str:
     """Apply presentation-only UX behavior to an HTML response."""
+    if path == "/try-sample":
+        # This isolated practice owns its async form and blob downloads. The
+        # workspace script assumes navigation/submission and persists drafts.
+        return source
     if "</body>" not in source:
         source = (
             '<!doctype html><html lang="en"><head><meta charset="utf-8">'

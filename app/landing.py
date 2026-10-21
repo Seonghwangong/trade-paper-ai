@@ -166,7 +166,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
       <p class="eyebrow">Founding Beta · Export operations workspace</p>
       <h1>Create Export Documents<br>in Minutes, Not Hours.</h1>
       <p class="subtitle">Create, manage and send Commercial Invoice, Packing List,<br>Shipping Instruction, Bill of Lading and more<br>in one connected workflow.</p>
-      <div class="hero-actions"><a class="primary" href="/register">Start Free</a><a class="secondary" href="#demo">Watch 15-Second Demo</a></div>
+      <div class="hero-actions"><a class="primary" href="/try-sample">Try without signup</a><a class="secondary" href="/register">Start Free</a><a class="secondary" href="#demo">Watch 15-Second Demo</a></div>
       <p class="hero-comfort">Enter your information once. Keep every export document connected.</p>
       <p class="launch-link"><a href="https://www.producthunt.com/products/trade-paper-ai-2?launch=trade-paper-ai-2" target="_blank" rel="noopener noreferrer">Meet Trade Paper AI on Product Hunt ↗</a></p>
       <div class="trust-row" aria-label="Product trust highlights"><span>✓ Unicode PDF</span><span>✓ Stable Snapshots</span><span>✓ Account Isolation</span><span>✓ Guided Workflow</span><span>✓ Founding Beta</span></div>
@@ -183,7 +183,7 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
         <img class="dashboard-screenshot" src="/static/trade-paper-demo-15s.gif" alt="15-second Trade Paper AI demo showing Buyer and Product selection, Export Wizard, Shipment Tracking, and Document Package">
       </div>
       <div class="demo-caption"><span><strong>15-second product tour.</strong> See the connected export workflow at a glance.</span><span><a href="/getting-started">Read the step-by-step guide</a> · <a href="/register?next=%2Fdemo">Start Free to try the workflow →</a></span></div>
-      <div class="sample-preview" style="margin-top:28px;padding:24px;background:#fff;border:1px solid #e2e8f0;border-radius:16px"><h3>See the documents before you sign up</h3><p>Open a matching Commercial Invoice and Packing List from one fictional shipment. No account required.</p><div class="section-actions"><a class="secondary" href="/static/samples/commercial-invoice.pdf" target="_blank" rel="noopener">View sample Invoice (PDF)</a><a class="secondary" href="/static/samples/packing-list.pdf" target="_blank" rel="noopener">View sample Packing List (PDF)</a></div><p style="color:#64748b;font-size:14px">Sample data only. These previews do not create documents in your workspace.</p></div>
+      <div class="sample-preview" style="margin-top:28px;padding:24px;background:#fff;border:1px solid #e2e8f0;border-radius:16px"><h3>See the documents before you sign up</h3><p><a class="primary" href="/try-sample">Change sample numbers and create both PDFs — no signup</a></p><p>Open a matching Commercial Invoice and Packing List from one fictional shipment. No account required.</p><div class="section-actions"><a class="secondary" href="/static/samples/commercial-invoice.pdf" target="_blank" rel="noopener">View sample Invoice (PDF)</a><a class="secondary" href="/static/samples/packing-list.pdf" target="_blank" rel="noopener">View sample Packing List (PDF)</a></div><p style="color:#64748b;font-size:14px">Sample data only. These previews do not create documents in your workspace.</p></div>
     </div>
   </section>
   <section class="section" aria-labelledby="features-title">

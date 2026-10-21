@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="__lang__"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__title__ | Trade Paper AI</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#17243b;font:16px/1.6 system-ui,sans-serif}main{max-width:880px;margin:0 auto;padding:24px}nav{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}a{color:#164fc1}nav a{text-decoration:none}header{margin:40px 0 26px}h1{font-size:clamp(28px,5vw,42px);line-height:1.15;letter-spacing:-.03em;margin:12px 0}h2{font-size:22px;margin:0 0 12px}.badge{font-size:12px;color:#1455b5;font-weight:800;letter-spacing:.08em}.card{background:#fff;border:1px solid #d9e2ee;border-radius:20px;padding:28px;margin:20px 0}.muted{color:#53647b}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}label{display:block;font-weight:650;font-size:14px}input{width:100%;font:inherit;font-size:18px;margin-top:7px;padding:12px;border:1px solid #9aaec6;border-radius:9px;background:#fff;color:#17243b}input:focus-visible,a:focus-visible,button:focus-visible{outline:3px solid #7da9ff;outline-offset:3px}.total{padding:18px 0;font-size:18px}.total strong{display:block;font-size:30px;font-variant-numeric:tabular-nums}.actions{display:flex;gap:12px;flex-wrap:wrap}.button,button{display:inline-flex;align-items:center;justify-content:center;background:#1755c7;color:#fff;padding:13px 18px;border:0;border-radius:10px;font:inherit;font-weight:650;text-decoration:none;cursor:pointer}.secondary{background:#eaf0fa;color:#16428c}button:disabled{opacity:.6;cursor:wait}.fine{font-size:13px;color:#53647b}#status{font-weight:650;min-height:26px}#status.error{color:#a41c21}#results{background:#f0faf5;border-color:#9ecdb1}#results[hidden]{display:none}fieldset{border:0;padding:0;margin:0;min-width:0}footer{margin:24px 0} @media(max-width:560px){main{padding:18px}.card{padding:20px}.grid{grid-template-columns:1fr}.actions>*{width:100%}header{margin-top:28px}}
+</style>
+<script src="/static/guest-sample.js" defer></script></head>
+<body><main>
+<nav aria-label="Navigation"><a href="/">Trade Paper AI</a><span><a href="/try-sample" lang="en">English</a> · <a href="/try-sample?lang=ko" lang="ko">한국어</a></span></nav>
+<header><span class="badge">__badge__</span><h1>__title__</h1><p class="muted">__intro__</p></header>
+<section class="card"><h2>__shipment__</h2><p>__parties__<br><span class="muted">__item__</span></p>
+<form id="practice-form"><fieldset id="practice-fields"><div class="grid">
+<label for="quantity">__quantity__<input id="quantity" name="quantity" type="number" min="1" max="10000" step="1" value="100" required></label>
+<label for="unit_price">__price__<input id="unit_price" name="unit_price" type="number" min="0.01" max="1000" step="0.01" value="8" required></label>
+<label for="cartons">__cartons__<input id="cartons" name="cartons" type="number" min="1" max="10000" step="1" value="5" required></label>
+<label for="net_weight">__net__<input id="net_weight" name="net_weight" type="number" min="0.01" max="10000" step="0.01" value="20" required aria-describedby="weight-hint"></label>
+<label for="gross_weight">__gross__<input id="gross_weight" name="gross_weight" type="number" min="0.01" max="10000" step="0.01" value="25" required aria-describedby="weight-hint"></label>
+</div><p id="weight-hint" class="fine">__weight_hint__</p>
+<div class="total">__total__<strong id="invoice-total">USD 800.00</strong></div>
+<div class="actions"><button id="generate" type="submit">__button__</button><button type="reset" class="secondary">__reset__</button></div>
+</fieldset></form>
+<p id="status" role="status" aria-live="polite" data-busy="__busy__" data-ready="__ready__" data-changed="__changed__" data-error="__error__" data-weight-error="__weight_error__" data-carton-error="__carton_error__"></p>
+<p class="fine">__privacy__</p><noscript><p>__js__</p><a href="/getting-started?lang=__lang__#sample-documents">__guide__</a></noscript></section>
+<section id="results" class="card" hidden><h2>__ready__</h2><p>__review__</p><div class="actions"><a id="invoice-download" class="button" download="fictional-invoice.pdf">__invoice__</a><a id="packing-download" class="button secondary" download="fictional-packing-list.pdf">__packing__</a></div><p class="fine">__limits__</p>
+<h2>__next__</h2><div class="actions"><a class="button secondary" href="/feedback">__feedback__</a><a class="button secondary" href="/register?next=%2Fdemo">__signup__</a></div><p class="fine">__signup_hint__</p></section>
+<footer><a href="/getting-started?lang=__lang__">__guide__</a> · <a href="/privacy">Privacy</a></footer>
+</main></body></html>

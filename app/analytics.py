@@ -25,10 +25,11 @@ VISITOR_FIELDS = ("time", "page", "source")
 VISITOR_PATHS = {
     "/": "Landing", "/register": "Signup", "/getting-started": "Getting Started",
     "/founding-beta": "Founding Beta",
+    "/try-sample": "Practice Page",
     "/static/samples/commercial-invoice.pdf": "Sample Invoice",
     "/static/samples/packing-list.pdf": "Sample Packing List",
 }
-VISITOR_PAGES = ("Landing", "Pricing", "FAQ", "Signup", "Getting Started", "Founding Beta", "Sample Invoice", "Sample Packing List")
+VISITOR_PAGES = ("Landing", "Pricing", "FAQ", "Signup", "Getting Started", "Founding Beta", "Sample Invoice", "Sample Packing List", "Practice Page", "Practice Started", "Practice Pair Generated", "Practice Invoice Download Click", "Practice Packing Download Click")
 VISITOR_SOURCES = ("Direct", "Google", "Product Hunt", "Reddit", "Disquiet", "Other")
 
 

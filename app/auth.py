@@ -51,14 +51,14 @@ PUBLIC_PATHS = frozenset({
     "/login", "/register", "/logout", "/forgot-password", "/reset-password",
     "/privacy", "/terms", "/refund-policy", "/contact", "/status", "/health", "/healthz",
     "/founding-beta", "/founding-beta/thank-you",
-    "/starter", "/getting-started",
+    "/starter", "/getting-started", "/try-sample", "/try-sample/documents",
     "/feedback", "/feedback/thank-you",
     "/robots.txt", "/sitemap.xml",
     "/analytics/visit",
 })
 COMPANY_SETUP_PATHS = frozenset({
     "/company", "/company-data", "/save-company", "/logout",
-    "/getting-started",
+    "/getting-started", "/try-sample", "/try-sample/documents",
     "/forgot-password", "/reset-password",
 })
 
@@ -446,7 +446,7 @@ class AuthenticationMiddleware:
                 )
                 await response(scope, receive, send)
                 return
-            if request.method in {"POST", "PUT", "PATCH", "DELETE"} and user.get("role") == "Viewer" and path != "/logout":
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"} and user.get("role") == "Viewer" and path not in {"/logout", "/try-sample/documents"}:
                 response = HTMLResponse("Viewer role is read-only.", status_code=403)
                 await response(scope, receive, send)
                 return
