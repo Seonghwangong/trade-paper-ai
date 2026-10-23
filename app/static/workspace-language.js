@@ -22,7 +22,7 @@
     if(root.nodeType===Node.TEXT_NODE) {
       const parent=root.parentElement;
       if(!parent || parent.closest(blocked) || !parent.matches(eligible)) return;
-      if(parent.closest('td') && !parent.closest('a,button,label')) return;
+      if(parent.closest('td') && !parent.closest('a,button,label,.tp-guided-empty')) return;
       if(parent.tagName==='OPTION' && parent.value) return;
       const raw=root.textContent, key=raw.trim().replace(/\s+/g,' ');
       const control=parent.closest('button,a');
