@@ -483,26 +483,41 @@ class AuthenticationMiddleware:
         await self.app(scope, receive, send)
 
 
-def _auth_page(mode, *, error="", registered=False, reset=False, company="", email="", next_path="", status_code=200):
+def _auth_page(mode, *, error="", registered=False, reset=False, company="", email="", next_path="", status_code=200, lang="en"):
+    from app.auth_copy import korean
+    lang = "ko" if lang == "ko" else "en"
+    def t(text):
+        return korean.get(text, text) if lang == "ko" else text
     register = mode == "register"
     next_path = safe_next_path(next_path) if next_path else ""
     next_query = f"?next={quote(next_path, safe='')}" if next_path else ""
+    if lang == "ko":
+        next_query += ("&" if next_query else "?") + "lang=ko"
+    language_links = ''.join(
+        f'<a href="/{mode}?lang={code}'
+        + (f'&amp;next={quote(next_path, safe="")}' if next_path else '')
+        + f'" lang="{code}">{label}</a> '
+        for code, label in (("en", "English"), ("ko", "한국어"))
+    )
     title = "Create your account" if register else "Welcome back"
     subtitle = "Register your company to start using Trade Paper AI." if register else "Sign in to continue to Trade Paper AI."
-    error_html = f'<div class="message error" role="alert">{_escape(error)}</div>' if error else ""
-    success_html = '<div class="message success" role="status">Registration successful. Please sign in.</div>' if registered else ""
+    error_html = f'<div class="message error" role="alert">{_escape(t(error))}</div>' if error else ""
+    success_html = f'<div class="message success" role="status">{t("Registration successful. Please sign in.")}</div>' if registered else ""
     if reset:
-        success_html = '<div class="message success" role="status">Password reset successful. Please sign in.</div>'
-    company_html = f'<label for="company">Company Name</label><input id="company" name="company" value="{_escape(company, True)}" autocomplete="organization" required>' if register else ""
-    confirm_html = '<label for="confirm_password">Confirm Password</label><input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>' if register else ""
-    password_help = '<p id="password-help" class="field-help">Use at least 8 characters. Letters and numbers are recommended.</p>' if register else ""
+        success_html = f'<div class="message success" role="status">{t("Password reset successful. Please sign in.")}</div>'
+    company_html = f'<label for="company">{t("Company Name")}</label><input id="company" name="company" value="{_escape(company, True)}" autocomplete="organization" required>' if register else ""
+    confirm_html = f'<label for="confirm_password">{t("Confirm Password")}</label><input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>' if register else ""
+    password_help = f'<p id="password-help" class="field-help">{t("Use at least 8 characters. Letters and numbers are recommended.")}</p>' if register else ""
     password_constraints = ' minlength="8" aria-describedby="password-help"' if register else ""
     password_autocomplete = "new-password" if register else "current-password"
-    alternate = f'<p class="alternate">Already have an account? <a href="/login{next_query}">Sign in</a></p>' if register else f'<p class="alternate"><a href="/forgot-password">Forgot password?</a><br><br>New to Trade Paper AI? <a href="/register{next_query}">Create an account</a></p>'
+    alternate = f'<p class="alternate">{t("Already have an account?")} <a href="/login{next_query}">{t("Sign in")}</a></p>' if register else f'<p class="alternate"><a href="/forgot-password">{t("Forgot password?")}</a><br><br>{t("New to Trade Paper AI?")} <a href="/register{next_query}">{t("Create an account")}</a></p>'
     next_html = f'<input type="hidden" name="next" value="{_escape(next_path, True)}">' if next_path else ""
-    return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} · {APP_NAME}</title><style>
-*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}.auth-page{{min-height:100vh;display:grid;place-items:center;padding:28px}}.auth-card{{width:min(440px,100%);padding:34px;background:#fff;border:1px solid #E5E7EB;border-radius:18px;box-shadow:0 18px 44px rgba(15,23,42,.1)}}.brand{{margin:0 0 30px;text-align:center}}.brand span{{display:block;color:#64748B;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}}h1{{margin:9px 0 8px;font-size:30px}}.subtitle{{margin:0;color:#6B7280;line-height:1.5}}form{{display:grid;gap:9px}}label{{margin-top:7px;font-size:14px;font-weight:700}}input{{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}}input:focus{{border-color:#2563EB;outline:3px solid #DBEAFE}}.field-help{{margin:0;color:#64748B;font-size:13px;line-height:1.45}}button{{min-height:46px;margin-top:13px;border:0;border-radius:10px;background:#111827;color:#fff;font-size:15px;font-weight:800;cursor:pointer}}button:hover{{background:#1F2937}}button:focus-visible,a:focus-visible{{outline:3px solid #2563EB;outline-offset:3px}}.message{{margin-bottom:16px;padding:12px 14px;border-radius:10px;font-size:14px;font-weight:700}}.error{{border:1px solid #FECACA;background:#FEF2F2;color:#991B1B}}.success{{border:1px solid #BBF7D0;background:#F0FDF4;color:#166534}}.alternate{{margin:22px 0 0;text-align:center;color:#64748B;font-size:14px}}.alternate a{{color:#1D4ED8;font-weight:700}}@media(max-width:520px){{.auth-page{{padding:16px}}.auth-card{{padding:25px 20px}}}}
-</style></head><body><main class="auth-page"><section class="auth-card"><header class="brand"><span>{APP_NAME}</span><h1>{title}</h1><p class="subtitle">{subtitle}</p></header>{success_html}{error_html}<form method="post" action="/{mode}" data-native-submit="true">{next_html}{HONEYPOT_HTML if register else ""}{company_html}<label for="email">Email</label><input id="email" name="email" type="email" value="{_escape(email, True)}" autocomplete="email" required><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="{password_autocomplete}"{password_constraints} required>{password_help}{confirm_html}<button type="submit">{"Register" if register else "Login"}</button></form>{alternate}</section></main></body></html>''', status_code=status_code)
+    benefits = f'<aside class="benefits"><strong>{t("Free · 5 documents per month · No card required")}</strong><p>{t("Invoice and Packing List count separately. Save documents in your own workspace.")}</p><p>{t("After registration, sign in to set up your workspace.")}</p></aside>' if register else ""
+    reassurance = f'<p class="alternate"><a href="/try-sample?lang={lang}">{t("Try sample PDFs without signing up")}</a></p>' if register else ""
+    policy_links = f'<p class="alternate"><a href="/privacy">{t("Privacy")}</a> · <a href="/terms">{t("Terms")}</a> · <a href="/contact">{t("Help")}</a></p>'
+    return HTMLResponse(f'''<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{t(title)} · {APP_NAME}</title><style>
+*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}.auth-page{{min-height:100vh;display:grid;place-items:center;padding:28px}}.auth-card{{width:min(440px,100%);padding:34px;background:#fff;border:1px solid #E5E7EB;border-radius:18px;box-shadow:0 18px 44px rgba(15,23,42,.1)}}.benefits{{background:#EFF6FF;padding:14px;border-radius:10px;margin-bottom:18px;font-size:14px;line-height:1.6}}.benefits p{{margin:6px 0 0;color:#475569}}.languages{{text-align:right;margin-bottom:20px;font-size:14px}}.languages a{{color:#1D4ED8}}.brand{{margin:0 0 30px;text-align:center}}.brand span{{display:block;color:#64748B;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}}h1{{margin:9px 0 8px;font-size:30px}}.subtitle{{margin:0;color:#6B7280;line-height:1.5}}form{{display:grid;gap:9px}}label{{margin-top:7px;font-size:14px;font-weight:700}}input{{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}}input:focus{{border-color:#2563EB;outline:3px solid #DBEAFE}}.field-help{{margin:0;color:#64748B;font-size:13px;line-height:1.45}}button{{min-height:46px;margin-top:13px;border:0;border-radius:10px;background:#111827;color:#fff;font-size:15px;font-weight:800;cursor:pointer}}button:hover{{background:#1F2937}}button:focus-visible,a:focus-visible{{outline:3px solid #2563EB;outline-offset:3px}}.message{{margin-bottom:16px;padding:12px 14px;border-radius:10px;font-size:14px;font-weight:700}}.error{{border:1px solid #FECACA;background:#FEF2F2;color:#991B1B}}.success{{border:1px solid #BBF7D0;background:#F0FDF4;color:#166534}}.alternate{{margin:22px 0 0;text-align:center;color:#64748B;font-size:14px}}.alternate a{{color:#1D4ED8;font-weight:700}}@media(max-width:520px){{.auth-page{{padding:16px}}.auth-card{{padding:25px 20px}}}}
+</style></head><body><main class="auth-page"><section class="auth-card"><nav class="languages" aria-label="Language">{language_links}</nav><header class="brand"><span>{APP_NAME}</span><h1>{t(title)}</h1><p class="subtitle">{t(subtitle)}</p></header>{benefits}{success_html}{error_html}<form method="post" action="/{mode}{"?lang=ko" if lang == "ko" else ""}" data-native-submit="true">{next_html}{HONEYPOT_HTML if register else ""}{company_html}<label for="email">{t("Email")}</label><input id="email" name="email" type="email" value="{_escape(email, True)}" autocomplete="email" required><label for="password">{t("Password")}</label><input id="password" name="password" type="password" autocomplete="{password_autocomplete}"{password_constraints} required>{password_help}{confirm_html}<button type="submit">{t("Register") if register else t("Login")}</button></form>{alternate}{reassurance}{policy_links}</section></main></body></html>''', status_code=status_code)
 
 
 def _escape(value, attribute=False):
@@ -511,18 +526,19 @@ def _escape(value, attribute=False):
 
 
 @router.get("/login")
-def login_page(registered: int = 0, reset: int = 0, next: str = ""):
-    return _auth_page("login", registered=registered == 1, reset=reset == 1, next_path=safe_next_path(next) if next else "")
+def login_page(registered: int = 0, reset: int = 0, next: str = "", lang: str = "en"):
+    return _auth_page("login", lang=lang, registered=registered == 1, reset=reset == 1, next_path=safe_next_path(next) if next else "")
 
 
 @router.post("/login")
 def login(email: str = Form(""), password: str = Form(""), next_path: str = Form("", alias="next"), request: Request = None):
+    lang = request.query_params.get("lang", "en") if request is not None else "en"
     normalized_email = _normalized_email(email)
     rate_key = _login_rate_key(request, normalized_email)
     retry_after = _login_rate_retry_after(rate_key)
     if retry_after:
         response = _auth_page(
-            "login",
+            "login", lang=lang,
             error="Invalid email or password.",
             email=email,
             next_path=safe_next_path(next_path) if next_path else "",
@@ -536,7 +552,7 @@ def login(email: str = Form(""), password: str = Form(""), next_path: str = Form
     )
     if not normalized_email or not password or user is None or not _password_matches(password, user.get("password", "")):
         _record_login_failure(rate_key)
-        return _auth_page("login", error="Invalid email or password.", email=email, next_path=safe_next_path(next_path) if next_path else "", status_code=401)
+        return _auth_page("login", lang=lang, error="Invalid email or password.", email=email, next_path=safe_next_path(next_path) if next_path else "", status_code=401)
     if not _password_is_pbkdf2(user.get("password", "")):
         _upgrade_legacy_password(normalized_email, password)
     _clear_login_failures(rate_key)
@@ -741,8 +757,8 @@ def reset_password(
 
 
 @router.get("/register")
-def register_page(next: str = ""):
-    return _auth_page("register", next_path=safe_next_path(next) if next else "")
+def register_page(next: str = "", lang: str = "en"):
+    return _auth_page("register", lang=lang, next_path=safe_next_path(next) if next else "")
 
 
 @router.post("/register")
@@ -753,25 +769,27 @@ def register(
     confirm_password: str = Form(""),
     next_path: str = Form("", alias="next"),
     website_confirm: str = Form(""),
+    request: Request = None,
 ):
+    lang = "ko" if request is not None and request.query_params.get("lang") == "ko" else "en"
     next_path = safe_next_path(next_path) if isinstance(next_path, str) and next_path else ""
     company = str(company or "").strip()
     normalized_email = _normalized_email(email)
     if honeypot_filled(website_confirm):
-        return _auth_page("register", error="Registration could not be completed. Reload the form and try again, or contact us for help.", company=company, email=email, next_path=next_path, status_code=400)
+        return _auth_page("register", lang=lang, error="Registration could not be completed. Reload the form and try again, or contact us for help.", company=company, email=email, next_path=next_path, status_code=400)
     if needs_intake_review(company):
-        return _auth_page("register", error="Please enter your company name without promotional messages or reward links.", company=company, email=email, next_path=next_path, status_code=400)
+        return _auth_page("register", lang=lang, error="Please enter your company name without promotional messages or reward links.", company=company, email=email, next_path=next_path, status_code=400)
     if not company:
-        return _auth_page("register", error="Please enter your Company Name.", company=company, email=email, next_path=next_path, status_code=400)
+        return _auth_page("register", lang=lang, error="Please enter your Company Name.", company=company, email=email, next_path=next_path, status_code=400)
     if not _EMAIL_PATTERN.match(normalized_email):
-        return _auth_page("register", error="Please enter a valid email address.", company=company, email=email, next_path=next_path, status_code=400)
+        return _auth_page("register", lang=lang, error="Please enter a valid email address.", company=company, email=email, next_path=next_path, status_code=400)
     if not password:
-        return _auth_page("register", error="Please enter a password.", company=company, email=email, next_path=next_path, status_code=400)
+        return _auth_page("register", lang=lang, error="Please enter a password.", company=company, email=email, next_path=next_path, status_code=400)
     if password != confirm_password:
-        return _auth_page("register", error="Password and Confirm Password must match.", company=company, email=email, next_path=next_path, status_code=400)
+        return _auth_page("register", lang=lang, error="Password and Confirm Password must match.", company=company, email=email, next_path=next_path, status_code=400)
     if len(password) < REGISTRATION_PASSWORD_MIN_LENGTH:
         return _auth_page(
-            "register",
+            "register", lang=lang,
             error="Password must be at least 8 characters. Letters and numbers are recommended.",
             company=company,
             email=email,
@@ -798,7 +816,7 @@ def register(
 
     locked_json_mutation(USERS_FILE, [], add_user, list)
     if duplicate["found"]:
-        return _auth_page("register", error="An account with this email already exists.", company=company, email=email, next_path=next_path, status_code=409)
+        return _auth_page("register", lang=lang, error="An account with this email already exists.", company=company, email=email, next_path=next_path, status_code=409)
     load_users()
-    destination = "/login?registered=1" + (f"&next={quote(next_path, safe='')}" if next_path else "")
+    destination = "/login?registered=1" + ("&lang=ko" if lang == "ko" else "") + (f"&next={quote(next_path, safe='')}" if next_path else "")
     return RedirectResponse(url=destination, status_code=303)
