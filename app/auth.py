@@ -526,7 +526,9 @@ def _escape(value, attribute=False):
 
 
 @router.get("/login")
-def login_page(registered: int = 0, reset: int = 0, next: str = "", lang: str = "en"):
+def login_page(registered: int = 0, reset: int = 0, next: str = "", lang: str = "en", request: Request = None):
+    if request is not None and "lang" not in request.query_params:
+        lang = request.cookies.get("tp_language", "en")
     return _auth_page("login", lang=lang, registered=registered == 1, reset=reset == 1, next_path=safe_next_path(next) if next else "")
 
 
@@ -757,7 +759,9 @@ def reset_password(
 
 
 @router.get("/register")
-def register_page(next: str = "", lang: str = "en"):
+def register_page(next: str = "", lang: str = "en", request: Request = None):
+    if request is not None and "lang" not in request.query_params:
+        lang = request.cookies.get("tp_language", "en")
     return _auth_page("register", lang=lang, next_path=safe_next_path(next) if next else "")
 
 

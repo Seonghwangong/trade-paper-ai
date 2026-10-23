@@ -161,6 +161,8 @@ def packing_list(request: Request, search: str = ""):
             or search_lower in str(p.get("items", "")).lower()
         ]
 
+    from app.packing_workflow import comparable
+    sources = {row.get("invoice_no"): row for row in invoice_module.owned_invoice_records(_account_id(request))}
     rows = []
     for packing in packing_lists:
         if not packing.get("packing_no"):
@@ -181,10 +183,11 @@ def packing_list(request: Request, search: str = ""):
             button("Download PDF", f"/packing-list-pdf/{packing_no}", "secondary"),
             button("Send Email", f"/send-email/packing/{packing_no}", "secondary"),
             button("Edit", f"/edit-packing/{packing_no}", "secondary"),
+            button("Review Invoice changes" if comparable(packing) != comparable(sources.get(packing.get("invoice_no"), {})) else "Compare with Invoice", f"/packing-sync/{packing_no}", "secondary"),
             button("Delete", f"/packing-delete/{packing_no}", "danger"),
         ])
     content = search_toolbar(button("+ New Packing", "/packing-page"), button("← Dashboard", "/", "secondary"), action="/packing-list", value=search, placeholder="Search packing, invoice, buyer, seller or item", reset_url="/packing-list", count_label=f"Total Packing Lists : {len(packing_lists)}")
-    content += table(["Packing No", "Invoice No", "Seller", "Buyer", "Item", "Quantity", "HS Code", "Carton", "Net", "Gross", "PDF", "Email", "Edit", "Delete"], rows)
+    content += table(["Packing No", "Invoice No", "Seller", "Buyer", "Item", "Quantity", "HS Code", "Carton", "Net", "Gross", "PDF", "Email", "Edit", "Invoice comparison", "Delete"], rows)
     return HTMLResponse(page_shell("Packing List", content, subtitle="Manage all packing documents"))
 
 @router.post("/packing")
@@ -281,7 +284,21 @@ def edit_packing(packing_no: str, request: Request):
                 ("Buyer Address", f'<input type="text" name="buyer_address" value="{packing.get("buyer_address") or buyer.get("address", "")}">'),
                 ("Buyer Email", f'<input type="text" name="buyer_email" value="{packing.get("buyer_email") or buyer.get("email", "")}">'),
             ])
-            review_note = section_card("Review against the Invoice", '<p>This saved Packing List keeps its own details. Later Invoice edits do not update it automatically. Compare the buyer, items and quantities, then review cartons and weights before saving.</p><p>Invoice No changes only the reference; it does not reload the document details. After editing, download fresh PDFs of both documents.</p><a href="/invoice-list" target="_blank" rel="noopener">Open Invoice List in a new tab</a>')
+            from app.packing_workflow import comparable
+            from urllib.parse import quote
+            try:
+                source_invoice = _owned_invoice(packing.get("invoice_no", ""), account_id)
+            except HTTPException as error:
+                if error.status_code != 404:
+                    raise
+                source_invoice = None
+            changed = source_invoice is not None and comparable(packing) != comparable(source_invoice)
+            review_note = section_card("Review against the Invoice",
+                ('<p role="alert">Invoice details differ from this Packing List. Review and apply the changes before sending.</p>' if changed else '<p>Shared Invoice details match this Packing List.</p>')
+                + '<p>Compare changes and apply them together. Changed items or quantities require fresh packing totals. Download fresh PDFs after saving.</p>'
+                + f'<a class="tp-btn" href="/packing-sync/{quote(packing_no, safe="")}">Compare and update from Invoice</a>')
+            if source_invoice is None:
+                review_note = section_card("Review against the Invoice", '<p>The linked Invoice is unavailable. You can still edit this saved Packing List.</p>')
             html = review_note + f'<form action="/update-packing/{packing_no}" method="post">' + section_card("Packing Information", info)
 
             for item in items:
@@ -316,7 +333,7 @@ def edit_packing(packing_no: str, request: Request):
 </div>
 """
 
-            html += form_footer("/packing-list", "Update Packing") + "</form>"
+            html += form_footer("/packing-list", "Update Packing") + '</form><script src="/static/packing-assistant.js" defer></script>'
             navigation = navigation_footer("/packing-list", "← Packing List", state="Editing")
             return HTMLResponse(form_page("Edit Packing List", html, subtitle="Update packing list information", navigation=navigation))
 
@@ -664,3 +681,7 @@ def packing_list_pdf(packing_no: str, request: Request):
     buyer = _buyer_master(account_id, record.get("buyer", ""))
     set_pdf_export_record(request, record)
     return create_packing_list_pdf(record, company, buyer)
+
+
+from app.packing_workflow import attach_routes
+attach_routes(router)

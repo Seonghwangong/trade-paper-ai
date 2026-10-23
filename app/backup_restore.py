@@ -18,7 +18,7 @@ from app.storage import atomic_write_json, data_path, load_json_strict
 router = APIRouter()
 BACKUP_ROOT = data_path("admin_backups")
 ACCOUNT_FILES = tuple(dict.fromkeys([
-    "account_companies.json", "buyers.json", "products.json", "customers.json",
+    "account_companies.json", "buyers.json", "products.json", "customers.json", "packing_defaults.json",
     *(definition.storage_filename for definition in DOCUMENT_DEFINITIONS if definition.key != "company"),
     "email_history.json", "billing_history.json", "usage_events.json", "payment_orders.json",
 ]))

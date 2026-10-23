@@ -672,7 +672,7 @@ def _ux_script(path: str) -> str:
   const firstEditable=document.querySelector('input:not([type="hidden"]):not([readonly]):not([disabled]),select:not([disabled]),textarea:not([readonly]):not([disabled])');
   if(firstEditable)setTimeout(function(){firstEditable.focus({preventScroll:true});},0);
   document.querySelectorAll('a,button').forEach(function(control){
-    const label=(control.textContent||'').trim();
+    const label=(control.dataset.tpOriginalLabel||control.textContent||'').trim();
     if(/^(save|update)/i.test(label)){control.classList.add('tp-ux-action','tp-ux-primary');}
     if(label==='Cancel'||label==='Return to Shipment'){control.classList.add('tp-ux-action','tp-ux-secondary');}
     if(/delete|remove/i.test(label)){control.classList.add('tp-ux-action','tp-ux-danger');}
@@ -710,8 +710,8 @@ def _ux_script(path: str) -> str:
   },true);
   window.addEventListener('beforeunload',function(event){if(!formDirty)return;event.preventDefault();event.returnValue='';});
   document.addEventListener('click',function(event){
-    const button=event.target.closest('button');if(!button||button.form)return;
-    if(!/^(save|update|create)/i.test((button.textContent||'').trim()))return;
+    const button=event.target.closest('button');if(!button||button.form||button.closest('.packing-calculator'))return;
+    if(!/^(save|update|create)/i.test((button.dataset.tpOriginalLabel||button.textContent||'').trim()))return;
     rememberFormValues(document);
     showLoading('Saving...');
     button.dataset.tpOriginalText=button.textContent.trim();button.dataset.tpSaving='true';setTimeout(function(){button.disabled=true;button.textContent='Saving...';},0);
@@ -730,17 +730,17 @@ def _ux_script(path: str) -> str:
   document.addEventListener('keydown',function(event){
     if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){
       const form=Array.from(document.querySelectorAll('form[method="post"]')).find(function(item){return !/delete/i.test(item.action||'');});
-      const saveButton=Array.from(document.querySelectorAll('button')).find(function(item){return /^(save|update|create)/i.test((item.textContent||'').trim())&&!item.disabled;});
+      const saveButton=Array.from(document.querySelectorAll('button')).find(function(item){return /^(save|update|create)/i.test((item.dataset.tpOriginalLabel||item.textContent||'').trim())&&!item.disabled&&!item.closest('.packing-calculator');});
       if(form||saveButton){event.preventDefault();if(form){if(form.requestSubmit)form.requestSubmit();else form.submit();}else saveButton.click();return;}
     }
     if(event.altKey&&event.key.toLowerCase()==='n'){
-      const newLink=Array.from(document.querySelectorAll('a')).find(function(link){return /new|create first|create shipment/i.test((link.textContent||'').trim());});if(newLink){event.preventDefault();newLink.click();return;}
+      const newLink=Array.from(document.querySelectorAll('a')).find(function(link){return /new|create first|create shipment/i.test((link.dataset.tpOriginalLabel||link.textContent||'').trim());});if(newLink){event.preventDefault();newLink.click();return;}
     }
     if(event.altKey&&event.key.toLowerCase()==='l'){
-      const listLink=Array.from(document.querySelectorAll('a')).find(function(link){return /back to list|list$/i.test((link.textContent||'').trim());});if(listLink){event.preventDefault();listLink.click();return;}
+      const listLink=Array.from(document.querySelectorAll('a')).find(function(link){return /back to list|list$/i.test((link.dataset.tpOriginalLabel||link.textContent||'').trim());});if(listLink){event.preventDefault();listLink.click();return;}
     }
     if(event.key!=='Enter'||event.defaultPrevented||event.target.tagName==='TEXTAREA'||event.target.form)return;
-    const button=Array.from(document.querySelectorAll('button')).find(function(item){return /^(save|update|create)/i.test((item.textContent||'').trim())&&!item.disabled;});
+    const button=Array.from(document.querySelectorAll('button')).find(function(item){return /^(save|update|create)/i.test((item.dataset.tpOriginalLabel||item.textContent||'').trim())&&!item.disabled&&!item.closest('.packing-calculator');});
     if(button){event.preventDefault();button.click();}
   });
   const originalAlert=window.alert.bind(window);
@@ -914,10 +914,16 @@ class ReleaseFooterMiddleware:
                 if authenticated_user and request_path not in {"/login", "/register"} and "<body" in text:
                     body_end = text.find(">", text.find("<body"))
                     text = text[:body_end + 1] + authenticated_user_control(authenticated_user) + text[body_end + 1:]
+                if authenticated_user and request_path not in {"/login", "/register"}:
+                    from app.workspace_language import language, inject
+                    text = inject(text, language(query, request_headers))
                 body = inject_release_footer(text).encode(charset)
                 headers = [(key, value) for key, value in headers if key.lower() != b"content-length"]
                 headers.append((b"content-length", str(len(body)).encode("ascii")))
 
+            if query.get("lang", [""])[0] in {"ko", "en"}:
+                selected_language = query["lang"][0]
+                headers.append((b"set-cookie", f"tp_language={selected_language}; Max-Age=31536000; Path=/; SameSite=Lax".encode("ascii")))
             status = int(start_message.get("status", 500))
             if request_method == "POST" and 200 <= status < 400 and mutation_kind and "application/pdf" not in content_type:
                 headers.append((b"set-cookie", b"tp_success=" + mutation_kind.encode() + b"; Max-Age=60; Path=/; SameSite=Lax"))
