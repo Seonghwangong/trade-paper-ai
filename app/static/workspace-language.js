@@ -17,7 +17,7 @@
   const dictionary=await response.json();
   if(dictionary[document.title]) document.title=dictionary[document.title];
   const blocked = 'script,style,textarea,pre,code,[translate="no"],.signed-in-user';
-  const eligible='h1,h2,h3,h4,th,label,button,a,summary,p,legend,small,b,strong,span,option,li,div';
+  const eligible='h1,h2,h3,h4,th,label,button,a,summary,p,legend,small,b,strong,span,option,li,div,.billing-page dt,.billing-page dd';
   function translate(root) {
     if(root.nodeType===Node.TEXT_NODE) {
       const parent=root.parentElement;
