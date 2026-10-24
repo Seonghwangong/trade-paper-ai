@@ -11,7 +11,7 @@ RELEASE_TYPE = "Founding Beta"
 RELEASE_STAGE = "Founding Beta"
 LAST_UPDATED = "2026-07-22"
 EXPECTED_ROUTE_COUNT = 287
-BUSINESS_PHONE = "010-7166-7770"
+BUSINESS_PHONE = "050-6466-7770"
 
 RELEASE_NOTES = (
     "September 24: consistent Invoice currencies, numeric validation, clearer PDF preview errors, and sample workflow guidance.",

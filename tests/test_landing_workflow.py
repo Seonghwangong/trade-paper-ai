@@ -129,7 +129,7 @@ def test_landing_footer_exposes_exact_business_information():
         ("대표자", "공성환"),
         ("사업자등록번호", "357-45-01167"),
         ("사업장 주소", "경상남도 창원시 의창구 지귀로120번길 19, 2층 203호(봉곡동)"),
-        ("전화번호", "010-7166-7770"),
+        ("전화번호", "050-6466-7770"),
     ):
         assert f"<dt>{label}</dt><dd>{value}</dd>" in html
     assert html.count('href="/feedback"') == 1
