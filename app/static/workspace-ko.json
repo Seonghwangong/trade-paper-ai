@@ -467,5 +467,9 @@
   "Billing is temporarily unavailable. Contact billing support if this continues.": "일시적으로 결제를 이용할 수 없습니다. 문제가 계속되면 결제 관련 문의로 연락해 주세요.",
   "A previous purchase needs confirmation or billing support review.": "이전 구매의 결제 확인 또는 고객 지원 검토가 필요합니다.",
   "An existing paid plan needs billing support review before another purchase.": "이미 유료 요금제가 있습니다. 추가 구매 전에 결제 관련 문의로 연락해 주세요.",
-  "Refresh the page and explicitly confirm the billing action.": "페이지를 새로고침하고 결제 관련 작업에 동의한 뒤 다시 진행해 주세요."
+  "Refresh the page and explicitly confirm the billing action.": "페이지를 새로고침하고 결제 관련 작업에 동의한 뒤 다시 진행해 주세요.",
+  "No connected subscription": "연결된 구독이 없습니다",
+  "No Paddle subscription is linked to this account yet.": "아직 이 계정에 연결된 Paddle 구독이 없습니다.",
+  "If you have already tried to pay, do not pay again. Contact billing support so we can check your payment.": "이미 결제를 시도했다면 다시 결제하지 마세요. 결제 내역을 확인할 수 있도록 결제 관련 문의로 연락해 주세요.",
+  "My subscription": "내 이용 요금제"
 }

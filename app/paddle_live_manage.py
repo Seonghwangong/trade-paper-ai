@@ -24,6 +24,11 @@ HEADERS = {'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
            'X-Frame-Options': 'DENY', 'X-Content-Type-Options': 'nosniff'}
 
 
+class NoConnectedBillingRecord(HTTPException):
+    def __init__(self):
+        super().__init__(404, 'No connected billing record for this account.')
+
+
 def enabled():
     return os.environ.get('TRADE_PAPER_PADDLE_LIVE_MANAGE') == '1'
 
@@ -93,7 +98,7 @@ def status_for(account, *, now=None):
         review = needs_review(db, row[0] if row else None)
         decision = store.decision_in_transaction(db, row, now=now)
     if row is None and 'checkout' not in operations:
-        raise HTTPException(404, 'No connected billing record for this account.')
+        raise NoConnectedBillingRecord()
     payment_pending = bool(decision and decision.provider_status == 'active' and decision.access_until is None and not review)
     pending = 'cancel' in operations and operations['cancel'] is None
     acknowledged = operations.get('cancel') in ('scheduled', 'canceled')
@@ -161,6 +166,19 @@ def billing_page(request: Request):
         config = json.dumps({'path': PATH, 'csrf': csrf_token(account),
             'paymentCsrf': csrf_token(account, 'payment-method'), 'state': state}).replace('<', '\\u003c')
         return HTMLResponse(PAGE.replace('__CONFIG__', config), headers=HEADERS)
+    except NoConnectedBillingRecord:
+        # An authenticated Owner without a purchase needs guidance, not a raw
+        # JSON error. Status and mutation endpoints keep their existing 404s.
+        from app.ui import page_shell
+        return HTMLResponse(page_shell('Manage billing', '''
+<section class="tp-card">
+<h2>No connected subscription</h2>
+<p>No Paddle subscription is linked to this account yet.</p>
+<p>If you have already tried to pay, do not pay again. Contact billing support so we can check your payment.</p>
+<nav class="tp-actions"><a class="tp-btn" href="/subscription">My subscription</a>
+<a class="tp-btn tp-btn-secondary" href="/subscription/paddle">Refresh status</a>
+<a class="tp-btn tp-btn-secondary" href="/contact">Contact billing support</a></nav>
+</section>'''), headers=HEADERS)
     except FAILURES as error:
         return error_response(error)
 

@@ -155,9 +155,27 @@ def test_other_account_cannot_read_or_cancel_first_account(ready):
     ready.user['account_id'] = 'B'
     for suffix, method in [('', 'GET'), ('/status', 'GET'), ('/cancel', 'POST')]:
         response = http(manage.PATH + suffix, method, headers('B'), query=b'account_id=A')
-        assert response.status == 404
+        assert response.status == (200 if suffix == '' else 404)
         assert TXN not in response.text and SUB not in response.text
     assert ready.calls == []
+
+
+def test_owner_without_billing_gets_readonly_guidance_not_a_payment_action(ready):
+    ready.user['account_id'] = 'B'
+    before = ledger(ready.store)
+    response = http(query=b'lang=ko')
+    assert response.status == 200
+    assert response.headers['content-type'].startswith('text/html')
+    assert response.headers['cache-control'] == 'no-store'
+    assert 'No connected subscription' in response.text
+    assert 'do not pay again' in response.text
+    assert 'data-language="ko"' in response.text
+    for control in ('id="cancel"', 'id="consent"', 'X-Billing-CSRF', 'paddle.js', 'Paddle.Checkout'):
+        assert control not in response.text
+    assert http(manage.PATH + '/status').status == 404
+    assert http(manage.PATH + '/cancel', 'POST', headers('B')).status == 404
+    assert ledger(ready.store) == before
+    assert ready.calls == [] and ready.client.creates == ready.client.cancels == 0
 
 
 def test_uncertain_cancellation_shows_pending_and_never_resends_post(ready):
