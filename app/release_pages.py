@@ -36,6 +36,7 @@ def information_page(title, subtitle, content, *, lang="en", navigation=None):
 def release_notes_page():
     content = (
         f'<p class="version">Version {APP_VERSION} · {RELEASE_STAGE}</p>'
+        + section_card("October 25, 2026 · Public Release 3.5.1", "<p>A shorter English/Korean home with a product preview, Free and Starter plans, and concise FAQ. Current product labels no longer use Founding Beta. First-use help remains available; existing applications and billing controls are unchanged.</p>")
         + section_card("October 23, 2026 · Packing workflow and Korean workspace", '<ul><li>Reuse account-owned packing settings to calculate carton count and net/gross kg totals. Verify actual packing; the same carton tare is assumed for a partially filled last carton.</li><li>Compare and apply Invoice changes to one linked Packing List. Changed or ambiguous items require reviewed packing totals. Stale previews are rejected. Existing PDFs and downstream documents remain unchanged.</li><li>Choose Korean for workspace navigation and core company, buyer, product, Invoice and Packing screens. Stored document data and PDF language are not translated.</li></ul><p lang="ko">포장 기준 저장·재사용 계산, 송장 변경 비교·반영, 주요 작업 화면 한국어 선택을 추가했습니다. 포장 실측값을 확인하고 변경 후 PDF를 새로 다운로드하세요.</p>')
         + section_card("September 24, 2026 · Invoice and PDF improvements", '<ul><li>Invoice totals, lists and PDFs now display the document currency. Selecting a buyer with a default currency fills it into the Invoice. Review unit prices when changing currency; amounts are not automatically converted.</li><li>Fractional quantities remain numeric after editing. Invalid, negative and non-finite quantities or prices are rejected before saving.</li><li>Invoice and Packing List PDF previews show actionable errors instead of opening failed responses as files. A link is available when a preview popup is blocked.</li><li>Demo buyers start with USD; sample Invoice progress updates after the sample values load.</li><li>Packing List screens explain that later Invoice edits do not automatically update an existing Packing List. Review both documents and download fresh PDFs after changes.</li></ul><div lang="ko"><p><b>한국어 요약:</b> Invoice 통화 표시와 소수 수량 처리를 수정하고, PDF 생성 실패 시 안내를 개선했습니다. 저장된 Packing List는 Invoice 수정 시 자동 갱신되지 않으므로 두 문서를 함께 검토해 주세요. 통화 변경 시 자동 환산은 하지 않습니다.</p></div>')
         + section_card("September 23, 2026 · Account and plan improvements", '<ul><li>Login sessions now survive routine deployments until their normal expiry.</li><li>Free accounts no longer show a subscription cancellation action that could interrupt document creation.</li><li>The monthly limit message explains the UTC reset schedule and links to the Dashboard and Contact page.</li><li>Professional plan inquiries now link directly to <a href="/contact">Contact us</a>.</li><li>Toss test card registration is restricted to platform administrators. Online paid checkout remains unavailable.</li></ul>')
@@ -44,7 +45,7 @@ def release_notes_page():
         + section_card("Current Capabilities", "<p>Company, customer, buyer, and product master data; commercial, shipping, customs, and certificate documents; Shipment Hub workflow guidance; Dashboard; Global Search; validation; protected deletion; account isolation; password recovery; safe JSON storage; snapshots; PDF generation; and PDF email delivery.</p>")
         + section_card("Performance", "<p>Request-scoped JSON reuse reduces repeated Dashboard and Shipment Detail reads without stale global caching.</p>")
         + section_card("Workflow", "<p>Commercial Invoice → Packing List → Shipping Instruction → Booking Confirmation → Bill of Lading → Customs Declaration.</p>")
-        + section_card("Known Limitations", "<ul><li>Founding Beta availability and features may change during testing.</li><li>JSON storage requires a single application worker.</li><li>Team invitations and role management require the Professional plan; contact us for availability.</li><li>Online paid checkout is not active yet. Toss Payments recurring billing supports Korea-issued cards only. Overseas card one-time payment setup is not active.</li></ul>")
+        + section_card("Known Limitations", "<ul><li>Review exported documents against your actual shipment and applicable requirements.</li><li>JSON storage requires a single application worker.</li><li>Team invitations and role management require the Professional plan; contact us for availability.</li><li>Online paid checkout is not active yet. Toss Payments recurring billing supports Korea-issued cards only. Overseas card one-time payment setup is not active.</li></ul>")
         + section_card("Deployment Checklist", "<ul><li>Serve the application through HTTPS.</li><li>Configure and verify storage backups.</li><li>Configure and verify an email delivery provider (SMTP or Resend API) for password recovery and document email.</li><li>Publish a customer Contact email or URL.</li><li>Use an existing writable DATA DIR.</li><li>Set a stable Session Secret of at least 32 characters.</li></ul>")
     )
     return information_page(f"Version {APP_VERSION} Release Notes", RELEASE_STAGE, content)
@@ -92,6 +93,7 @@ def version_history_page():
         + section_card("3.2.1 RC1", "<p>Release Candidate quality review covering consistency, navigation, responsive behavior, and visible wording.</p>")
         + section_card("3.3.0", "<p>First User Success release with guided success messages, next actions, and workflow celebration.</p>")
         + section_card("3.4.0", "<p>Login MVP with responsive registration, credential validation, and secure password storage.</p>")
+        + section_card("3.5.1 · Public Release", "<p>Shorter bilingual public home, current plan guidance, and first-use help instead of beta recruitment. Historical release entries remain below.</p>")
         + section_card("3.5.0 · Founding Beta", "<p>Account-isolated business records, protected routes, safe login redirects, logout, password recovery, authenticated identity display, and the current shipment-centered document workflow.</p>")
     )
     return information_page("Version History", f"Current: Version {APP_VERSION} · {RELEASE_STAGE}", content)
@@ -294,7 +296,7 @@ def terms_page():
             "Paid Plans, Cancellation, and Refunds",
             "<p>The Starter plan is listed at ₩29,000 per month. Online payment processing is not active yet, so applying for or viewing Starter does not collect payment or activate a paid plan.</p>"
             "<p>If online monthly billing is activated, the checkout will disclose the payment and renewal terms before purchase. Subscription cancellation stops future billing according to the timing shown at cancellation; any withdrawal, cancellation, or refund rights required by applicable law remain available.</p>"
-            "<p>See the <a href=\"/refund-policy\">Cancellation and Refund Policy</a> for the request process. Billing questions and Founding Beta arrangements are handled through the <a href=\"/contact\">Contact page</a>.</p>",
+            "<p>See the <a href=\"/refund-policy\">Cancellation and Refund Policy</a> for the request process. Billing questions and onboarding arrangements are handled through the <a href=\"/contact\">Contact page</a>.</p>",
         )
         + section_card(
             "Availability and Changes",
@@ -321,7 +323,7 @@ def refund_policy_page():
         section_card(
             "Current Payment Status",
             "<p><b>Effective date: August 15, 2026</b></p>"
-            "<p>Online payment processing is not active yet. Viewing the Starter page, applying for Founding Beta, or requesting purchase information does not collect payment or create a paid subscription.</p>",
+            "<p>Online payment processing is not active yet. Viewing the Starter page, requesting first-use help, or requesting purchase information does not collect payment or create a paid subscription.</p>",
         )
         + section_card(
             "Starter Monthly Subscription",

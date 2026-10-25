@@ -411,7 +411,7 @@ class AuthenticationMiddleware:
             return
         user = current_user(request)
         if path == "/" and request.method == "GET" and user is None:
-            response = landing_page()
+            response = landing_page(request.query_params.get("lang", "en"))
             await response(scope, receive, send)
             return
         if not is_public and user is None:

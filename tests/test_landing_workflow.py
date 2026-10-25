@@ -6,119 +6,61 @@ import json
 import re
 import pytest
 from playwright.sync_api import sync_playwright
-
 from tests.test_auth_browser import auth_server
 from app.subscription import PLANS, plan_price_label
 
 
-def test_landing_matches_required_first_document_workflow_and_conversion_ctas():
+def test_home_is_concise_and_keeps_public_entry_points():
     html = landing_page().body.decode()
-    workflow = ("Company", "Buyer", "Product", "Invoice", "Packing", "SI", "Shipment", "Booking", "B/L", "CO", "Email", "Done")
-    positions = [html.index(f"<li>{step}</li>") for step in workflow]
+    assert html.count('<section ') == 4
+    for path in ('/try-sample', '/register', '/starter', '/getting-started', '/login', '/founding-beta'):
+        assert f'href="{path}"' in html
+    for obsolete in ('Founding Beta', 'Customer Logos', 'Coming Soon', 'in Minutes, Not Hours', 'First 10 companies'):
+        assert obsolete not in html
+    assert 'First-use help' in html
+    assert 'does not update automatically' in html
+    assert 'previous downloads stay unchanged' in html
+    assert 'customs filing or certification' in html
+    assert '__' not in html
 
-    assert positions == sorted(positions)
-    assert 'aria-label="Company, Buyer, Product, Invoice, Packing, SI, Shipment, Booking, B/L, CO, Email, Done"' in html
-    assert '<a class="primary" href="/register">Start Free</a>' in html
-    assert '<a class="secondary" href="#demo">Watch 15-Second Demo</a>' in html
-    assert '<a href="/register?next=%2Fdemo">Start Free to try the workflow →</a>' in html
-    assert '<a class="secondary" href="/founding-beta">Join Founding Beta</a>' in html
-    assert '<a class="nav-link" href="/login">Sign in</a>' in html
+
+def test_korean_home_keeps_language_on_first_use_links():
+    html = landing_page('ko').body.decode()
+    assert '<html lang="ko">' in html
+    assert '두 서류로 이어 쓰세요.' in html
+    for path in ('/try-sample', '/register', '/starter', '/getting-started', '/login', '/founding-beta'):
+        assert f'href="{path}?lang=ko"' in html
+    assert '월 29,000원' in html
+    assert '월 5문서' in html
+    assert '베타' not in html
+    assert '<html lang="en">' in landing_page('<script>').body.decode()
 
 
-def test_landing_hero_communicates_comfort_first_and_current_trust_values():
+def test_home_plan_and_faq_schema_match_visible_content():
     html = landing_page().body.decode()
-    assert "Founding Beta · Export operations workspace" in html
-    assert "Create Export Documents<br>in Minutes, Not Hours." in html
-    assert "Create, manage and send Commercial Invoice, Packing List," in html
-    assert "Shipping Instruction, Bill of Lading and more" in html
-    assert "in one connected workflow." in html
-    assert "Enter your information once. Keep every export document connected." in html
-    assert 'aria-label="Product trust highlights"' in html
-    for trust_value in (
-        "✓ Unicode PDF",
-        "✓ Stable Snapshots",
-        "✓ Account Isolation",
-        "✓ Guided Workflow",
-        "✓ Founding Beta",
-    ):
-        assert f"<span>{trust_value}</span>" in html
+    assert plan_price_label('Starter') in html
+    assert PLANS['Starter']['price'] == 29000
+    assert '5 documents per month' in html
+    assert 'Each Invoice and Packing List counts as one document' in html
+    payloads = [json.loads(v) for v in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html)]
+    application = next(item for item in payloads if item.get('@type') == 'SoftwareApplication')
+    starter = next(item for item in application['offers'] if item['name'] == 'Starter')
+    assert starter['price'] == '29000'
+    assert starter['priceCurrency'] == 'KRW'
+    faq = next(item for item in payloads if item.get('@type') == 'FAQPage')
+    assert len(faq['mainEntity']) == 4
+    for entry in faq['mainEntity']:
+        assert f"<summary>{entry['name']}</summary>" in html
+        assert entry['acceptedAnswer']['text'] in html
+    for label in ('google-site-verification', 'naver-site-verification', 'rel="canonical"', 'prefers-reduced-motion'):
+        assert label in html
 
 
-def test_landing_describes_only_implemented_conversion_values():
+def test_home_footer_retains_release_contact_and_policy_links():
     html = landing_page().body.decode()
-    for text in (
-        "Why Trade Paper AI",
-        "No duplicate work",
-        "Connected documents",
-        "Built for exporters",
-        "Founding Beta",
-        "Frequently Asked Questions",
-        "Export Wizard",
-        "Customer Logos",
-        "Coming Soon",
-        "There are no customer testimonials yet.",
-        "Subscription plans",
-        "Account Isolation",
-        "Audit Log",
-        "Backup",
-        "Email Security",
-        "Ready to simplify export documentation?",
-        "Contact Trade Paper AI",
-        "Nothing is saved until you choose Save.",
-    ):
-        assert text in html
-    for question in (
-        "What documents are supported?",
-        "Are previous PDFs affected?",
-        "Does Trade Paper AI support Unicode?",
-        "Is my company data isolated?",
-        "What happens in Demo Mode?",
-        "Can I archive a document?",
-        "Is payment active?",
-    ):
-        assert f"<summary>{question}</summary>" in html
-
-
-def test_landing_starter_offer_matches_plan_catalog_and_json_ld():
-    html = landing_page().body.decode()
-    assert PLANS["Starter"] == {
-        "monthly_document_limit": None,
-        "summary": "Unlimited documents",
-        "price": 29_000,
-        "currency": "KRW",
-        "billing_cycle": "Monthly",
-    }
-    assert plan_price_label("Starter") == "₩29,000 / month"
-    assert '<h3>Starter</h3><div class="price">₩29,000 / month</div>' in html
-    assert '<a class="primary" href="/starter">View Starter</a>' in html
-    assert "Online payment processing is not active yet." in html
-    assert '<h3>Professional</h3><div class="price">Contact</div>' in html
-
-    payloads = [json.loads(value) for value in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html)]
-    application = next(item for item in payloads if item.get("@type") == "SoftwareApplication")
-    starter = next(item for item in application["offers"] if item["name"] == "Starter")
-    assert starter["price"] == "29000"
-    assert starter["priceCurrency"] == "KRW"
-    assert starter["description"] == "Starter plan billed monthly."
-
-
-def test_landing_footer_exposes_beta_and_support_navigation():
-    html = landing_page().body.decode()
-    assert f"Version {APP_VERSION} · {RELEASE_STAGE} · Built for Exporters." in html
-    for label, path in (
-        ("Apply for Founding Beta", "/founding-beta"),
-        ("Send Feedback", "/feedback"),
-        ("15-Second Demo", "#demo"),
-        ("About", "/about"),
-        ("Release Notes", "/release-notes"),
-        ("Version History", "/version-history"),
-        ("Contact", "/contact"),
-        ("Privacy", "/privacy"),
-        ("Terms", "/terms"),
-        ("Refund Policy", "/refund-policy"),
-        ("Sign In", "/login"),
-    ):
-        assert f'<a href="{path}">{label}</a>' in html
+    assert f'Version {APP_VERSION} · {RELEASE_STAGE}' in html
+    for path in ('/about', '/release-notes', '/version-history', '/contact', '/privacy', '/terms', '/refund-policy'):
+        assert f'href="{path}"' in html
 
 
 def test_landing_footer_exposes_exact_business_information():

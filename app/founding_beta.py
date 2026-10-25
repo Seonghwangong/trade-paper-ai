@@ -54,7 +54,7 @@ def _korean_application(options: str, values, error_html: str) -> str:
 <label for="exports">어떤 품목을 수출하시나요? (선택)</label><textarea id="exports" name="exports" aria-describedby="exports-help">{_value(values, "exports")}</textarea><p id="exports-help">바이어 정보, 품목 수량, 포장 정보 등 반복 입력이 많은 단계도 알려 주세요. 일반적인 설명이면 충분합니다.</p>
 <label for="monthly_export_documents">월 수출 서류 작성량 (선택)</label><select id="monthly_export_documents" name="monthly_export_documents"><option value="">선택 안 함</option>{options}</select>
 <label for="referral_source">어디에서 알게 되셨나요? (선택)</label><select id="referral_source" name="referral_source"><option value="">선택 안 함</option>{sources}</select>
-<button type="submit">베타 체험 신청하기</button>
+<button type="submit">첫 사용 도움 신청하기</button>
 </form></section>"""
 
 
@@ -83,7 +83,7 @@ def _application_page(lang="en", values=None, error=None):
     error_html = _application_error(error, language) if error else ""
     status_code = 409 if error else 200
     if language == "ko":
-        return HTMLResponse(page_shell("베타 체험 신청", public_billing.customer_copy(_korean_application(options, values, error_html)), styles=_styles(), navigation=navigation, lang="ko"), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
+        return HTMLResponse(page_shell("첫 사용 도움 신청", public_billing.customer_copy(_korean_application(options, values, error_html)), styles=_styles(), navigation=navigation, lang="ko"), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
     content = f"""
 {error_html}
 <div class="intro"><h2>Stop retyping the same details between export documents</h2><p>For small exporters and trade teams who prepare Commercial Invoices and Packing Lists themselves.</p><p>Reuse buyer and product details, continue from an Invoice to a Packing List, then review both PDFs.</p></div>
@@ -96,9 +96,9 @@ def _application_page(lang="en", values=None, error=None):
 <label for="exports">What do you export?</label><textarea id="exports" name="exports" aria-describedby="exports-help">{_value(values, "exports")}</textarea><p id="exports-help">Optional: add the step where you repeat the most typing, such as buyer details, item quantities, or packing information. A general description is enough.</p>
 <label for="monthly_export_documents">Monthly export documents</label><select id="monthly_export_documents" name="monthly_export_documents"><option value="">Select</option>{options}</select>
 <label for="referral_source">How did you hear about us? (optional)</label><select id="referral_source" name="referral_source"><option value="">Prefer not to say</option>{source_options}</select>
-<button type="submit">Apply for Founding Beta</button>
+<button type="submit">Request first-use help</button>
 </form></section>"""
-    return HTMLResponse(page_shell("Founding Beta Application", public_billing.customer_copy(content), styles=_styles(), navigation=navigation), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
+    return HTMLResponse(page_shell("First-use Help", public_billing.customer_copy(content), styles=_styles(), navigation=navigation), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
 
 
 def _expects_json(request):
@@ -199,11 +199,11 @@ def founding_beta_thank_you(lang: str = "en"):
     navigation = _language_navigation("/founding-beta/thank-you", language)
     if language == "ko":
         content = section_card(
-            "Founding Beta",
-            '<ul class="benefits"><li>✓ 초기 10개 기업</li><li>✓ 초기 고객 가격 6개월 적용</li><li>✓ 첫 사용 직접 안내</li><li>✓ 우선 지원</li></ul>'
+            "First-use Help",
+            '<ul class="benefits"><li>✓ 첫 사용 직접 안내</li><li>✓ 가상 문서로 사용 방법 확인</li></ul>'
             '<p class="promise">영업일 기준 2일 이내에 연락드리겠습니다.</p>'
             '<h2>기다리는 동안 샘플을 살펴보세요</h2>'
-            '<p>베타 신청으로 계정이 생성되지는 않습니다. <a href="/getting-started#sample-documents">샘플 Invoice·Packing List</a>는 가입 없이 볼 수 있습니다.</p>'
+            '<p>도움 신청으로 계정이 생성되지는 않습니다. <a href="/getting-started#sample-documents">샘플 Invoice·Packing List</a>는 가입 없이 볼 수 있습니다.</p>'
             '<ol class="next-steps"><li><a href="/register?next=%2Fdemo">계정을 만들거나</a>, 기존 계정으로 <a href="/login?next=%2Fdemo">데모에 로그인</a>하세요.</li>'
             '<li>샘플 회사·바이어·품목 정보를 검토하세요.</li><li>Invoice를 만들고 Packing List로 이어서 작성한 뒤 PDF를 확인하세요.</li></ol>'
             '<p>저장 버튼을 누르면 계정에 문서가 저장됩니다. 첫 체험에는 가상 정보를 사용해 주세요. Free 플랜은 월 5개 문서이며, 저장한 샘플도 포함됩니다.</p>'
@@ -212,8 +212,8 @@ def founding_beta_thank_you(lang: str = "en"):
         )
         return HTMLResponse(page_shell("신청이 접수되었습니다", content, styles=_styles(), navigation=navigation, lang="ko"))
     content = section_card(
-        "Founding Beta",
-        '<ul class="benefits"><li>✓ First 10 companies</li><li>✓ Founding price for 6 months</li><li>✓ Direct onboarding</li><li>✓ Priority support</li></ul>'
+        "First-use Help",
+        '<ul class="benefits"><li>✓ Direct onboarding</li><li>✓ Fictional document walkthrough</li></ul>'
         '<p class="promise">We\'ll contact you within 2 business days.</p>'
         '<h2>Start your sample walkthrough</h2>'
         '<p>Your application does not create an account. You can try the product while you wait for our reply.</p>'
@@ -225,7 +225,7 @@ def founding_beta_thank_you(lang: str = "en"):
         '<p>Need help? <a href="/contact">Contact us</a>.</p>'
         '<a class="back" href="/">Back to Trade Paper AI</a>',
     )
-    return HTMLResponse(page_shell("Thank You", content, subtitle="Your Founding Beta application has been received.", styles=_styles(), navigation=navigation))
+    return HTMLResponse(page_shell("Thank You", content, subtitle="Your first-use help request has been received.", styles=_styles(), navigation=navigation))
 
 
 def _admin_styles():
@@ -294,14 +294,14 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
     for index, record in entries:
         status = record_status(record)
         email = str(record.get("email", "") or "").strip()
-        mailto = f"mailto:{quote(email, safe='@._+-')}?{urlencode({'subject': 'Trade Paper AI Founding Beta'})}"
+        mailto = f"mailto:{quote(email, safe='@._+-')}?{urlencode({'subject': 'Trade Paper AI first-use help'})}"
         company = str(record.get("company_name", "") or "")
         contact_name = str(record.get("contact_name", "") or "").strip() or "there"
         source = record.get("referral_source")
         source_label = source if source in REFERRAL_SOURCES else "Not provided"
         draft_body = (
             f"Hi {contact_name},\r\n\r\n"
-            "Thank you for applying to the Trade Paper AI Founding Beta.\r\n\r\n"
+            "Thank you for applying to the Trade Paper AI first-use help.\r\n\r\n"
             "Preview a matching Invoice and Packing List before signing up (no account needed): "
             "https://www.tradepaper.ai/getting-started#sample-documents\r\n\r\n"
             "Read the step-by-step guide: https://www.tradepaper.ai/getting-started\r\n\r\n"
@@ -317,14 +317,14 @@ def founding_beta_admin(request: Request, search: str = "", updated: int = 0, st
         )
         draft_subject = "Your Trade Paper AI beta walkthrough"
         if record.get("preferred_language") == "ko":
-            draft_subject = "[Trade Paper AI] 베타 신청 감사합니다 — 샘플 체험 안내"
+            draft_subject = "[Trade Paper AI] 첫 사용 도움 신청 감사합니다"
             draft_body = (
                 f"안녕하세요, {contact_name}님.\r\n\r\n"
-                "Trade Paper AI 베타 체험에 신청해 주셔서 감사합니다.\r\n\r\n"
+                "Trade Paper AI 첫 사용 도움을 신청해 주셔서 감사합니다.\r\n\r\n"
                 "먼저 가입 없이 샘플 Invoice와 Packing List를 살펴보세요: "
                 "https://www.tradepaper.ai/getting-started#sample-documents\r\n\r\n"
                 "단계별 체험 안내: https://www.tradepaper.ai/getting-started\r\n\r\n"
-                "베타 신청으로 계정이 만들어지지는 않습니다. 직접 체험하려면 "
+                "도움 신청으로 계정이 만들어지지는 않습니다. 직접 체험하려면 "
                 "https://www.tradepaper.ai/register?next=%2Fdemo 에서 계정을 만들고 "
                 "https://www.tradepaper.ai/login?next=%2Fdemo 에서 로그인해 주세요.\r\n\r\n"
                 "가상 회사·바이어·품목 정보로 Invoice를 작성한 뒤 Packing List로 이어서 만들고 PDF를 검토해 보세요. "

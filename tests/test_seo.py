@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 from starlette.requests import Request
 
 from app import auth, landing, main
+from app.release import APP_VERSION
 from tests.test_auth_browser import auth_server
 
 
@@ -28,8 +29,8 @@ def test_landing_has_canonical_social_manifest_and_valid_structured_data(monkeyp
         blocks.append(json.loads(chunk.split("</script>", 1)[0]))
     assert [block["@type"] for block in blocks] == ["Organization", "SoftwareApplication", "FAQPage"]
     assert blocks[0]["url"] == "https://trade.example.com/"
-    assert blocks[1]["softwareVersion"] == "3.5.0"
-    visible_questions = [question for question, _ in landing.FAQ_ENTRIES]
+    assert blocks[1]["softwareVersion"] == APP_VERSION
+    visible_questions = [landing.COPY["en"][f"q{i}"] for i in range(1, 5)]
     assert [entry["name"] for entry in blocks[2]["mainEntity"]] == visible_questions
 
 

@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const {readFileSync} = require('node:fs');
 const {join} = require('node:path');
 const vm = require('node:vm');
-const html = readFileSync(join(__dirname, '../app/landing.py'), 'utf8');
+const html = readFileSync(join(__dirname, '../app/templates/public_home.html'), 'utf8');
 const source = html.match(/function source\(\)\{[^\n]+\}/)[0];
 for (const [search, referrer, expected] of [
   ['?ref=producthunt', '', 'Product Hunt'],

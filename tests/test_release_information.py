@@ -35,13 +35,13 @@ def test_contact_uses_explicit_configuration_and_operational_fallbacks(monkeypat
     assert "https://app.operator.test" in fallback
 
 
-def test_release_pages_match_current_founding_beta_capabilities():
+def test_release_pages_match_current_public_capabilities():
     about = _body(release_pages.about_page())
     notes = _body(release_pages.release_notes_page())
     history = _body(release_pages.version_history_page())
     combined = " ".join((about, notes, history))
-    assert release.APP_VERSION == "3.5.0"
-    assert release.RELEASE_STAGE == "Founding Beta"
+    assert release.APP_VERSION == "3.5.1"
+    assert release.RELEASE_STAGE == "Public Release"
     for body in (about, notes, history):
         assert release.APP_VERSION in body
         assert release.RELEASE_STAGE in body

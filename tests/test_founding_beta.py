@@ -41,7 +41,7 @@ def test_korean_application_keeps_language_through_submission_and_welcome_draft(
     body = founding_beta.founding_beta_admin(_request()).body.decode()
     draft = re.search(r'href="([^"]+)" aria-label="Draft welcome email for 가상 수출회사"', body)
     params = parse_qs(urlsplit(unescape(draft.group(1))).query)
-    assert params['subject'] == ['[Trade Paper AI] 베타 신청 감사합니다 — 샘플 체험 안내']
+    assert params['subject'] == ['[Trade Paper AI] 첫 사용 도움 신청 감사합니다']
     assert '안녕하세요, 테스터님.' in params['body'][0]
     assert 'https://www.tradepaper.ai/getting-started#sample-documents' in params['body'][0]
     assert json.loads(path.read_text())[1]['preferred_language'] == 'ko'
@@ -138,14 +138,15 @@ def test_founding_beta_page_thank_you_and_landing_links():
 
     thanks = founding_beta.founding_beta_thank_you().body.decode()
     for text in (
-        "Founding Beta", "✓ First 10 companies", "✓ Founding price for 6 months",
-        "✓ Direct onboarding", "✓ Priority support",
+        "First-use Help", "✓ Fictional document walkthrough",
+        "✓ Direct onboarding",
         "We'll contact you within 2 business days.",
     ):
         assert text in thanks
 
     landing_body = landing.landing_page().body.decode()
-    assert landing_body.count('href="/founding-beta"') >= 3
+    assert landing_body.count('href="/founding-beta"') == 1
+    assert 'Apply for Founding Beta' not in form
     assert "/founding-beta" in auth.PUBLIC_PATHS
     assert "/founding-beta/thank-you" in auth.PUBLIC_PATHS
     assert "/admin/founding-beta" not in auth.PUBLIC_PATHS
@@ -176,7 +177,7 @@ def test_founding_beta_admin_lists_latest_first_and_searches(tmp_path, monkeypat
     assert body.index("Beta Trading") < body.index("Alpha Export")
     assert '<option value="New" selected>New</option>' in body
     assert '<option value="Contacted" selected>Contacted</option>' in body
-    assert 'href="mailto:lee@beta.example?subject=Trade+Paper+AI+Founding+Beta"' in body
+    assert 'href="mailto:lee@beta.example?subject=Trade+Paper+AI+first-use+help"' in body
     assert 'aria-label="Copy email for Beta Trading"' in body
     assert 'data-email="lee@beta.example"' in body
 

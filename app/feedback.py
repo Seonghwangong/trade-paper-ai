@@ -131,7 +131,7 @@ def submit_feedback(
 def feedback_thank_you():
     content = section_card(
         "Thank you for your feedback",
-        '<p>Your feedback has been received and will help us improve the Founding Beta.</p><a class="back" href="/">Back to Trade Paper AI</a>',
+        '<p>Your feedback has been received and will help us improve Trade Paper AI.</p><a class="back" href="/">Back to Trade Paper AI</a>',
     )
     return HTMLResponse(page_shell("Thank You", content, subtitle="Trade Paper AI Feedback Center", styles=_styles()))
 
@@ -175,7 +175,7 @@ def feedback_admin(request: Request, search: str = "", updated: int = 0):
     content = f"""
 <div class="admin-nav"><a href="/">← Dashboard</a><form class="search" action="/admin/feedback" method="get"><input type="search" name="search" value="{html_escape(query, attribute=True)}" placeholder="Search email, name, category, or feedback"><button type="submit">Search</button></form><span class="count">{len(entries)} feedback items</span></div>
 {'<div class="notice" role="status">Feedback updated.</div>' if updated else ''}<div class="table-wrap"><table><thead><tr><th>Submitted</th><th>Name</th><th>Email</th><th>Rating</th><th>Category</th><th>Feedback</th><th>Screenshot</th><th>Status / Internal Reply</th></tr></thead><tbody>{rows}</tbody></table></div>"""
-    return HTMLResponse(page_shell("Feedback Admin", content, subtitle="Review Founding Beta product feedback.", styles=_admin_styles()))
+    return HTMLResponse(page_shell("Feedback Admin", content, subtitle="Review product feedback.", styles=_admin_styles()))
 
 
 def _upload_dir():
