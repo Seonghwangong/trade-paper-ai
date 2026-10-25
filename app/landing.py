@@ -4,7 +4,7 @@ import os
 
 from fastapi.responses import HTMLResponse
 
-from app import email_delivery
+from app import email_delivery, public_billing
 from app.release import APP_VERSION, BUSINESS_PHONE, RELEASE_STAGE
 from app.subscription import PLANS, plan_price_label
 
@@ -32,6 +32,7 @@ def _json_ld(value):
 
 
 def landing_page():
+    entries = tuple((q, public_billing.customer_copy(a)) for q, a in FAQ_ENTRIES)
     base_url = _public_base_url()
     canonical_url = f"{base_url}/" if base_url else "/"
     hero_url = f"{base_url}/static/product-hunt/hero.png" if base_url else "/static/product-hunt/hero.png"
@@ -42,11 +43,11 @@ def landing_page():
             {"@type": "Offer", "name": "Free", "price": str(PLANS["Free"]["price"]), "priceCurrency": PLANS["Free"]["currency"], "description": "Free plan with up to five documents per month."},
             {"@type": "Offer", "name": "Starter", "price": str(starter["price"]), "priceCurrency": starter["currency"], "description": f"Starter plan billed {str(starter['billing_cycle']).casefold()}."},
         ]},
-        {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": question, "acceptedAnswer": {"@type": "Answer", "text": answer}} for question, answer in FAQ_ENTRIES]},
+        {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": question, "acceptedAnswer": {"@type": "Answer", "text": answer}} for question, answer in entries]},
     )
     json_ld = "".join(f'<script type="application/ld+json">{_json_ld(item)}</script>' for item in structured_data)
-    faq_html = "".join(f"<details><summary>{html.escape(question)}</summary><p>{html.escape(answer)}</p></details>" for question, answer in FAQ_ENTRIES)
-    return HTMLResponse("""<!doctype html>
+    faq_html = "".join(f"<details><summary>{html.escape(question)}</summary><p>{html.escape(answer)}</p></details>" for question, answer in entries)
+    return HTMLResponse(public_billing.customer_copy("""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -235,4 +236,4 @@ footer{padding:54px 0;border-top:1px solid #e2e8f0}
   const seen=new Set();const observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(!entry.isIntersecting)return;const page=entry.target.id==='pricing'?'Pricing':'FAQ';if(seen.has(page))return;seen.add(page);fetch('/analytics/visit?page='+encodeURIComponent(page)+'&source='+encodeURIComponent(source()),{method:'POST',credentials:'omit',keepalive:true}).catch(function(){})})},{threshold:.25});['pricing','faq'].forEach(function(id){const node=document.getElementById(id);if(node)observer.observe(node)})
 })();</script>
 </body>
-</html>""".replace("__APP_VERSION__", APP_VERSION).replace("__RELEASE_STAGE__", RELEASE_STAGE).replace("__BUSINESS_PHONE__", html.escape(BUSINESS_PHONE)).replace("__CANONICAL_URL__", html.escape(canonical_url, quote=True)).replace("__HERO_URL__", html.escape(hero_url, quote=True)).replace("__JSON_LD__", json_ld).replace("__FAQ_HTML__", faq_html).replace("__STARTER_PRICE__", html.escape(plan_price_label("Starter"))))
+</html>""".replace("__APP_VERSION__", APP_VERSION).replace("__RELEASE_STAGE__", RELEASE_STAGE).replace("__BUSINESS_PHONE__", html.escape(BUSINESS_PHONE)).replace("__CANONICAL_URL__", html.escape(canonical_url, quote=True)).replace("__HERO_URL__", html.escape(hero_url, quote=True)).replace("__JSON_LD__", json_ld).replace("__FAQ_HTML__", faq_html).replace("__STARTER_PRICE__", html.escape(plan_price_label("Starter")))))

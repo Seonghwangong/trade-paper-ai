@@ -471,5 +471,20 @@
   "No connected subscription": "연결된 구독이 없습니다",
   "No Paddle subscription is linked to this account yet.": "아직 이 계정에 연결된 Paddle 구독이 없습니다.",
   "If you have already tried to pay, do not pay again. Contact billing support so we can check your payment.": "이미 결제를 시도했다면 다시 결제하지 마세요. 결제 내역을 확인할 수 있도록 결제 관련 문의로 연락해 주세요.",
-  "My subscription": "내 이용 요금제"
+  "My subscription": "내 이용 요금제",
+  "Subscribe to Starter": "Starter 구독하기",
+  "Starter monthly checkout is available through Paddle. Review the final total and monthly renewal terms before paying. Professional remains contact-based.": "Starter 월 구독은 Paddle에서 결제할 수 있습니다. 결제 전 최종 금액과 매월 갱신 조건을 확인하세요. Professional은 별도 문의가 필요합니다.",
+  "Review the monthly renewal, cancellation and refund terms before paying. Viewing this page or applying for Founding Beta does not charge you.": "결제 전에 월별 갱신·해지·환불 조건을 확인하세요. 이 페이지를 보거나 베타 체험을 신청하는 것만으로 청구되지는 않습니다.",
+  "No local invoice entries. For Paddle subscription status, open Manage billing. Paddle provides your payment receipt.": "저장된 청구 내역이 없습니다. Paddle 구독 상태는 결제 관리에서 확인하세요. 결제 영수증은 Paddle에서 제공합니다.",
+  "Home": "홈",
+  "Monthly subscription": "월 구독",
+  "with unlimited document usage and direct onboarding.": "문서 무제한 작성과 첫 사용 안내를 제공합니다.",
+  "Unlimited document usage": "문서 무제한 작성",
+  "Connected export document workflow": "연결된 수출 서류 작성 흐름",
+  "Direct onboarding": "첫 사용 안내",
+  "Sign in for purchase details": "로그인하고 결제 조건 확인",
+  "Purchase, cancellation, and refunds": "구매·해지·환불",
+  "Cancellation and Refund Policy": "해지 및 환불 정책",
+  "Contact Trade Paper AI": "Trade Paper AI 문의",
+  "Starter Plan": "Starter 요금제"
 }

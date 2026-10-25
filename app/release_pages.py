@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from app import public_billing
 from fastapi.responses import HTMLResponse
 
 from app.release import (
@@ -24,6 +25,7 @@ def release_navigation():
 
 
 def information_page(title, subtitle, content, *, lang="en", navigation=None):
+    content = public_billing.customer_copy(content)
     styles = """
 *{box-sizing:border-box}body{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}.tp-page{width:min(920px,calc(100% - 32px));margin:40px auto}.card{background:#fff;border:1px solid #E5E7EB;border-radius:16px;padding:24px;margin:18px 0}.card h2{margin-top:0}.card p,.card li{color:#475569;line-height:1.7}.tp-toolbar,.tp-toolbar-actions{display:flex;gap:10px;flex-wrap:wrap}.tp-btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:12px;background:#111827;color:#fff;text-decoration:none;font-weight:700}.tp-btn-secondary{background:#E5E7EB;color:#111827}.tp-release-footer{width:min(920px,calc(100% - 32px));margin:34px auto 20px;padding:20px 0;border-top:1px solid #D1D5DB;color:#6B7280;text-align:center;font-size:13px;line-height:1.7}.tp-release-footer strong{display:block;color:#374151}.tp-release-footer-nav{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:9px}.tp-release-footer-nav a{color:#475569}.version{display:inline-block;padding:8px 11px;border-radius:999px;background:#DCFCE7;color:#166534;font-weight:700}@media(max-width:640px){.tp-page{margin:20px auto}.tp-btn{width:100%}}
 """

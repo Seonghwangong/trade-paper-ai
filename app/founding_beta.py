@@ -6,6 +6,7 @@ from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from app import public_billing
 
 from app import auth
 from app.intake_quality import APPLICATION_STATUSES, HONEYPOT_HTML, application_status, honeypot_filled
@@ -82,7 +83,7 @@ def _application_page(lang="en", values=None, error=None):
     error_html = _application_error(error, language) if error else ""
     status_code = 409 if error else 200
     if language == "ko":
-        return HTMLResponse(page_shell("베타 체험 신청", _korean_application(options, values, error_html), styles=_styles(), navigation=navigation, lang="ko"), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
+        return HTMLResponse(page_shell("베타 체험 신청", public_billing.customer_copy(_korean_application(options, values, error_html)), styles=_styles(), navigation=navigation, lang="ko"), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
     content = f"""
 {error_html}
 <div class="intro"><h2>Stop retyping the same details between export documents</h2><p>For small exporters and trade teams who prepare Commercial Invoices and Packing Lists themselves.</p><p>Reuse buyer and product details, continue from an Invoice to a Packing List, then review both PDFs.</p></div>
@@ -97,7 +98,7 @@ def _application_page(lang="en", values=None, error=None):
 <label for="referral_source">How did you hear about us? (optional)</label><select id="referral_source" name="referral_source"><option value="">Prefer not to say</option>{source_options}</select>
 <button type="submit">Apply for Founding Beta</button>
 </form></section>"""
-    return HTMLResponse(page_shell("Founding Beta Application", content, styles=_styles(), navigation=navigation), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
+    return HTMLResponse(page_shell("Founding Beta Application", public_billing.customer_copy(content), styles=_styles(), navigation=navigation), status_code=status_code, headers={"Cache-Control": "no-store"} if error else None)
 
 
 def _expects_json(request):

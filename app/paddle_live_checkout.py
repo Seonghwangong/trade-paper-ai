@@ -1,4 +1,4 @@
-"""Default-off, allowlisted Owner checkout pilot. Not a public sales release."""
+"""Owner checkout, allowlisted unless customer sales are explicitly enabled."""
 import hashlib
 import json
 import os
@@ -8,7 +8,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app import paddle_live_manage as manage, paddle_live_runtime as runtime, subscription
+from app import paddle_live_manage as manage, paddle_live_runtime as runtime, subscription, public_billing
 from app.paddle_live_actions import LiveClient, configured_service, TTL
 from app.paddle_live_offer import expected_offer, validate_price
 
@@ -21,7 +21,7 @@ def owner(request):
         raise HTTPException(404, 'Not found')
     account = manage.owner(request)
     allowed = {a.strip() for a in os.environ.get('TRADE_PAPER_PADDLE_LIVE_PILOT_ACCOUNTS', '').split(',') if a.strip()}
-    if account not in allowed:
+    if account not in allowed and not public_billing.enabled():
         raise HTTPException(403, 'Checkout is not available for this account yet.')
     return account
 

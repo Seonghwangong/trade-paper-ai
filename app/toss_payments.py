@@ -8,9 +8,9 @@ import re
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app import auth, subscription, toss_billing_test
+from app import auth, subscription, toss_billing_test, public_billing
 from app.storage import data_path, load_json_strict, locked_json_mutation
 
 
@@ -116,6 +116,7 @@ def validate_redirect_order(account_id, order_id, amount, *, path: Path | None =
 
 
 def _page(title, body):
+    body = public_billing.customer_copy(body)
     return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{_text(title)}</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}}main{{width:min(820px,calc(100% - 32px));margin:36px auto}}section{{margin:18px 0;padding:26px;border:1px solid #e5e7eb;border-radius:18px;background:#fff}}.price{{font-size:34px;font-weight:800}}.notice{{padding:16px;border-radius:12px;background:#fff7ed;color:#9a3412}}nav,.actions{{display:flex;gap:10px;flex-wrap:wrap}}a{{display:inline-flex;min-height:44px;align-items:center;padding:10px 15px;border-radius:10px;background:#111827;color:#fff;text-decoration:none;font-weight:800}}a.secondary{{background:#e5e7eb;color:#111827}}dt{{font-weight:800}}dd{{margin:4px 0 14px;color:#475569}}@media(max-width:600px){{main{{margin:20px auto}}.actions a{{width:100%;justify-content:center}}}}</style></head><body><main><nav><a class="secondary" href="/">Home</a><a class="secondary" href="/terms">Terms</a><a class="secondary" href="/privacy">Privacy</a><a class="secondary" href="/refund-policy">Refund Policy</a><a class="secondary" href="/contact">Contact</a></nav>{body}</main></body></html>''')
 
 
@@ -123,6 +124,8 @@ def _page(title, body):
 def starter_product_page():
     spec = starter_order_spec()
     body = f'''<section><p>Trade Paper AI Subscription</p><h1>{_text(spec['plan'])}</h1><p class="price">{_text(subscription.plan_price_label(spec['plan']))}</p><p><strong>Monthly subscription</strong> with unlimited document usage and direct onboarding.</p><ul><li>Unlimited documents</li><li>Connected export document workflow</li><li>Direct onboarding</li></ul><p class="notice">Online payment processing is not active yet. Viewing or applying for Starter does not create a paid subscription or collect payment.</p><div class="actions"><a href="/founding-beta">Apply for Founding Beta</a><a class="secondary" href="/login?next=%2Fsubscription%2Fcheckout%3Fplan%3DStarter">Sign in for purchase details</a></div></section><section><h2>Purchase, cancellation, and refunds</h2><p>No online payment is collected while checkout is inactive. Review how future Starter cancellation and refund requests will be handled before applying.</p><div class="actions"><a class="secondary" href="/refund-policy">Cancellation and Refund Policy</a><a class="secondary" href="/terms">Terms</a><a class="secondary" href="/privacy">Privacy</a><a class="secondary" href="/contact">Contact Trade Paper AI</a></div></section>'''
+    if public_billing.enabled():
+        body = body.replace('<a href="/founding-beta">Apply for Founding Beta</a>', '<a href="/subscription/paddle-buy">Subscribe to Starter</a>')
     return _page("Starter Plan", body)
 
 
@@ -133,6 +136,12 @@ def checkout_preparation(request: Request, plan: str = "Starter"):
         raise HTTPException(status_code=401, detail="Login required")
     if plan != SUPPORTED_PAYMENT_PLAN:
         raise HTTPException(status_code=400, detail="Only Starter purchase preparation is available")
+    if public_billing.enabled():
+        from app.paddle_live_checkout import owner
+        owner(request)
+        lang = request.query_params.get('lang')
+        destination = '/subscription/paddle-buy' + ('?lang=' + lang if lang in ('ko', 'en') else '')
+        return RedirectResponse(destination, status_code=303, headers={'Cache-Control': 'no-store'})
     spec = starter_order_spec()
     body = f'''<section><p>Purchase preparation</p><h1>{_text(spec['order_name'])}</h1><dl><dt>Price</dt><dd>{_text(subscription.plan_price_label(spec['plan']))}</dd><dt>Currency</dt><dd>{_text(spec['currency'])}</dd><dt>Billing cycle</dt><dd>{_text(spec['billing_cycle'])}</dd></dl><p class="notice">Online checkout is not active. No payment order has been created and your current plan has not changed.</p><div class="actions"><a href="/founding-beta">Apply for Founding Beta</a><a class="secondary" href="/subscription">Back to My Subscription</a></div></section>'''
     response = _page("Starter Purchase Preparation", body)

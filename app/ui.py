@@ -914,7 +914,7 @@ class ReleaseFooterMiddleware:
                 if authenticated_user and request_path not in {"/login", "/register"} and "<body" in text:
                     body_end = text.find(">", text.find("<body"))
                     text = text[:body_end + 1] + authenticated_user_control(authenticated_user) + text[body_end + 1:]
-                if authenticated_user and request_path not in {"/login", "/register"}:
+                if (authenticated_user or request_path == "/starter") and request_path not in {"/login", "/register"}:
                     from app.workspace_language import language, inject
                     text = inject(text, language(query, request_headers))
                 body = inject_release_footer(text).encode(charset)

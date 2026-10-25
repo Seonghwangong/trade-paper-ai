@@ -6,7 +6,7 @@ import html
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app import billing, paddle_live_runtime
+from app import billing, paddle_live_runtime, public_billing
 from app.paddle_subscription_policy import is_provider_managed, require_local_subscription
 from app.storage import data_path, load_json_strict, locked_json_mutation
 
@@ -118,11 +118,12 @@ def usage_limit_response(summary):
     inactive = status not in {"Trial", "Active"}
     title = "Subscription Not Active" if inactive else "Monthly Document Limit Reached"
     message = "Your subscription is not active. Contact us for help with your account." if inactive else "The Free plan monthly limit of 5 documents has been reached. Your allowance resets at the start of each month (UTC)."
-    guidance = "You can return to the dashboard to view your existing documents. " + PAID_PLAN_NOTICE
+    guidance = "You can return to the dashboard to view your existing documents. " + public_billing.customer_copy(PAID_PLAN_NOTICE)
     return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Usage Limit</title><style>body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial}}main{{min-height:100vh;display:grid;place-items:center;padding:24px}}section{{max-width:560px;padding:34px;background:#fff;border-radius:18px;text-align:center}}a{{display:inline-block;margin-top:16px;padding:12px 17px;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:bold}}</style></head><body><main><section><h1>{_text(title)}</h1><p>{_text(message)}</p><p>{_text(guidance)}</p><a href="/">Back to Dashboard</a> <a href="/contact">Contact us</a> <a href="/pricing">View Plans</a></section></main></body></html>''', status_code=402)
 
 
 def _page(title, body):
+    body = public_billing.customer_copy(body)
     return HTMLResponse(f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{_text(title)}</title><style>*{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}main{{width:min(1100px,calc(100% - 32px));margin:36px auto}}nav{{display:flex;gap:10px;margin-bottom:24px}}a,.button,button{{display:inline-flex;min-height:44px;align-items:center;padding:10px 15px;border:0;border-radius:9px;background:#111827;color:#fff;text-decoration:none;font-weight:800;cursor:pointer}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}.card,.summary{{padding:24px;background:#fff;border:1px solid #E5E7EB;border-radius:16px}}.card.current{{border:2px solid #2563EB}}.badge{{display:inline-block;padding:6px 9px;border-radius:999px;background:#DBEAFE;color:#1E3A8A;font-weight:800}}.danger{{background:#B91C1C}}.muted{{color:#64748B}}table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;border-bottom:1px solid #E5E7EB;text-align:left}}th{{background:#111827;color:#fff}}select{{min-height:42px;padding:8px;border:1px solid #CBD5E1;border-radius:8px}}form{{display:flex;gap:8px;align-items:center;flex-wrap:wrap}}@media(max-width:720px){{.grid{{grid-template-columns:1fr}}}}</style></head><body><main><nav><a href="/">Dashboard</a><a href="/subscription">My Subscription</a></nav>{body}</main></body></html>''')
 
 
@@ -162,6 +163,8 @@ def subscription_page(request: Request):
                 and paddle_live_runtime.is_managed(account_id)):
             actions = '<a href="/subscription/paddle">Manage billing</a>'
             cancel = '<p class="muted">View your billing status or request cancellation from Manage billing.</p>'
+    if public_billing.enabled() and summary['plan'] == 'Free' and not _managed_subscription(record) and (request.scope.get('trade_paper_user') or {}).get('role') == 'Owner':
+        actions = '<a href="/subscription/paddle-buy">Subscribe to Starter</a>'
     invoice_rows = billing.account_invoice_history(account_id, BILLING_HISTORY_FILE)
     invoices = "".join(f'<tr><td>{_text(item.get("created_at"))}</td><td>{_text(item.get("invoice_no"))}</td><td>{_text(billing.amount_label(item))}</td></tr>' for item in invoice_rows) or '<tr><td colspan="3">Payment integration is not active. Invoices will appear here after a payment provider is connected.</td></tr>'
     body = f'''<h1>My Subscription</h1><section class="summary"><span class="badge">{_text(summary['status'])}</span><h2>{_text(summary['plan'])}</h2><p>Documents this month: {summary['used']} / {limit}</p><div>{actions}{cancel}</div><p class="muted">{_text(PAID_PLAN_NOTICE)}</p></section><h2>Billing History</h2><table><thead><tr><th>Date</th><th>Event</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>{rows}</tbody></table><h2>Invoice History</h2><table><thead><tr><th>Date</th><th>Invoice</th><th>Amount</th></tr></thead><tbody>{invoices}</tbody></table>'''
