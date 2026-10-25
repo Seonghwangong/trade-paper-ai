@@ -4,16 +4,17 @@ import os
 from urllib.parse import urlsplit
 
 APP_NAME = "Trade Paper AI"
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.6.0"
 VERSION = APP_VERSION
 BUILD_NAME = "Public Release"
 RELEASE_TYPE = "Public Release"
 RELEASE_STAGE = "Public Release"
 LAST_UPDATED = "2026-10-25"
-EXPECTED_ROUTE_COUNT = 287
+EXPECTED_ROUTE_COUNT = 289
 BUSINESS_PHONE = "050-6466-7770"
 
 RELEASE_NOTES = (
+    "October 25: reviewed Invoice drafts from XLSX/CSV, PDF and printed document photos.",
     "October 25: shorter English/Korean home and first-use support replacing beta recruitment.",
     "September 24: consistent Invoice currencies, numeric validation, clearer PDF preview errors, and sample workflow guidance.",
     "Deployment-stable login sessions, protected Free-plan access, and clearer monthly-limit and contact guidance.",

@@ -684,6 +684,7 @@ def _ux_script(path: str) -> str:
   });
   document.addEventListener('submit',async function(event){
     const form=event.target;if(!(form instanceof HTMLFormElement))return;
+    if(form.hasAttribute('data-managed-submit'))return;
     if(form.hasAttribute('data-native-submit')){formDirty=false;return;}
     const action=(form.getAttribute('action')||'').toLowerCase();
     if(form.method.toLowerCase()==='post'&&action.includes('delete')){
@@ -718,6 +719,7 @@ def _ux_script(path: str) -> str:
   },true);
   document.addEventListener('submit',function(event){
     const form=event.target;if(!(form instanceof HTMLFormElement))return;
+    if(form.hasAttribute('data-managed-submit'))return;
     if(form.method.toLowerCase()==='post'&&(form.getAttribute('action')||'').toLowerCase().includes('delete'))return;
     showLoading(form.method.toLowerCase()==='post'?'Saving...':'Loading...');
   },true);

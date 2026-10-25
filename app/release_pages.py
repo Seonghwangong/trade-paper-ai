@@ -36,6 +36,7 @@ def information_page(title, subtitle, content, *, lang="en", navigation=None):
 def release_notes_page():
     content = (
         f'<p class="version">Version {APP_VERSION} · {RELEASE_STAGE}</p>'
+        + section_card("October 25, 2026 · File import 3.6.0", "<p>Start an editable Invoice draft from XLSX/CSV, PDFs or printed English/Korean photos. Review parties, every item and numeric values before saving. Maximum 8 MB, 5 PDF pages and 100 items. Formula cells, handwriting and unfamiliar layouts may require correction. Original files are not retained. Saving uses the existing document allowance; continue to Packing List after review.</p><p lang=\"ko\">엑셀·PDF·사진에서 송장 초안을 채우고 원본과 확인한 뒤 저장할 수 있습니다. 모든 서식을 완벽히 읽는 기능은 아니며, 박스·중량은 Packing List에서 확인합니다.</p>")
         + section_card("October 25, 2026 · Public Release 3.5.1", "<p>A shorter English/Korean home with a product preview, Free and Starter plans, and concise FAQ. Current product labels no longer use Founding Beta. First-use help remains available; existing applications and billing controls are unchanged.</p>")
         + section_card("October 23, 2026 · Packing workflow and Korean workspace", '<ul><li>Reuse account-owned packing settings to calculate carton count and net/gross kg totals. Verify actual packing; the same carton tare is assumed for a partially filled last carton.</li><li>Compare and apply Invoice changes to one linked Packing List. Changed or ambiguous items require reviewed packing totals. Stale previews are rejected. Existing PDFs and downstream documents remain unchanged.</li><li>Choose Korean for workspace navigation and core company, buyer, product, Invoice and Packing screens. Stored document data and PDF language are not translated.</li></ul><p lang="ko">포장 기준 저장·재사용 계산, 송장 변경 비교·반영, 주요 작업 화면 한국어 선택을 추가했습니다. 포장 실측값을 확인하고 변경 후 PDF를 새로 다운로드하세요.</p>')
         + section_card("September 24, 2026 · Invoice and PDF improvements", '<ul><li>Invoice totals, lists and PDFs now display the document currency. Selecting a buyer with a default currency fills it into the Invoice. Review unit prices when changing currency; amounts are not automatically converted.</li><li>Fractional quantities remain numeric after editing. Invalid, negative and non-finite quantities or prices are rejected before saving.</li><li>Invoice and Packing List PDF previews show actionable errors instead of opening failed responses as files. A link is available when a preview popup is blocked.</li><li>Demo buyers start with USD; sample Invoice progress updates after the sample values load.</li><li>Packing List screens explain that later Invoice edits do not automatically update an existing Packing List. Review both documents and download fresh PDFs after changes.</li></ul><div lang="ko"><p><b>한국어 요약:</b> Invoice 통화 표시와 소수 수량 처리를 수정하고, PDF 생성 실패 시 안내를 개선했습니다. 저장된 Packing List는 Invoice 수정 시 자동 갱신되지 않으므로 두 문서를 함께 검토해 주세요. 통화 변경 시 자동 환산은 하지 않습니다.</p></div>')
@@ -93,6 +94,7 @@ def version_history_page():
         + section_card("3.2.1 RC1", "<p>Release Candidate quality review covering consistency, navigation, responsive behavior, and visible wording.</p>")
         + section_card("3.3.0", "<p>First User Success release with guided success messages, next actions, and workflow celebration.</p>")
         + section_card("3.4.0", "<p>Login MVP with responsive registration, credential validation, and secure password storage.</p>")
+        + section_card("3.6.0 · File Import", "<p>Reviewed Invoice drafts from spreadsheets, PDFs and printed photos, with local photo/PDF reading and no original-file retention.</p>")
         + section_card("3.5.1 · Public Release", "<p>Shorter bilingual public home, current plan guidance, and first-use help instead of beta recruitment. Historical release entries remain below.</p>")
         + section_card("3.5.0 · Founding Beta", "<p>Account-isolated business records, protected routes, safe login redirects, logout, password recovery, authenticated identity display, and the current shipment-centered document workflow.</p>")
     )
@@ -199,7 +201,7 @@ def privacy_page():
         section_card(
             "Overview",
             "<p><b>Effective date: August 10, 2026</b></p>"
-            "<p>This Privacy Policy explains how Trade Paper AI collects, uses, stores, and protects information when you use the beta service.</p>",
+            "<p>This Privacy Policy explains how Trade Paper AI collects, uses, stores, and protects information when you use the service.</p>",
         )
         + section_card(
             "Information We Collect",
@@ -209,6 +211,10 @@ def privacy_page():
             "<li><b>Export document information:</b> commercial, shipping, customs, certificate, cargo, party, and reference information used to create documents and PDFs.</li>"
             "<li><b>Security information:</b> signed session data, password reset status, reset-token hashes, request times, and limited IP-based rate-limit information.</li>"
             "</ul>",
+        )
+        + section_card(
+            "File Imports",
+            "<p>For document import, PDFs and photos are read on your device and the extracted text is sent to this service to prepare a draft. Spreadsheets are sent to this service for parsing. Original upload files and extracted source text are not retained after processing. Only the document fields you choose to save become account records. This import feature does not send your files to an external AI/OCR service or send email.</p>",
         )
         + section_card(
             "How We Use Information",
@@ -239,7 +245,7 @@ def privacy_page():
         )
         + section_card(
             "Storage and Retention",
-            "<p>Account and business records are retained while the account is active or while needed to provide the beta service. The service creates limited backup copies when stored JSON data changes, so a prior version may remain in a backup until it is replaced through normal operation.</p>"
+            "<p>Account and business records are retained while the account is active or while needed to provide the service. The service creates limited backup copies when stored JSON data changes, so a prior version may remain in a backup until it is replaced through normal operation.</p>"
             "<p>You can delete supported business records within the service when they are not required by related documents. Account deletion is handled by request. Some information may be retained when reasonably necessary for security, dispute resolution, or legal obligations.</p>",
         )
         + section_card(
@@ -251,17 +257,17 @@ def privacy_page():
             "<p>You may review and update supported information in the service. To request access assistance, correction, or deletion of your account and associated data, use the <a href=\"/contact\">Contact page</a>. We may need to verify that the request comes from the account owner before acting on it.</p>",
         )
     )
-    return information_page("Privacy Policy", "Trade Paper AI Beta · Effective August 10, 2026", content)
+    return information_page("Privacy Policy", "Trade Paper AI · Effective August 10, 2026 · Updated October 25, 2026", content)
 
 
 @router.get("/terms")
 def terms_page():
     content = (
         section_card(
-            "Agreement and Beta Notice",
+            "Agreement and Service Notice",
             "<p><b>Effective date: August 10, 2026</b></p>"
-            "<p>These Terms of Service govern your use of the Trade Paper AI beta service. By creating an account or using the service, you agree to these Terms.</p>"
-            "<p>The service is in beta. Features, availability, document layouts, and operating limits may change as the service is tested and improved.</p>",
+            "<p>These Terms of Service govern your use of the Trade Paper AI service. By creating an account or using the service, you agree to these Terms.</p>"
+            "<p>Features, availability, document layouts, and operating limits may change as the service is improved.</p>",
         )
         + section_card(
             "Service Description",
@@ -304,7 +310,7 @@ def terms_page():
         )
         + section_card(
             "Disclaimers and Limitation of Liability",
-            "<p>The beta service is provided on an &quot;as available&quot; basis to the extent permitted by law. We do not guarantee that generated documents are complete, error-free, legally sufficient, or accepted by a third party.</p>"
+            "<p>The service is provided on an &quot;as available&quot; basis to the extent permitted by law. We do not guarantee that generated documents are complete, error-free, legally sufficient, or accepted by a third party.</p>"
             "<p>To the extent permitted by law, Trade Paper AI is not liable for indirect, incidental, special, consequential, or business-interruption losses arising from use of the service, reliance on generated documents, loss of access, or third-party rejection. Nothing in these Terms excludes liability that cannot legally be excluded.</p>",
         )
         + section_card(
@@ -313,7 +319,7 @@ def terms_page():
             "<p>Questions about these Terms should be submitted through the Contact page.</p>",
         )
     )
-    return information_page("Terms of Service", "Trade Paper AI Beta · Effective August 10, 2026", content)
+    return information_page("Terms of Service", "Trade Paper AI · Effective August 10, 2026 · Updated October 25, 2026", content)
 
 
 # Legal and Toss Payments review is required before online payment activation.

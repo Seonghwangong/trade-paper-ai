@@ -101,14 +101,17 @@ def create_invoice(request: Request, payload: dict = Body(...)):
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
     company = load_account_company(_account_id(request), ACCOUNT_COMPANIES_FILE)
+    # An imported supplier invoice may name a different seller. Never attach
+    # this account's address/contact to that other company implicitly.
+    seller_company = company if str(company.get('name', '')).strip().casefold() == record['seller'].casefold() else {}
     buyer = next(
         (item for item in buyer_module.load_buyers(_account_id(request))
          if str(item.get("name", "") or "").strip().casefold() == record["buyer"].strip().casefold()),
         {},
     )
     for field, value in {
-        "seller_address": company.get("address", ""), "seller_email": company.get("email", ""),
-        "seller_phone": company.get("phone", ""), "buyer_address": buyer.get("address", ""),
+        "seller_address": seller_company.get("address", ""), "seller_email": seller_company.get("email", ""),
+        "seller_phone": seller_company.get("phone", ""), "buyer_address": buyer.get("address", ""),
         "buyer_email": buyer.get("email", ""),
     }.items():
         if not str(record.get(field, "") or "").strip():

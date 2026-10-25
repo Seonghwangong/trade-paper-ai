@@ -1,0 +1,24 @@
+[
+  {
+    "package": "tesseract.js",
+    "version": "6.0.1",
+    "url": "https://registry.npmjs.org/tesseract.js/-/tesseract.js-6.0.1.tgz",
+    "integrity": "sha512-/sPvMvrCtgxnNRCjbTYbr7BRu0yfWDsMZQ2a/T5aN/L1t8wUQN6tTWv6p6FwzpoEBA0jrN2UD2SX4QQFRdoDbA=="
+  },
+  {
+    "package": "tesseract.js-core",
+    "version": "6.0.0",
+    "url": "https://registry.npmjs.org/tesseract.js-core/-/tesseract.js-core-6.0.0.tgz",
+    "integrity": "sha512-1Qncm/9oKM7xgrQXZXNB+NRh19qiXGhxlrR8EwFbK5SaUbPZnS5OMtP/ghtqfd23hsr1ZvZbZjeuAGcMxd/ooA=="
+  },
+  {
+    "language": "eng",
+    "url": "https://raw.githubusercontent.com/naptha/tessdata/gh-pages/4.0.0_fast/eng.traineddata.gz",
+    "sha256": "18c1ac52b75e35d44735fb6c2a60acfaf23033524653200738e98f0243edb75b"
+  },
+  {
+    "language": "kor",
+    "url": "https://raw.githubusercontent.com/naptha/tessdata/gh-pages/4.0.0_fast/kor.traineddata.gz",
+    "sha256": "aae6df1bbd206053b366b0b0f00e2211637d0923e8c3c64a0cbc9edaf61a5896"
+  }
+]
