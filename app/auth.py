@@ -48,6 +48,7 @@ PASSWORD_RESET_RATE_WINDOW_SECONDS = 60 * 60
 PASSWORD_RESET_RATE_LIMIT = 5
 PASSWORD_RESET_RATE_MAX_KEYS = 10_000
 PUBLIC_PATHS = frozenset({
+    "/about", "/release-notes", "/version-history",
     "/login", "/register", "/logout", "/forgot-password", "/reset-password",
     "/privacy", "/terms", "/refund-policy", "/contact", "/status", "/health", "/healthz",
     "/founding-beta", "/founding-beta/thank-you",
@@ -57,6 +58,7 @@ PUBLIC_PATHS = frozenset({
     "/analytics/visit",
 })
 COMPANY_SETUP_PATHS = frozenset({
+    "/about", "/release-notes", "/version-history",
     "/company", "/company-data", "/save-company", "/logout",
     "/getting-started", "/try-sample", "/try-sample/documents",
     "/forgot-password", "/reset-password",

@@ -8,4 +8,13 @@
   <url><loc>__PUBLIC_BASE_URL__/privacy</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>__PUBLIC_BASE_URL__/refund-policy</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
   <url><loc>__PUBLIC_BASE_URL__/contact</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>__PUBLIC_BASE_URL__/try-sample</loc></url>
+  <url><loc>__PUBLIC_BASE_URL__/about</loc></url>
+  <url><loc>__PUBLIC_BASE_URL__/release-notes</loc></url>
+  <url><loc>__PUBLIC_BASE_URL__/version-history</loc></url>
+  <url><loc>__PUBLIC_BASE_URL__/?lang=ko</loc></url>
+  <url><loc>__PUBLIC_BASE_URL__/getting-started?lang=ko</loc></url>
+  <url><loc>__PUBLIC_BASE_URL__/founding-beta?lang=ko</loc></url>
+  <url><loc>__PUBLIC_BASE_URL__/starter?lang=ko</loc></url>
+  <url><loc>__PUBLIC_BASE_URL__/try-sample?lang=ko</loc></url>
 </urlset>

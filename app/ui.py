@@ -918,7 +918,9 @@ class ReleaseFooterMiddleware:
                     text = text[:body_end + 1] + authenticated_user_control(authenticated_user) + text[body_end + 1:]
                 if (authenticated_user or request_path == "/starter") and request_path not in {"/login", "/register"}:
                     from app.workspace_language import language, inject
-                    text = inject(text, language(query, request_headers))
+                    # Public plan URLs must not change language based on a cookie.
+                    page_language = ("ko" if query.get("lang", [""])[0] == "ko" else "en") if request_path == "/starter" else language(query, request_headers)
+                    text = inject(text, page_language)
                 body = inject_release_footer(text).encode(charset)
                 headers = [(key, value) for key, value in headers if key.lower() != b"content-length"]
                 headers.append((b"content-length", str(len(body)).encode("ascii")))

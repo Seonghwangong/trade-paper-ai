@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from fastapi.responses import HTMLResponse
 from app import email_delivery, public_billing
+from app.seo import public_head
 from app.release import APP_VERSION, BUSINESS_PHONE, RELEASE_STAGE
 from app.subscription import PLANS, plan_price_label
 
@@ -65,7 +66,7 @@ def landing_page(lang='en'):
     entries = [(copy[f'q{i}'], copy[f'a{i}']) for i in range(1, 4)]
     entries.append((copy['q4'], copy['active' if active else 'inactive']))
     base_url = _public_base_url()
-    canonical_url = f'{base_url}/' if base_url else '/'
+    canonical_url = (f'{base_url}/' if base_url else '/') + ('?lang=ko' if lang == 'ko' else '')
     hero_url = f'{base_url}/static/product-hunt/hero.png' if base_url else '/static/product-hunt/hero.png'
     structured_data = (
         {'@context':'https://schema.org','@type':'Organization','name':'Trade Paper AI','url':canonical_url,'logo':f'{base_url}/static/product-hunt/logo.png'},
@@ -88,4 +89,5 @@ def landing_page(lang='en'):
     page = Path(__file__).with_name('templates').joinpath('public_home.html').read_text(encoding='utf-8')
     for key,value in values.items():
         page = page.replace('__' + key.upper() + '__', value)
+    page = page.replace('<link rel="canonical" href="' + values['canonical'] + '">', public_head('/', lang) or '<link rel="canonical" href="' + values['canonical'] + '">')
     return HTMLResponse(page)

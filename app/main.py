@@ -59,6 +59,7 @@ from app import feedback as feedback_module
 from app import subscription as subscription_module
 from app.auth import AuthenticationMiddleware, router as auth_router
 from app import email_delivery
+from app.seo import SearchMetadataMiddleware
 from app.guest_sample import router as guest_sample_router
 from app import analytics as analytics_module
 from app.intake_quality import application_status
@@ -154,6 +155,7 @@ app.add_middleware(
 )
 app.add_middleware(ReleaseFooterMiddleware)
 app.add_middleware(AuthenticationMiddleware)
+app.add_middleware(SearchMetadataMiddleware)
 
 
 class ProductAnalyticsMiddleware:
