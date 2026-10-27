@@ -24,3 +24,17 @@ def test_first_login_progress_skip_complete_and_isolation(tmp_path, monkeypatch)
     assert not onboarding.should_show("A") and onboarding.should_show("B")
     onboarding.mark("B", "completed_at")
     assert not onboarding.should_show("B")
+
+
+def test_file_import_continue_preserves_language_and_destination(monkeypatch):
+    monkeypatch.setattr(onboarding, 'should_show', lambda account: True)
+    monkeypatch.setattr(onboarding, 'progress', lambda account: {'percentage': 0, 'checks': (False,)*4})
+    target = '/import-document?lang=ko'
+    page = onboarding.onboarding_page(request(), next=target).body.decode()
+    assert 'Continue to file import' in page and 'Skip for now' not in page
+    assert 'name="next" value="/import-document?lang=ko"' in page
+    calls = []
+    monkeypatch.setattr(onboarding, 'mark', lambda account, field: calls.append((account, field)))
+    result = onboarding.skip_onboarding(request(), next=target)
+    assert result.headers['location'] == target
+    assert calls == [('A', 'dismissed_at')]

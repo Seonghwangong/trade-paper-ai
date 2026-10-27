@@ -36,6 +36,7 @@ def information_page(title, subtitle, content, *, lang="en", navigation=None):
 def release_notes_page():
     content = (
         f'<p class="version">Version {APP_VERSION} · {RELEASE_STAGE}</p>'
+        + section_card("October 27, 2026 · Easier first steps 3.6.3", '<p>Choose file import, no-signup sample PDFs or guided manual entry in the English/Korean getting-started page. Signup keeps the selected file-import destination and language; first-login onboarding now names that next step clearly. Account and company requirements are unchanged.</p><p lang="ko">첫 사용 안내에서 파일 작성·가입 없는 예시·직접 입력을 바로 선택할 수 있습니다. 가입 후 선택한 파일 작성 경로와 언어를 유지하며, 첫 로그인 안내에서도 다음 행동을 분명하게 표시합니다.</p>')
         + section_card("October 27, 2026 · Attachment review 3.6.2", '<p>Before sending a document, see its filename, shipment reference and buyer, with account-owned Invoice/Packing List comparison links and warnings for shared-field differences. Related PDFs are explicitly not additional attachments. Attachments are generated at send time; delivery receipts show the prepared filename and UTC time. Original downloads do not update automatically.</p><p lang="ko">이메일 발송 전에 첨부 파일명·출하·거래처와 연결된 Invoice·Packing List를 확인하고 차이가 있으면 비교할 수 있습니다. 발송 요청한 파일의 생성 시각도 표시합니다. 미리보기와 발송 첨부는 각각 생성되며 이전 PDF는 바뀌지 않습니다.</p>')
         + section_card("October 27, 2026 · Guided file workspace 3.6.1", "<p>A quieter navy-and-gray import workspace with visible file, review and saved steps. Try a fictional sample, compare required fields and totals, and continue to Packing List after saving. A failed replacement file keeps your existing draft.</p><p lang=\"ko\">파일 가져오기부터 초안 확인·저장까지 현재 단계를 보여줍니다. 가상 예시로 시작할 수 있으며, 새 파일을 읽지 못해도 기존 초안은 유지합니다. 저장 후 Packing List로 이어갈 수 있습니다.</p>")
         + section_card("October 25, 2026 · File import 3.6.0", "<p>Start an editable Invoice draft from XLSX/CSV, PDFs or printed English/Korean photos. Review parties, every item and numeric values before saving. Maximum 8 MB, 5 PDF pages and 100 items. Formula cells, handwriting and unfamiliar layouts may require correction. Original files are not retained. Saving uses the existing document allowance; continue to Packing List after review.</p><p lang=\"ko\">엑셀·PDF·사진에서 송장 초안을 채우고 원본과 확인한 뒤 저장할 수 있습니다. 모든 서식을 완벽히 읽는 기능은 아니며, 박스·중량은 Packing List에서 확인합니다.</p>")
@@ -96,6 +97,7 @@ def version_history_page():
         + section_card("3.2.1 RC1", "<p>Release Candidate quality review covering consistency, navigation, responsive behavior, and visible wording.</p>")
         + section_card("3.3.0", "<p>First User Success release with guided success messages, next actions, and workflow celebration.</p>")
         + section_card("3.4.0", "<p>Login MVP with responsive registration, credential validation, and secure password storage.</p>")
+        + section_card("3.6.3 · Easier First Steps", "<p>File-first quick start, preserved sample links and clear onboarding continuation.</p>")
         + section_card("3.6.2 · Email Attachment Review", "<p>Account-scoped document references, Invoice/Packing comparison warnings, and actual prepared-file metadata on delivery receipts.</p>")
         + section_card("3.6.1 · Guided File Workspace", "<p>Calmer review layout, fictional sample, explicit file replacement, draft preservation on import failure, and clearer saved-document actions.</p>")
         + section_card("3.6.0 · File Import", "<p>Reviewed Invoice drafts from spreadsheets, PDFs and printed photos, with local photo/PDF reading and no original-file retention.</p>")
@@ -115,31 +117,50 @@ def getting_started_navigation(lang):
     )
 
 
+def _quick_start_page(lang="en"):
+    ko = lang == "ko"
+    choose = lambda en, kr: kr if ko else en
+    target = f"%2Fimport-document%3Flang%3D{lang}"
+    file_links = (f'<a class="tp-btn" href="/import-document?lang={lang}">{choose("Start from a file", "파일로 시작하기")}</a> '
+                  f'<a class="tp-btn tp-btn-secondary" href="/register?next={target}&amp;lang={lang}">{choose("Create free account", "무료 계정 만들기")}</a>')
+    file_card = section_card(choose("Have a file? Start here", "파일이 있다면 여기서 시작하세요"),
+        '<p>' + choose("Bring an XLSX/CSV, PDF or clear printed document photo. Review the extracted Invoice draft, save, then continue to Packing List.",
+        "엑셀·CSV·PDF·선명한 인쇄 서류 사진을 가져오세요. 읽어온 Invoice 초안을 확인하고 저장한 뒤 Packing List로 이어갑니다.") + '</p>' + file_links +
+        '<p>' + choose("Account and sign-in required. If company setup appears, complete it and return to the importer. No file handy? Choose the fictional sample inside the importer.",
+        "가입·로그인이 필요합니다. 회사 정보 설정이 나오면 완료한 뒤 파일 작성으로 이어가세요. 파일이 없으면 작성 화면의 ‘가상 예시로 먼저 보기’를 선택할 수 있습니다.") + '</p>' +
+        '<details><summary>' + choose("File limits and review", "파일 범위와 확인할 내용") + '</summary><p>' +
+        choose("Up to 8 MB, five PDF pages and 100 items. Complex layouts, handwriting and formula cells may need correction. Check names, quantities and prices against the original. Originals are not retained; saving a sample uses one document from your allowance.",
+        "최대 8MB·PDF 5쪽·품목 100개입니다. 복잡한 서식·손글씨·수식 셀은 수정이 필요할 수 있습니다. 이름·수량·단가를 원본과 대조하세요. 원본 파일은 보관하지 않으며, 가상 예시도 저장하면 문서 한도를 사용합니다.") + '</p></details>')
+    sample_card = section_card(choose("Want to see the result first?", "결과물부터 보고 싶다면"),
+        '<div id="sample-documents"><p>' + choose("Change fictional quantities and packing values, then open two separate PDFs. No account needed and nothing is saved to a workspace.",
+        "가상 수량과 포장 정보를 바꾸고 PDF 두 장을 확인하세요. 가입이 필요 없고 작업공간에 저장되지 않습니다.") + '</p>' +
+        f'<a class="tp-btn" href="/try-sample?lang={lang}">{choose("Try without signup", "가입 없이 예시 보기")}</a>' +
+        '<details><summary>' + choose("Open ready-made sample PDFs", "완성된 샘플 PDF 열기") + '</summary><p><a href="/static/samples/commercial-invoice.pdf" target="_blank" rel="noopener">Invoice PDF</a> · <a href="/static/samples/packing-list.pdf" target="_blank" rel="noopener">Packing List PDF</a></p></details></div>')
+    manual_card = section_card(choose("Prefer entering details yourself?", "직접 입력하고 싶다면"),
+        '<p>' + choose("Save company, buyer and product details for reuse. The guided demo walks you through one fictional shipment.",
+        "회사·바이어·품목을 저장해 다음 작성에 다시 사용하세요. 안내형 데모에서 가상 거래 한 건을 순서대로 만들 수 있습니다.") + '</p>' +
+        f'<a class="tp-btn tp-btn-secondary" href="/demo?lang={lang}">{choose("Open guided demo", "직접 입력 데모 열기")}</a>' +
+        '<details><summary>' + choose("Your first document workflow", "직접 입력 순서 보기") + '</summary><ol><li>' +
+        choose("Review company details; keep existing information.", "회사 정보를 확인하고 기존 정보는 유지하세요.") + '</li><li>' +
+        choose("Save a buyer and product, then review and save an Invoice.", "바이어·품목을 저장하고 Invoice 내용을 검토해 저장하세요.") + '</li><li>' +
+        choose("Continue to Packing List and check actual cartons and weights.", "Packing List로 이어가 실제 박스 수와 중량을 확인하세요.") + '</li><li>' +
+        choose("Open both PDFs and check references, items and quantities.", "두 PDF를 열어 참조 번호·품목·수량을 대조하세요.") + '</li></ol><p>' +
+        choose("Email sending is optional. If testing delivery, use your own address and review the attachment first.", "이메일 발송은 선택 사항입니다. 시험 발송 시 본인 주소를 사용하고 첨부파일부터 확인하세요.") + '</p></details>')
+    closing = ('<p>' + choose("Free includes five saved documents per month. Each Invoice and Packing List counts separately. After changes, compare the saved Packing List with its Invoice and download fresh PDFs; previous downloads never update automatically.",
+        "무료는 월 5문서이며 Invoice와 Packing List를 각각 한 문서로 셉니다. 수정 후에는 저장된 Packing List와 Invoice를 비교하고 PDF를 다시 받으세요. 이전 PDF는 자동으로 바뀌지 않습니다.") + '</p>' +
+        f'<p><a href="/starter?lang={lang}">{choose("Plans and subscription terms", "요금·구독 조건")}</a> · <a href="/contact">{choose("Get first-use help", "첫 사용 도움받기")}</a></p>')
+    return information_page(choose("Getting Started with Trade Paper AI", "Trade Paper AI 시작하기"),
+        choose("Choose the easiest way to create your first documents", "내게 편한 방법으로 첫 문서를 만드세요"),
+        file_card + sample_card + manual_card + closing, lang=lang, navigation=getting_started_navigation(lang))
+
+
 def korean_getting_started_page():
-    content = (
-        section_card("1. 가입 없이 완성된 샘플 보기", '<div id="sample-documents"><p><a class="tp-btn" href="/try-sample?lang=ko">가입 없이 숫자를 바꾸고 PDF 두 장 만들기</a></p><p>같은 가상 거래로 만든 Invoice와 Packing List를 먼저 확인하세요. Invoice 금액은 USD 1,000이며, Packing List에는 총 수량 150개와 7 cartons가 표시됩니다.</p><div class="tp-toolbar"><a class="tp-btn" href="/static/samples/commercial-invoice.pdf" target="_blank" rel="noopener">Invoice 샘플 PDF</a><a class="tp-btn tp-btn-secondary" href="/static/samples/packing-list.pdf" target="_blank" rel="noopener">Packing List 샘플 PDF</a></div><p>실제 출하에 사용하는 서류가 아닌 가상 예시입니다. 열람만으로 문서가 저장되거나 무료 한도가 차감되지 않습니다.</p><p>첫 사용에 도움이 필요하면 <a href="/founding-beta?lang=ko">한국어로 체험을 신청</a>하세요. 신청만으로 계정이 생성되거나 요금이 청구되지는 않습니다.</p></div>')
-        + section_card("2. 내 문서를 저장하려면 계정 만들기", '<p>Free 플랜은 월 5개 문서를 지원하며, 저장한 샘플 문서도 포함됩니다. 온라인 유료 결제는 아직 활성화되지 않았습니다.</p><p>아래에서 가입·로그인하면 안내형 데모로 이어집니다. 첫 로그인에 Set up your export workspace 화면이 나오면 <b>Start guided demo</b>를 누르세요. 네 가지 설정을 먼저 완료할 필요 없이 데모 안에서 차례로 진행할 수 있습니다. 실제 작성 화면의 버튼은 영어로 표시됩니다.</p><div class="tp-toolbar"><a class="tp-btn" href="/register?next=%2Fdemo">무료 계정 만들기</a><a class="tp-btn tp-btn-secondary" href="/login?next=%2Fdemo">기존 계정으로 데모 시작</a></div>')
-        + section_card("3. 가상 거래로 첫 문서 작성", '<ol><li><b>Start with Company:</b> 회사 정보를 확인합니다. 기존 정보가 있다면 그대로 유지하세요.</li><li><b>Continue to Buyer:</b> 샘플 바이어와 통화 USD를 확인하고 Save Buyer로 저장합니다.</li><li><b>Continue to Product:</b> 샘플 품목과 단가를 확인하고 Save Product로 저장합니다.</li><li><b>Create Demo Invoice:</b> 바이어·품목·수량·금액을 검토하고 저장합니다.</li><li><b>Open Invoice List → Create Packing:</b> 방금 만든 Invoice에서 이어서 Packing List를 작성합니다. 포장 수량과 무게를 입력하고 검토하세요.</li><li><b>Download PDF:</b> 두 문서의 거래처·품목·수량·금액·포장 정보를 확인하면 첫 체험이 끝납니다.</li></ol><p>안내형 데모는 Save를 눌러야 저장됩니다. 데모의 Notebook Computer 1개·USD 850 예시는 위 공개 PDF와 다른 가상 거래입니다. 첫 체험에 Shipment 설정은 필수가 아닙니다.</p>')
-        + section_card("이메일 발송은 선택 사항입니다", '<p>Send Email을 시험한다면 수신자를 본인 이메일로 바꾸고 첨부파일을 확인한 뒤 발송하세요. 데모의 buyer@example.com은 예제 주소입니다. 받은편지함에서 도착과 PDF 열림을 확인하세요.</p>')
-        + section_card("수정 후에는 두 문서를 함께 확인하세요", '<p>Invoice를 수정해도 이미 저장한 Packing List는 자동으로 바뀌지 않습니다. 해당 Packing List의 Edit에서 내용을 비교·수정하고 두 PDF를 다시 내려받으세요. 이전에 내려받거나 발송한 PDF도 자동으로 바뀌지 않습니다.</p><p>통화를 바꾸면 단가도 직접 확인하세요. 환율에 따른 금액 환산은 수행하지 않습니다. 샘플 HS Code는 실제 품목의 분류를 보장하지 않습니다.</p>')
-        + section_card("막힌 단계 한 가지만 알려 주세요", '<p><a href="/feedback">의견 남기기</a>에 한국어로 화면 이름과 기대한 동작을 적어 주세요. 가입 없이 작성할 수 있고, 답변이 필요하면 Email도 입력해 주세요. 실제 고객 정보나 비공개 거래 자료는 필요하지 않습니다.</p><div class="tp-toolbar"><a class="tp-btn" href="/founding-beta?lang=ko">첫 사용 도움 신청</a><a class="tp-btn tp-btn-secondary" href="/contact">문의하기</a></div>')
-    )
-    return information_page("Trade Paper AI 첫 체험 안내", "샘플 확인부터 Invoice·Packing List PDF 검토까지", content, lang="ko", navigation=getting_started_navigation("ko"))
+    return _quick_start_page("ko")
 
 
 @router.get("/getting-started")
 def getting_started_page(lang: str = "en"):
-    if lang == "ko":
-        return korean_getting_started_page()
-    content = (
-        section_card("Before you start", '<p>Read this guide without an account. To save your own documents in a workspace, create a free account and sign in. You can generate fictional practice PDFs without signup below. The Free plan supports up to five documents per month. Online paid checkout is not active yet.</p><p>Use fictional company, buyer, and product details for your first test. Saving a sample document adds it to your workspace and counts toward your plan limit.</p>')
-        + section_card("Preview the finished documents", '<div id="sample-documents"><p><a class="tp-btn" href="/try-sample">Try editable sample PDFs without signup</a></p><p>See one fictional shipment in both documents before you sign up. The Invoice totals USD 1,000; the matching Packing List references SAMPLE-INV-001 and shows 150 pieces across 7 cartons.</p><p><a class="tp-btn tp-btn-secondary" href="/static/samples/commercial-invoice.pdf" target="_blank" rel="noopener">View sample Invoice (PDF)</a> <a class="tp-btn tp-btn-secondary" href="/static/samples/packing-list.pdf" target="_blank" rel="noopener">View sample Packing List (PDF)</a></p><p>No account is required. These are fictional examples, not documents for an actual shipment. Opening them does not save anything to your workspace or use your document allowance.</p><p lang="ko">가입 없이 샘플 Invoice와 Packing List를 열어 보세요. 가상 거래 예시이며, 열람만으로 문서가 저장되거나 무료 한도가 차감되지 않습니다.</p><h3>Want to try this with your workflow?</h3><p>Request help with your first sample Invoice and Packing List. Applying does not create an account or charge you.</p><div class="tp-toolbar"><a class="tp-btn" href="/founding-beta">Request a sample walkthrough</a><a class="tp-btn tp-btn-secondary" href="/founding-beta?lang=ko" lang="ko">한국어로 체험 신청</a></div><p>Is something missing from the sample? <a href="/feedback">Tell us which field or step you need</a>. No account is required to leave feedback. Please leave out confidential customer or shipment details.</p><p lang="ko">샘플에서 빠진 항목이나 실제 업무에 필요한 내용을 알려 주세요. 신청·의견 제출만으로 계정이 생성되거나 요금이 청구되지는 않습니다.</p></div>')
-        + section_card("Your first document workflow", '<ol><li><b>Company:</b> review and save your company details. Keep existing saved details if you already use the workspace.</li><li><b>Buyer and product:</b> save reusable details for the sample trade.</li><li><b>Commercial Invoice:</b> choose the saved details, review quantities and prices, then save.</li><li><b>Packing List:</b> open the Invoice List and choose Create Packing for that invoice. Check cartons and weights.</li><li><b>Review PDFs:</b> check names, addresses, items, quantities, units, and packing details.</li><li><b>Test email:</b> choose Send Email, use your own inbox as the recipient, review the attachment, and send. Check your inbox for delivery.</li></ol>')
-        + section_card("Start the guided demo", '<p>The guided demo provides temporary sample values. Nothing is saved until you press Save. If the first-login workspace setup appears, choose <b>Start guided demo</b>; you can complete company, buyer and product setup inside the demo. Shipment setup is optional for your first Invoice and Packing List.</p><a class="tp-btn" href="/register?next=%2Fdemo">Create free account</a> <a class="tp-btn tp-btn-secondary" href="/login?next=%2Fdemo">Sign in to demo</a>')
-        + section_card("한국어 체험 안내", '<div lang="ko"><p>가입 없이 가상 PDF를 만드는 체험이 가능합니다. 내 작업공간에 문서를 저장하려면 가입·로그인 후 안내형 데모를 이용하세요. 회사 → 바이어·품목 → Invoice → Packing List → PDF 검토 → 본인 이메일로 시험 발송 순서입니다.</p><p>샘플 문서도 저장하면 계정에 남고 무료 플랜의 월 5개 문서 한도에 포함됩니다. 기존 회사 정보가 있다면 그대로 유지하세요. 온라인 유료 결제는 아직 활성화되지 않았습니다.</p></div>')
-        + section_card("Need help?", '<p>Tell us which step was unclear and what you expected to happen. Leave out confidential customer or shipment details.</p><a class="tp-btn" href="/founding-beta">Request guided onboarding</a> <a class="tp-btn tp-btn-secondary" href="/contact">Contact us</a>')
-    )
-    return information_page("Getting Started with Trade Paper AI", "From your first sample invoice to PDF delivery", content, navigation=getting_started_navigation("en") + release_navigation())
+    return _quick_start_page("ko" if lang == "ko" else "en")
 
 
 @router.get("/demo")

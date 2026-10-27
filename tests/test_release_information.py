@@ -40,7 +40,7 @@ def test_release_pages_match_current_public_capabilities():
     notes = _body(release_pages.release_notes_page())
     history = _body(release_pages.version_history_page())
     combined = " ".join((about, notes, history))
-    assert release.APP_VERSION == "3.6.2"
+    assert release.APP_VERSION == "3.6.3"
     assert release.RELEASE_STAGE == "Public Release"
     for body in (about, notes, history):
         assert release.APP_VERSION in body
@@ -71,3 +71,29 @@ def test_privacy_terms_and_refunds_use_the_same_contact_page():
         assert 'href="/contact"' in body
         assert "hello@tradepaper.ai" not in body
         assert "www.tradepaper.ai" not in body
+
+
+def test_quick_start_has_localized_import_return_and_keeps_public_samples():
+    from html.parser import HTMLParser
+    from urllib.parse import urlsplit, parse_qs
+    class Links(HTMLParser):
+        def __init__(self):
+            super().__init__(); self.hrefs = []; self.ids = []
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == 'a': self.hrefs.append(attrs.get('href', ''))
+            if attrs.get('id'): self.ids.append(attrs['id'])
+    for lang in ('en', 'ko'):
+        body = _body(release_pages.getting_started_page(lang))
+        links = Links(); links.feed(body)
+        assert f'/import-document?lang={lang}' in links.hrefs
+        registration = next(url for url in links.hrefs if url.startswith('/register?'))
+        query = parse_qs(urlsplit(registration).query)
+        assert query['next'] == [f'/import-document?lang={lang}']
+        assert query['lang'] == [lang]
+        assert f'/try-sample?lang={lang}' in links.hrefs
+        assert 'sample-documents' in links.ids
+        assert '/static/samples/commercial-invoice.pdf' in links.hrefs
+        assert '/static/samples/packing-list.pdf' in links.hrefs
+        assert f'/starter?lang={lang}' in links.hrefs
+        assert body.index('/import-document?') < body.index('/demo?')
