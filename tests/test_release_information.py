@@ -40,7 +40,7 @@ def test_release_pages_match_current_public_capabilities():
     notes = _body(release_pages.release_notes_page())
     history = _body(release_pages.version_history_page())
     combined = " ".join((about, notes, history))
-    assert release.APP_VERSION == "3.6.1"
+    assert release.APP_VERSION == "3.6.2"
     assert release.RELEASE_STAGE == "Public Release"
     for body in (about, notes, history):
         assert release.APP_VERSION in body
