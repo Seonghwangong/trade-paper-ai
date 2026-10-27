@@ -50,6 +50,7 @@ class DeliveryMessage:
     html_body: str
     purpose: str
     attachments: tuple[EmailAttachment, ...] = ()
+    retry_transient: bool = True
 
 
 class ApiEmailAdapter(Protocol):
@@ -321,7 +322,8 @@ def _send_smtp(
     host, port, username, password, starttls = _smtp_settings(source)
     mime_message = _smtp_message(message, source)
     deadline = clock() + timeout
-    for attempt in range(SMTP_MAX_ATTEMPTS):
+    max_attempts = SMTP_MAX_ATTEMPTS if message.retry_transient else 1
+    for attempt in range(max_attempts):
         remaining = deadline - clock()
         if remaining <= 0:
             return False
@@ -338,7 +340,7 @@ def _send_smtp(
                 str(message.purpose or "unspecified"), type(error).__name__,
                 _transient_smtp_error(error), attempt + 1,
             )
-            if not _transient_smtp_error(error) or attempt + 1 >= SMTP_MAX_ATTEMPTS:
+            if not _transient_smtp_error(error) or attempt + 1 >= max_attempts:
                 return False
             remaining = deadline - clock()
             if remaining <= 0:

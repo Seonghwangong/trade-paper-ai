@@ -502,6 +502,8 @@
   "The attachment is generated from saved data when you send. A preview is generated when opened; it is not a frozen copy of the attachment.": "첨부파일은 발송할 때 저장된 내용으로 생성합니다. 미리보기는 여는 시점에 생성되므로 발송될 파일을 확정해 둔 사본은 아닙니다.",
   "After editing, reopen the previews. Previously downloaded PDFs do not change. Check recipient, quantities, cartons and weights.": "수정 후에는 미리보기를 다시 여세요. 이전에 내려받은 PDF는 바뀌지 않습니다. 수신자·수량·박스·중량을 확인하세요.",
   "Submitted attachment": "발송 요청한 첨부파일",
+  "Submitted attachments": "발송 요청한 첨부파일 2개",
+  "Review and send both PDFs": "두 PDF 확인 후 함께 보내기",
   "PDF / ZIP prepared at (UTC):": "PDF / ZIP 생성 시각 (UTC):",
   "Recipient": "수신자",
   "Subject": "제목",

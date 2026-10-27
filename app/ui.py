@@ -888,7 +888,7 @@ class ReleaseFooterMiddleware:
                 "",
             )
             body = b"".join(body_parts)
-            if "application/pdf" in content_type:
+            if "application/pdf" in content_type and not request_path.startswith("/email-pair/pdf/"):
                 public_sample_filename = {
                     "/static/samples/commercial-invoice.pdf": "commercial-invoice.pdf",
                     "/static/samples/packing-list.pdf": "packing-list.pdf",

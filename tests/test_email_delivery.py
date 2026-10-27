@@ -61,6 +61,18 @@ def test_disabled_backend_is_safe_noop(monkeypatch):
     assert email_delivery.deliver_password_reset("owner@example.com", "secret-token") is False
 
 
+def test_reviewed_document_send_does_not_retry_ambiguous_smtp_failure():
+    class AmbiguousSMTP(SuccessfulSMTP):
+        instances = []
+        def send_message(self, message):
+            # The server may have accepted DATA before the connection dropped.
+            raise smtplib.SMTPServerDisconnected("Connection lost")
+    message = email_delivery.DeliveryMessage("buyer@example.com", "Documents", "Attached", "<p>Attached</p>",
+                                            "document_delivery", retry_transient=False)
+    assert email_delivery.deliver_email(message, _environment(), smtp_factory=AmbiguousSMTP) is False
+    assert len(AmbiguousSMTP.instances) == 1
+
+
 def test_smtp_success_and_password_reset_templates():
     SuccessfulSMTP.instances = []
     environment = _environment()

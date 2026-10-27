@@ -10,12 +10,12 @@ from starlette.requests import Request
 from tests.helpers import normalize_html, route_snapshot_digest
 
 
-EXPECTED_ROUTE_DIGEST = "615ce22cc43e547c1fe3d21f7362c694029bf1a963a959299dfeb80c64b24e14"
+EXPECTED_ROUTE_DIGEST = "8d2963e82f402689160f3881c51f45c1e0cc60fa715c6ddefe5281a86b27a9f5"
 
 
 def test_application_import_and_route_order():
     assert main.app is not None
-    assert len(main.app.routes) == main.EXPECTED_ROUTE_COUNT == 287
+    assert len(main.app.routes) == main.EXPECTED_ROUTE_COUNT == 299
     assert route_snapshot_digest(main.app) == EXPECTED_ROUTE_DIGEST
 
 
@@ -321,8 +321,8 @@ def test_deployment_readiness_rejects_non_writable_data_dir(tmp_path, monkeypatc
 def test_health_endpoint_contains_only_public_release_metadata():
     assert main.health() == {
         "status": "ok",
-        "version": "3.5.0",
-        "release": "Founding Beta",
+        "version": "3.6.4",
+        "release": "Public Release",
     }
 
 
@@ -333,7 +333,7 @@ def test_startup_log_reports_version_release_and_completion(monkeypatch, capsys)
     })
     main.startup_stability_audit()
     assert capsys.readouterr().out == (
-        "Trade Paper AI\nVersion 3.5.0\nFounding Beta\nStartup Complete\n"
+        "Trade Paper AI\nVersion 3.6.4\nPublic Release\nStartup Complete\n"
     )
 
 

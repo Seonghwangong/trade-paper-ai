@@ -179,7 +179,8 @@ def _attachment_review(document_type, document_no, record, account_id):
         links += (f'<li><span translate="no">{html_text(DOCUMENT_TYPES[kind][0])} {html_text(number)}</span>'
                   f'<p class="{"review-warning" if changed else "review-status"}">{status}</p>'
                   f'<a href="{html_attr(url)}" target="_blank" rel="noopener">Review related PDF</a>'
-                  f'<a href="/packing-sync/{quote(packing_no, safe="")}" target="_blank" rel="noopener">Compare with Invoice</a></li>')
+                  f'<a href="/packing-sync/{quote(packing_no, safe="")}" target="_blank" rel="noopener">Compare with Invoice</a>'
+                  f'<a href="/email-pair/prepare/{quote(packing_no, safe="")}">Review and send both PDFs</a></li>')
     related_html = ('<h3>Related documents — not attached to this email</h3><ul class="related-documents">' + links + '</ul>') if links else ''
     return ('<section class="attachment-review" aria-labelledby="attachment-review-heading">'
             '<h2 id="attachment-review-heading">Before you send</h2><dl>' + rows + '</dl>' + related_html +
@@ -250,7 +251,11 @@ def email_result(delivery_id: str, request: Request):
     label = DOCUMENT_TYPES[entry["document_type"]][0]
     shipment_no = entry.get("shipment_no", "")
     attachment_details = ""
-    if entry.get("attachment_filename") and entry.get("attachment_prepared_at"):
+    if entry.get("attachments"):
+        attachment_details = '<h2>Submitted attachments</h2><ul>' + ''.join(
+            f'<li translate="no">{html_text(item["filename"])}</li>' for item in entry["attachments"]) + '</ul>'
+        attachment_details += f'<p>PDF / ZIP prepared at (UTC): <span translate="no">{html_text(entry["attachment_prepared_at"])}</span></p>'
+    elif entry.get("attachment_filename") and entry.get("attachment_prepared_at"):
         attachment_details = (f'<h2>Submitted attachment</h2><p translate="no">{html_text(entry["attachment_filename"])}</p>'
                               f'<p>PDF / ZIP prepared at (UTC): <span translate="no">{html_text(entry["attachment_prepared_at"])}</span></p>')
     shipment_link = f'<a href="/shipment/{quote(str(shipment_no), safe="")}">View Shipment</a>' if shipment_no else ""

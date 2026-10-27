@@ -41,6 +41,7 @@ from app.release_pages import router as release_pages_router
 from app.founding_beta import router as founding_beta_router
 from app.feedback import router as feedback_router
 from app.document_email import router as document_email_router
+from app.email_pair import router as email_pair_router
 from app.subscription import router as subscription_router
 from app.toss_payments import router as toss_payments_router
 from app.paddle_live_webhook import router as paddle_live_router
@@ -172,7 +173,7 @@ class ProductAnalyticsMiddleware:
         path = str(scope.get("path", "") or "")
         status = {"code": 500}
         email_success_before = None
-        if method == "POST" and path.startswith("/send-email/"):
+        if method == "POST" and path.startswith(("/send-email/", "/email-pair/send/")):
             email_success_before = sum(
                 isinstance(row, dict) and row.get("status") == "Success"
                 for row in load_json_strict(data_path("email_history.json"), [], list)
@@ -728,6 +729,7 @@ app.include_router(guest_sample_router)
 app.include_router(founding_beta_router)
 app.include_router(feedback_router)
 app.include_router(document_email_router)
+app.include_router(email_pair_router)
 app.include_router(subscription_router)
 app.include_router(toss_payments_router)
 app.include_router(paddle_live_router)
