@@ -25,8 +25,8 @@ from app.storage import (
 from app.validation import DataValidationError, require_existing_reference, require_items, require_text
 from app.documents import DOCUMENT_DEFINITIONS, get_document_definition
 from app.release import (
-    APP_NAME, APP_VERSION, EXPECTED_ROUTE_COUNT, LAST_UPDATED, RELEASE_STAGE,
-    RELEASE_TYPE, build_release_summary, contact_email, contact_url,
+    APP_NAME, APP_VERSION, EXPECTED_ROUTE_COUNT, RELEASE_STAGE,
+    contact_email, contact_url,
 )
 from app.ui import ReleaseFooterMiddleware, release_footer
 from app.routers.company import router as company_router
@@ -1610,50 +1610,6 @@ def home(request: Request):
         registered_card("customs", len(customs)),
     ])
 
-    route_report = audit_route_registrations(app)
-    system_health = [
-        ("Storage", DATA_DIR.is_dir()),
-        ("Route", route_report["route_count"] == EXPECTED_ROUTE_COUNT and not route_report["exact_conflicts"]),
-        ("Workflow", required_workflow_progress({}, [], [])["total"] == 6),
-        ("Validation", callable(require_text) and callable(require_items)),
-        ("PDF", callable(shipment_pdf)),
-    ]
-    health_cards = "".join(
-        f'<div class="health-card"><span class="health-check" aria-hidden="true">✓</span><b>{dashboard_text(label)}</b><span>OK</span></div>'
-        for label, passed in system_health
-        if passed
-    )
-    registered_get_paths = {
-        route.path
-        for route in app.routes
-        if "GET" in (getattr(route, "methods", set()) or set())
-    }
-    navigation_paths = {"/", "/search", "/shipment-list", "/demo", "/about", "/release-notes", "/version-history", "/contact", "/privacy", "/terms"} | {
-        definition.list_route for definition in DOCUMENT_DEFINITIONS if definition.list_route
-    }
-    release_checklist = [
-        ("Route", route_report["route_count"] == EXPECTED_ROUTE_COUNT and not route_report["exact_conflicts"]),
-        ("Workflow", required_workflow_progress({}, [], [])["total"] == 6),
-        ("Validation", callable(require_text) and callable(require_items)),
-        ("Search", callable(global_search)),
-        ("Dashboard", "/" in registered_get_paths),
-        ("Shipment", callable(shipment_detail) and "/shipment/{shipment_no}" in registered_get_paths),
-        ("PDF", callable(shipment_pdf)),
-        ("Version", APP_VERSION == "3.5.0"),
-        ("Health Card", len(system_health) == 5 and all(passed for _, passed in system_health)),
-        ("Footer", callable(release_footer)),
-        ("Navigation", navigation_paths.issubset(registered_get_paths)),
-    ]
-    release_summary = build_release_summary(release_checklist)
-    release_checks_html = "".join(
-        f'<div class="release-check"><span aria-hidden="true">✓</span>{dashboard_text(label)}</div>'
-        for label, passed in release_checklist
-        if passed
-    )
-    release_notes_html = "".join(
-        f'<li>{dashboard_text(note)}</li>' for note in release_summary["notes"]
-    )
-
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1754,7 +1710,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 </head>
 <body>
 <main class="page">
-<header class="hero"><h1>{dashboard_text(APP_NAME)}</h1><p>Version {dashboard_text(APP_VERSION)}</p><span class="release-badge">🚀 {dashboard_text(RELEASE_TYPE)}</span>
+<header class="hero"><h1>{dashboard_text(APP_NAME)}</h1>
 <form class="global-search" method="get" action="/search"><input name="q" placeholder="Search documents, shipments, companies..."><button type="submit">Search</button></form>
 </header>
 
@@ -1833,17 +1789,6 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 <section class="section"><h2 class="section-title">Master Data</h2><div class="master-row">
 <a class="master-link" href="/company">Company</a><a class="master-link" href="/customer">Customers</a>
 <a class="master-link" href="/buyers">Buyers</a><a class="master-link" href="/products">Products</a>
-</div></section>
-<section class="section"><h2 class="section-title">System Information</h2><div class="system-grid">
-<div class="system-card"><span>Version</span><b>v{dashboard_text(APP_VERSION)}</b></div>
-<div class="system-card"><span>Total Routes</span><b>{len(app.routes)}</b></div>
-<div class="system-card"><span>Total Documents</span><b>{len(DOCUMENT_DEFINITIONS)}</b></div>
-<div class="system-card"><span>Last Updated</span><b>{dashboard_text(LAST_UPDATED)}</b></div>
-</div></section>
-<section class="section"><h2 class="section-title">System Health</h2><div class="health-grid">{health_cards}</div></section>
-<section class="section"><h2 class="section-title">Release Summary</h2><div class="release-card">
-<div class="release-heading"><div><h3>{dashboard_text(release_summary['product'])}</h3><p>Version: {dashboard_text(release_summary['version'])} · Release Stage: {dashboard_text(release_summary['release_stage'])}</p></div><span class="release-status">{dashboard_text(release_summary['status'])}</span></div>
-<div class="release-checks">{release_checks_html}</div><ul class="release-notes">{release_notes_html}</ul>
 </div></section>
 {release_footer()}
 </main>

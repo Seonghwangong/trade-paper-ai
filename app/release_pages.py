@@ -3,7 +3,7 @@ from app import public_billing
 from fastapi.responses import HTMLResponse
 
 from app.release import (
-    APP_NAME, APP_VERSION, BUILD_NAME, BUSINESS_PHONE, LAST_UPDATED, RELEASE_STAGE, RELEASE_TYPE,
+    APP_NAME, APP_VERSION, BUSINESS_PHONE, RELEASE_STAGE,
     contact_email, contact_url,
 )
 from app.ui import button, html_escape, page_shell, section_card, toolbar
@@ -17,8 +17,6 @@ def release_navigation():
         button("Dashboard", "/", "secondary"),
         button("Getting Started", "/getting-started", "secondary"),
         button("About", "/about", "secondary"),
-        button("Release Notes", "/release-notes", "secondary"),
-        button("Version History", "/version-history", "secondary"),
         button("Try Demo (login required)", "/demo", "secondary"),
         button("Contact", "/contact", "secondary"),
     )
@@ -60,13 +58,11 @@ def release_notes_page():
 @router.get("/About", include_in_schema=False)
 def about_page():
     content = (
-        section_card("Application", f"<p><b>Application Name</b><br>{APP_NAME}</p><p><b>Version</b><br>{APP_VERSION}</p><p><b>Build</b><br>{BUILD_NAME}</p><p><b>Release Date</b><br>{LAST_UPDATED}</p>")
+        section_card("Application", f"<p>{APP_NAME} helps you prepare and review your trade documents.</p>")
         + section_card("Features", "<ul><li>Shipment-centered document workflow</li><li>Dashboard, Global Search, and workflow guidance</li><li>Safe validation, storage, deletion, PDF output, and PDF email delivery</li><li>English and Korean getting-started guide with a sample document walkthrough</li><li>Comfort-focused browser productivity tools</li></ul>")
-        + section_card("Release Status", f"<p><b>{RELEASE_STAGE}</b><br>{RELEASE_TYPE}</p>")
-        + section_card("Release Notes", f'<p><a href="/release-notes">Read the Version {APP_VERSION} Release Notes</a></p>')
         + section_card("Project Philosophy", '<p><b>Fast.<br>Safe.<br>Comfortable.</b></p>')
     )
-    return information_page("About Trade Paper AI", RELEASE_TYPE, content)
+    return information_page("About Trade Paper AI", "Prepare your trade documents with confidence.", content)
 
 
 @router.get("/version-history")

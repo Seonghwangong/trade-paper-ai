@@ -1,4 +1,5 @@
 from app import landing, release, release_pages
+from app.ui import release_footer
 
 
 def _body(response):
@@ -42,7 +43,7 @@ def test_release_pages_match_current_public_capabilities():
     combined = " ".join((about, notes, history))
     assert release.APP_VERSION == "3.6.5"
     assert release.RELEASE_STAGE == "Public Release"
-    for body in (about, notes, history):
+    for body in (notes, history):
         assert release.APP_VERSION in body
         assert release.RELEASE_STAGE in body
     assert "account isolation" in notes.casefold()
@@ -58,11 +59,19 @@ def test_release_pages_match_current_public_capabilities():
         assert obsolete not in combined.casefold()
 
 
-def test_landing_and_common_footer_expose_consistent_release_links():
-    landing_body = _body(landing.landing_page())
-    assert f"Version {release.APP_VERSION} · {release.RELEASE_STAGE}" in landing_body
-    for path in ("/about", "/release-notes", "/version-history", "/contact", "/privacy", "/terms", "/refund-policy"):
-        assert f'href="{path}"' in landing_body
+def test_customer_pages_keep_business_links_without_development_details():
+    for body in (
+        _body(landing.landing_page("en")), _body(landing.landing_page("ko")),
+        release_footer(), _body(release_pages.about_page()),
+    ):
+        for detail in ("Version " + release.APP_VERSION, release.RELEASE_STAGE,
+                       "Release Date", "<b>Build</b>", 'href="/release-notes"',
+                       'href="/version-history"'):
+            assert detail not in body
+        for path in ("/about", "/contact", "/privacy", "/terms"):
+            assert f'href="{path}"' in body
+        assert release.BUSINESS_PHONE in body
+        assert "357-45-01167" in body
 
 
 def test_privacy_terms_and_refunds_use_the_same_contact_page():

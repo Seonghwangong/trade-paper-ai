@@ -6,7 +6,7 @@ import re
 from urllib.parse import parse_qs
 
 from app.export import pdf_export_filename
-from app.release import APP_NAME, APP_VERSION, BUILD_NAME, BUSINESS_PHONE, LAST_UPDATED, RELEASE_STAGE
+from app.release import APP_NAME, BUSINESS_PHONE
 
 
 DESIGN_TOKENS = {
@@ -119,19 +119,15 @@ def release_footer() -> str:
     return (
         '<footer class="tp-release-footer" data-release-footer="true">'
         f'<strong>{html_escape(APP_NAME)}</strong>'
-        f'<span>{html_escape(RELEASE_STAGE)}</span>'
-        f'<span class="tp-release-version"> · Version {html_escape(APP_VERSION)}</span>'
-        f'<span class="tp-release-build"> · Build {html_escape(BUILD_NAME)}</span>'
-        f'<span class="tp-release-date"> · Release Date {html_escape(LAST_UPDATED)}</span>'
-        '<span class="tp-release-copyright"> · © 2026</span>'
+        '<span class="tp-release-copyright">© 2026</span>'
         '<div class="tp-business-info" aria-label="사업자 정보">'
         '<div>상호: 지엘피(GLP) · 대표자: 공성환 · 사업자등록번호: 357-45-01167</div>'
         '<div>사업장 주소: 경상남도 창원시 의창구 지귀로120번길 19, 2층 203호(봉곡동)</div>'
         f'<div>전화번호: {html_escape(BUSINESS_PHONE)}</div>'
         '</div>'
         '<nav class="tp-release-footer-nav" aria-label="Product information">'
-        '<a href="/feedback">Feedback</a><a href="/about">About</a><a href="/release-notes">Release Notes</a>'
-        '<a href="/version-history">Version History</a><a href="/contact">Contact</a>'
+        '<a href="/feedback">Feedback</a><a href="/about">About</a>'
+        '<a href="/contact">Contact</a>'
         '<a href="/demo">Try Demo (login required)</a>'
         '<a href="/privacy">Privacy</a><a href="/terms">Terms</a>'
         '</nav>'

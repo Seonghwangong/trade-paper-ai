@@ -56,10 +56,10 @@ def test_home_plan_and_faq_schema_match_visible_content():
         assert label in html
 
 
-def test_home_footer_retains_release_contact_and_policy_links():
+def test_home_footer_retains_contact_and_policy_links():
     html = landing_page().body.decode()
-    assert f'Version {APP_VERSION} · {RELEASE_STAGE}' in html
-    for path in ('/about', '/release-notes', '/version-history', '/contact', '/privacy', '/terms', '/refund-policy'):
+    assert f'Version {APP_VERSION} · {RELEASE_STAGE}' not in html
+    for path in ('/about', '/contact', '/privacy', '/terms', '/refund-policy'):
         assert f'href="{path}"' in html
 
 
