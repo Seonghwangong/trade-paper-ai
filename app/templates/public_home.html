@@ -18,6 +18,15 @@
 <section class="faq-section" id="faq" aria-labelledby="faq-title"><h2 id="faq-title">__FAQ_TITLE__</h2><div class="faq">__FAQ_HTML__</div></section></main>
 <footer><div class="wrap footer-inner"><div class="footer-brand"><strong>Trade Paper AI</strong><span class="release">Version __VERSION__ · __STAGE__</span><dl class="business-info" aria-label="사업자 정보"><div><dt>상호</dt><dd>지엘피(GLP)</dd></div><div><dt>대표자</dt><dd>공성환</dd></div><div><dt>사업자등록번호</dt><dd>357-45-01167</dd></div><div><dt>사업장 주소</dt><dd>경상남도 창원시 의창구 지귀로120번길 19, 2층 203호(봉곡동)</dd></div><div><dt>전화번호</dt><dd>__PHONE__</dd></div></dl></div><nav class="footer-links" aria-label="Footer navigation"><a href="/getting-started__QUERY__">__GUIDE__</a><a href="/founding-beta__QUERY__">__HELP__</a><a href="/feedback">__FEEDBACK__</a><a href="/contact">__CONTACT__</a><a href="/about">__ABOUT__</a><a href="/release-notes">__NOTES__</a><a href="/version-history">__HISTORY__</a><a href="/privacy">__PRIVACY__</a><a href="/terms">__TERMS__</a><a href="/refund-policy">__REFUND__</a></nav></div></footer>
 <script>(function(){
-function source(){const value=((new URLSearchParams(location.search).get('utm_source')||new URLSearchParams(location.search).get('ref')||'')+' '+(document.referrer||'')).toLowerCase();if(value.includes('producthunt')||value.includes('product hunt'))return 'Product Hunt';if(value.includes('reddit'))return 'Reddit';if(value.includes('google'))return 'Google';if(!value.trim())return 'Direct';return 'Other'}
+  function source(){
+    const params=new URLSearchParams(location.search);
+    const campaign=(params.get('utm_source')||params.get('ref')||'').toLowerCase().trim();
+    const campaigns={producthunt:'Product Hunt','product hunt':'Product Hunt',disquiet:'Disquiet',reddit:'Reddit',google:'Google',youtube:'YouTube',instagram:'Instagram',facebook:'Facebook',linkedin:'LinkedIn',naver:'Naver'};
+    if(campaign)return campaigns[campaign]||'Other';
+    let host='';try{host=new URL(document.referrer).hostname.toLowerCase()}catch(e){}
+    const domains={'producthunt.com':'Product Hunt','disquiet.io':'Disquiet','reddit.com':'Reddit','google.com':'Google','google.co.kr':'Google','youtube.com':'YouTube','youtu.be':'YouTube','instagram.com':'Instagram','facebook.com':'Facebook','fb.com':'Facebook','linkedin.com':'LinkedIn','lnkd.in':'LinkedIn','naver.com':'Naver'};
+    for(const [domain,name] of Object.entries(domains)){if(host===domain||host.endsWith('.'+domain))return name}
+    return host?'Other':'Direct';
+  }
 if(!('IntersectionObserver' in window))return;const seen=new Set();const observer=new IntersectionObserver(function(entries){entries.forEach(function(entry){if(!entry.isIntersecting)return;const page=entry.target.id==='pricing'?'Pricing':'FAQ';if(seen.has(page))return;seen.add(page);fetch('/analytics/visit?page='+encodeURIComponent(page)+'&source='+encodeURIComponent(source()),{method:'POST',credentials:'omit',keepalive:true}).catch(function(){})})},{threshold:.25});['pricing','faq'].forEach(function(id){const node=document.getElementById(id);if(node)observer.observe(node)})
 })();</script></body></html>

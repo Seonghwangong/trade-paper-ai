@@ -31,7 +31,7 @@ VISITOR_PATHS = {
 }
 VISITOR_PAGES = ("Landing", "Pricing", "FAQ", "Signup", "Getting Started", "Founding Beta", "Sample Invoice", "Sample Packing List", "Practice Page")
 PRACTICE_EVENTS = ("Practice Started", "Practice Pair Generated", "Practice Invoice Download Click", "Practice Packing Download Click")
-VISITOR_SOURCES = ("Direct", "Google", "Product Hunt", "Reddit", "Disquiet", "Other")
+VISITOR_SOURCES = ("Direct", "Google", "Product Hunt", "Reddit", "Disquiet", "YouTube", "Instagram", "Facebook", "LinkedIn", "Naver", "Other")
 
 
 def record_event(event, account_id="", now=None, path=None, once=False):
@@ -103,18 +103,25 @@ def classify_source(referer="", query_string=""):
         host = (urlsplit(str(referer or "")).hostname or "").casefold()
     except ValueError:
         host = ""
-    value = f"{campaign} {host}"
-    if "producthunt" in value or "product hunt" in value:
-        return "Product Hunt"
-    if "disquiet" in value:
-        return "Disquiet"
-    if "reddit" in value:
-        return "Reddit"
-    if "google" in value:
-        return "Google"
-    if not campaign and not host:
-        return "Direct"
-    return "Other"
+    campaigns = {
+        "producthunt": "Product Hunt", "product hunt": "Product Hunt",
+        "disquiet": "Disquiet", "reddit": "Reddit", "google": "Google",
+        "youtube": "YouTube", "instagram": "Instagram", "facebook": "Facebook",
+        "linkedin": "LinkedIn", "naver": "Naver",
+    }
+    if campaign:
+        return campaigns.get(campaign.strip(), "Other")
+    domains = {
+        "producthunt.com": "Product Hunt", "disquiet.io": "Disquiet",
+        "reddit.com": "Reddit", "google.com": "Google", "google.co.kr": "Google",
+        "youtube.com": "YouTube", "youtu.be": "YouTube",
+        "instagram.com": "Instagram", "facebook.com": "Facebook", "fb.com": "Facebook",
+        "linkedin.com": "LinkedIn", "lnkd.in": "LinkedIn", "naver.com": "Naver",
+    }
+    for domain, source in domains.items():
+        if host == domain or host.endswith("." + domain):
+            return source
+    return "Other" if host else "Direct"
 
 
 def record_visit(page, source="Direct", now=None, path=None):

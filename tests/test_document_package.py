@@ -51,6 +51,8 @@ def test_document_package_resolves_status_actions_and_account_isolation(monkeypa
     selector = shipment.document_package(_request("A")).body.decode()
     assert "SHP-001 · Package Test" in selector
     html = shipment.shipment_document_package("SHP-001", _request("A")).body.decode()
+    assert "Invoice / Packing List header review" in html
+    assert "Not checked" in html
     assert "5 / 6 documents complete" in html
     assert "Certificate of Origin is missing" in html
     assert "/booking/BK-001" in html and "/edit-booking/BK-001" in html

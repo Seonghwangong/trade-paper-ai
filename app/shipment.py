@@ -555,7 +555,8 @@ def render_document_package_page(request, selected_shipment_no=""):
         shipment = find_shipment(selected_shipment_no, account_id)
         if not shipment:
             raise HTTPException(status_code=404, detail="Shipment not found")
-        package = resolve_document_package(public_shipment(shipment), load_workflow_datasets(account_id))
+        datasets = load_workflow_datasets(account_id)
+        package = resolve_document_package(public_shipment(shipment), datasets)
         rows = []
         for item in package:
             if item["exists"]:
@@ -572,7 +573,15 @@ def render_document_package_page(request, selected_shipment_no=""):
                 status = '<span class="status missing">Missing</span>'
                 identifier = f'{html_text(item["label"])} is missing'
             rows.append(f'''<article class="doc"><div><h2>{html_text(item["label"])}</h2><p>{identifier}</p></div><div>{status}<div class="actions">{actions}</div></div></article>''')
-        cards = "".join(rows)
+        from app.package_review import review_headers
+        invoice_record = _first_record(datasets.get("invoices.json", []), "invoice_no", shipment.get("invoice_no", ""))
+        packing_record = _first_record(datasets.get("packing_lists.json", []), "packing_no", shipment.get("packing_no", ""))
+        header_rows = "".join(
+            f'<tr><th scope="row">{html_text(check["label"])}</th><td>{html_text(check["invoice"] or "Missing")}</td><td>{html_text(check["packing"] or "Missing")}</td><td>{html_text(check["status"])}</td></tr>'
+            for check in review_headers(invoice_record, packing_record)
+        )
+        review = f'<section class="empty" aria-labelledby="header-review"><h2 id="header-review">Invoice / Packing List header review</h2><p>Compare saved invoice reference, seller and buyer before sharing. Missing values are not checked. Cargo, amounts and customs compliance are outside this review.</p><div style="overflow-x:auto"><table style="width:100%;text-align:left;border-spacing:12px"><thead><tr><th>Field</th><th>Invoice</th><th>Packing List</th><th>Result</th></tr></thead><tbody>{header_rows}</tbody></table></div></section>'
+        cards = review + "".join(rows)
         complete_count = sum(1 for item in package if item["exists"])
         package_actions = f'''<div class="summary"><strong>{complete_count} / {len(package)} documents complete</strong><div><a class="download" href="/shipment/{html_attr(selected_shipment_no)}/package.zip">Download Package (.zip)</a> <a class="download" href="/send-email/document-package/{html_attr(selected_shipment_no)}">Send Email</a></div></div>'''
 
