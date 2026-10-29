@@ -4,16 +4,17 @@ import os
 from urllib.parse import urlsplit
 
 APP_NAME = "Trade Paper AI"
-APP_VERSION = "3.6.4"
+APP_VERSION = "3.6.5"
 VERSION = APP_VERSION
 BUILD_NAME = "Public Release"
 RELEASE_TYPE = "Public Release"
 RELEASE_STAGE = "Public Release"
-LAST_UPDATED = "2026-10-27"
+LAST_UPDATED = "2026-10-29"
 EXPECTED_ROUTE_COUNT = 299
 BUSINESS_PHONE = "050-6466-7770"
 
 RELEASE_NOTES = (
+    "October 29: return directly to the selected file-import workflow after first sign-in and required company setup.",
     "October 27: frozen Invoice/Packing List PDF pairs, final review and duplicate-resistant paired email delivery.",
     "October 27: file-first bilingual getting-started guide and direct onboarding continuation.",
     "October 27: email attachment review with linked-document comparisons and submitted-file timestamps.",

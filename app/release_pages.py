@@ -137,6 +137,7 @@ def _quick_start_page(lang="en"):
         '<div id="sample-documents"><p>' + choose("Change fictional quantities and packing values, then open two separate PDFs. No account needed and nothing is saved to a workspace.",
         "가상 수량과 포장 정보를 바꾸고 PDF 두 장을 확인하세요. 가입이 필요 없고 작업공간에 저장되지 않습니다.") + '</p>' +
         f'<a class="tp-btn" href="/try-sample?lang={lang}">{choose("Try without signup", "가입 없이 예시 보기")}</a>' +
+        f'<p><a href="/static/samples/file-workflow-{lang}.html">{choose("See an order file and its two finished PDFs", "주문서 파일과 완성된 PDF 두 장 비교하기")}</a></p>' +
         '<details><summary>' + choose("Open ready-made sample PDFs", "완성된 샘플 PDF 열기") + '</summary><p><a href="/static/samples/commercial-invoice.pdf" target="_blank" rel="noopener">Invoice PDF</a> · <a href="/static/samples/packing-list.pdf" target="_blank" rel="noopener">Packing List PDF</a></p></details></div>')
     manual_card = section_card(choose("Prefer entering details yourself?", "직접 입력하고 싶다면"),
         '<p>' + choose("Save company, buyer and product details for reuse. The guided demo walks you through one fictional shipment.",

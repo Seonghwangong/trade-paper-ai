@@ -90,6 +90,22 @@ def test_registration_and_login_use_temporary_storage(tmp_path, monkeypatch):
     assert auth.login("owner@test.com", "secret12", "/buyers").headers["location"] == "/buyers"
 
 
+@pytest.mark.parametrize("target", ["/import-document?lang=ko", "/import-document?lang=en"])
+def test_first_login_returns_to_selected_file_import_without_unrelated_setup_guide(tmp_path, monkeypatch, target):
+    users_file = tmp_path / "users.json"
+    users_file.write_text("[]")
+    monkeypatch.setattr(auth, "USERS_FILE", users_file)
+    auth.register("Practice Export Ltd", "import-flow@example.com", "sample-only-password", "sample-only-password")
+    result = auth.login("import-flow@example.com", "sample-only-password", target)
+    assert result.headers["location"] == target
+    assert "HttpOnly" in result.headers["set-cookie"]
+    # Choosing import must neither mark unrelated onboarding complete nor
+    # bypass the required company setup enforced by the middleware.
+    assert not (tmp_path / "onboarding.json").exists()
+    companies = json.loads((tmp_path / "account_companies.json").read_text())
+    assert companies[0]["setup_complete"] is False
+
+
 def test_registration_password_policy_and_existing_login_compatibility(tmp_path, monkeypatch):
     users_file = tmp_path / "users.json"
     users_file.write_text(json.dumps([{

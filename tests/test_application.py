@@ -321,7 +321,7 @@ def test_deployment_readiness_rejects_non_writable_data_dir(tmp_path, monkeypatc
 def test_health_endpoint_contains_only_public_release_metadata():
     assert main.health() == {
         "status": "ok",
-        "version": "3.6.4",
+        "version": "3.6.5",
         "release": "Public Release",
     }
 
@@ -333,7 +333,7 @@ def test_startup_log_reports_version_release_and_completion(monkeypatch, capsys)
     })
     main.startup_stability_audit()
     assert capsys.readouterr().out == (
-        "Trade Paper AI\nVersion 3.6.4\nPublic Release\nStartup Complete\n"
+        "Trade Paper AI\nVersion 3.6.5\nPublic Release\nStartup Complete\n"
     )
 
 

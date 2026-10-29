@@ -563,7 +563,10 @@ def login(email: str = Form(""), password: str = Form(""), next_path: str = Form
     destination = safe_next_path(next_path)
     from app.onboarding import mark, should_auto_show
     onboarding_file = USERS_FILE.with_name("onboarding.json")
-    if should_auto_show(user.get("account_id", ""), onboarding_file):
+    # Keep the task chosen before signup. File import already guides review and
+    # saving; the company-setup middleware still runs before it is accessible.
+    import_requested = destination.split("?", 1)[0] == "/import-document"
+    if not import_requested and should_auto_show(user.get("account_id", ""), onboarding_file):
         mark(user.get("account_id", ""), "started_at", onboarding_file)
         destination = f"/onboarding?next={quote(destination, safe='')}"
     response = RedirectResponse(url=destination, status_code=303)
