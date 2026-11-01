@@ -22,3 +22,11 @@ input:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible,s
 .import-workspace .tp-global-search input{min-width:0}
 
 #replace-dialog{width:min(440px,calc(100% - 32px));border:1px solid #dce3eb;border-radius:18px;padding:28px;color:#20364e;box-shadow:0 24px 80px #17283d26}#replace-dialog::backdrop{background:#17283d55}#replace-dialog h2{font-size:21px}#replace-dialog .actions{justify-content:flex-end}
+
+.review-issues{margin:0 0 24px;padding:16px 18px;border:1px solid #dfd3b9;border-radius:12px;background:#fffaf0}
+.review-issues h3{margin:0;font-size:16px;color:#705222}
+.review-issues p{margin:6px 0;color:#6c5b3e}
+.review-issues ul{list-style:none;margin:8px 0 0;padding:0}
+.review-issues .review-issue-link{display:block;width:100%;text-align:left;overflow-wrap:anywhere;background:transparent;color:#263f59;text-decoration:underline;text-underline-offset:3px;font-weight:500;padding:8px 0;border-radius:4px}
+.review-issues .review-issue-link:hover{background:#f5ecd9}
+#review-next{margin-top:8px;padding-left:0;justify-content:flex-start;text-align:left}
