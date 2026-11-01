@@ -62,6 +62,7 @@ from app.auth import AuthenticationMiddleware, router as auth_router
 from app import email_delivery
 from app.seo import SearchMetadataMiddleware
 from app.guest_sample import router as guest_sample_router
+from app.pwa import router as pwa_router
 from app import analytics as analytics_module
 from app.intake_quality import application_status
 from app import dashboard_insights as dashboard_insights_module
@@ -726,6 +727,7 @@ app.include_router(onboarding_router)
 app.include_router(team_router)
 app.include_router(release_pages_router)
 app.include_router(guest_sample_router)
+app.include_router(pwa_router)
 app.include_router(founding_beta_router)
 app.include_router(feedback_router)
 app.include_router(document_email_router)

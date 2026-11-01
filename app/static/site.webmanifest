@@ -3,16 +3,25 @@
   "short_name": "Trade Paper AI",
   "description": "Create and manage export documents in one connected workflow.",
   "start_url": "/",
+  "id": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#2563eb",
+  "theme_color": "#17283d",
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {"name": "Import a file", "url": "/import-document"},
+    {"name": "Invoices", "url": "/invoice-list"},
+    {"name": "Shipments", "url": "/shipment-list"}
+  ],
   "icons": [
     {
       "src": "/static/product-hunt/icon.png",
       "sizes": "240x240",
       "type": "image/png",
       "purpose": "any"
-    }
+    },
+    {"src": "/static/app-icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/app-icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
   ]
 }

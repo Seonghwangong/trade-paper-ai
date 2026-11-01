@@ -12,5 +12,5 @@ def test_script_injection_does_not_break_existing_print_popup_script():
     changed=inject(source,'ko')
     assert 'popup.write("<html><body>PDF</body></html>")</script>' in changed
     assert changed.startswith('<html lang="ko">')
-    assert changed.count('src="/static/workspace-language.js"')==1
+    assert changed.count('src="/static/workspace-language.js?v=20261101-app"')==1
     assert changed.endswith('data-language="ko" defer></script></body></html>')

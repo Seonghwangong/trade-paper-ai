@@ -10,9 +10,9 @@
     link.href=url.pathname+url.search+url.hash; link.textContent=label; link.style.marginLeft='12px';
     if(code===selected) link.setAttribute('aria-current','true'); nav.append(link);
   }
-  document.body.prepend(nav);
+  if (!document.querySelector('nav[aria-label="Language"]')) document.body.prepend(nav);
   if(selected!=='ko') return;
-  const response=await fetch('/static/workspace-ko.json');
+  const response=await fetch('/static/workspace-ko.json?v=20261101-app');
   if(!response.ok) return;
   const dictionary=await response.json();
   if(dictionary[document.title]) document.title=dictionary[document.title];

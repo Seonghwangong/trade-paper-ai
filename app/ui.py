@@ -7,6 +7,7 @@ from urllib.parse import parse_qs
 
 from app.export import pdf_export_filename
 from app.release import APP_NAME, BUSINESS_PHONE
+from app.pwa import app_head
 
 
 DESIGN_TOKENS = {
@@ -127,7 +128,7 @@ def release_footer() -> str:
         '</div>'
         '<nav class="tp-release-footer-nav" aria-label="Product information">'
         '<a href="/feedback">Feedback</a><a href="/about">About</a>'
-        '<a href="/contact">Contact</a>'
+        '<a href="/contact">Contact</a><a href="/install">Install app</a>'
         '<a href="/demo">Try Demo (login required)</a>'
         '<a href="/privacy">Privacy</a><a href="/terms">Terms</a>'
         '</nav>'
@@ -777,9 +778,9 @@ def _ux_script(path: str) -> str:
 
 def inject_user_experience(source: str, path: str = "", success_message: str = "", demo_mode: bool = False, empty_search: bool = False, success_kind: str = "") -> str:
     """Apply presentation-only UX behavior to an HTML response."""
-    if path == "/try-sample":
-        # This isolated practice owns its async form and blob downloads. The
-        # workspace script assumes navigation/submission and persists drafts.
+    if path in {"/try-sample", "/install"}:
+        # These public pages own their interactions. The workspace script
+        # assumes document submission and persists drafts.
         return source
     if "</body>" not in source:
         source = (
@@ -935,15 +936,15 @@ class ReleaseFooterMiddleware:
                 effective_kind = success_kind or mutation_kind
                 success_message = _success_experience(effective_kind)[0] if effective_kind and start_message.get("status", 500) < 400 else ""
                 text = inject_user_experience(text, request_path, success_message, demo_mode, empty_search, effective_kind)
-                if authenticated_user and request_path not in {"/login", "/register"} and "<body" in text:
+                if authenticated_user and request_path not in {"/login", "/register", "/install"} and "<body" in text:
                     body_end = text.find(">", text.find("<body"))
                     text = text[:body_end + 1] + authenticated_user_control(authenticated_user) + text[body_end + 1:]
-                if (authenticated_user or request_path == "/starter") and request_path not in {"/login", "/register"}:
+                if (authenticated_user or request_path in {"/starter", "/install"}) and request_path not in {"/login", "/register"}:
                     from app.workspace_language import language, inject
                     # Public plan URLs must not change language based on a cookie.
-                    page_language = ("ko" if query.get("lang", [""])[0] == "ko" else "en") if request_path == "/starter" else language(query, request_headers)
+                    page_language = ("ko" if query.get("lang", [""])[0] == "ko" else "en") if request_path in {"/starter", "/install"} else language(query, request_headers)
                     text = inject(text, page_language)
-                body = inject_release_footer(text).encode(charset)
+                body = app_head(inject_release_footer(text)).encode(charset)
                 headers = [(key, value) for key, value in headers if key.lower() != b"content-length"]
                 headers.append((b"content-length", str(len(body)).encode("ascii")))
 

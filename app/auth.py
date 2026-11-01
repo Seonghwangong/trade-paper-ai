@@ -52,7 +52,7 @@ PUBLIC_PATHS = frozenset({
     "/login", "/register", "/logout", "/forgot-password", "/reset-password",
     "/privacy", "/terms", "/refund-policy", "/contact", "/status", "/health", "/healthz",
     "/founding-beta", "/founding-beta/thank-you",
-    "/starter", "/getting-started", "/try-sample", "/try-sample/documents",
+    "/starter", "/getting-started", "/try-sample", "/try-sample/documents", "/install",
     "/feedback", "/feedback/thank-you",
     "/robots.txt", "/sitemap.xml",
     "/analytics/visit",
@@ -60,7 +60,7 @@ PUBLIC_PATHS = frozenset({
 COMPANY_SETUP_PATHS = frozenset({
     "/about", "/release-notes", "/version-history",
     "/company", "/company-data", "/save-company", "/logout",
-    "/getting-started", "/try-sample", "/try-sample/documents",
+    "/getting-started", "/try-sample", "/try-sample/documents", "/install",
     "/forgot-password", "/reset-password",
 })
 
