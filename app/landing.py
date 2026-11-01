@@ -70,7 +70,7 @@ def landing_page(lang='en'):
     canonical_url = (f'{base_url}/' if base_url else '/') + ('?lang=ko' if lang == 'ko' else '')
     hero_url = f'{base_url}/static/product-hunt/hero.png' if base_url else '/static/product-hunt/hero.png'
     structured_data = (
-        {'@context':'https://schema.org','@type':'Organization','name':'Trade Paper AI','url':canonical_url,'logo':f'{base_url}/static/product-hunt/logo.png'},
+        {'@context':'https://schema.org','@type':'Organization','name':'Trade Paper AI','url':canonical_url,'logo':f'{base_url}/static/app-icons/tradepaper-512.png'},
         {'@context':'https://schema.org','@type':'SoftwareApplication','name':'Trade Paper AI','applicationCategory':'BusinessApplication','operatingSystem':'Web','url':canonical_url,'description':copy['description'],'softwareVersion':APP_VERSION,'offers':[
             {'@type':'Offer','name':name,'price':str(PLANS[name]['price']),'priceCurrency':PLANS[name]['currency'],'description':'Free plan with up to five documents per month.' if name == 'Free' else 'Starter plan billed monthly.'} for name in ('Free','Starter')]},
         {'@context':'https://schema.org','@type':'FAQPage','mainEntity':[{'@type':'Question','name':q,'acceptedAnswer':{'@type':'Answer','text':a}} for q,a in entries]},

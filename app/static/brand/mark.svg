@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Trade Paper AI</title>
+  <rect width="512" height="512" fill="#173849"/>
+  <path d="M200 148h116l68 68v176a24 24 0 0 1-24 24H200a24 24 0 0 1-24-24V172a24 24 0 0 1 24-24Z" fill="#66D7C5"/>
+  <path d="M152 96h116l68 68v176a24 24 0 0 1-24 24H152a24 24 0 0 1-24-24V120a24 24 0 0 1 24-24Z" fill="#F8FAF7"/>
+  <path d="M268 96v48a20 20 0 0 0 20 20h48Z" fill="#B4E9DE"/>
+  <path d="M176 228h112M176 280h72" fill="none" stroke="#173849" stroke-width="20" stroke-linecap="round"/>
+</svg>

@@ -14,7 +14,9 @@ def app_head(source):
     if 'rel="manifest"' not in source:
         tags.append('<link rel="manifest" href="/static/site.webmanifest">')
     if 'rel="apple-touch-icon"' not in source:
-        tags.append('<link rel="apple-touch-icon" href="/static/app-icons/apple-touch-icon.png">')
+        tags.append('<link rel="apple-touch-icon" href="/static/app-icons/tradepaper-apple.png">')
+    if 'rel="icon"' not in source:
+        tags.append('<link rel="icon" type="image/svg+xml" href="/static/brand/mark.svg">')
     if 'name="theme-color"' not in source:
         tags.append('<meta name="theme-color" content="#17283d">')
     if 'name="apple-mobile-web-app-title"' not in source:
