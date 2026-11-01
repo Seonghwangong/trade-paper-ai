@@ -148,6 +148,20 @@ def test_preview_escapes_company_bootstrap_and_is_not_public(tmp_path,monkeypatc
     assert '/import-document/extract' not in PUBLIC_PATHS
 
 
+def test_draft_recovery_scope_isolated_by_account_and_user(monkeypatch):
+    import re
+    monkeypatch.setattr(subject, 'load_account_company', lambda *args: {})
+    def scope(account, email):
+        page = subject.import_page(request(b'', user={'account_id': account, 'email': email, 'role': 'Owner'})).body.decode()
+        config = json.loads(re.search(r'<script id="import-config" type="application/json">(.*?)</script>', page).group(1))
+        return config['draft_scope']
+    a = scope('a', 'first@example.com')
+    assert len(a) == 64
+    assert a == scope('a', 'FIRST@example.com')
+    assert a != scope('b', 'first@example.com')
+    assert a != scope('a', 'second@example.com')
+
+
 def test_import_uses_existing_document_creation_and_never_sends_email():
     from app.subscription import DOCUMENT_CREATION_PATHS
     assert '/invoice' in DOCUMENT_CREATION_PATHS

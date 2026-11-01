@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
@@ -269,7 +270,9 @@ def import_page(request: Request):
     account = _account(request)
     lang = 'ko' if request.query_params.get('lang', request.cookies.get('tp_language', 'en')) == 'ko' else 'en'
     company = load_account_company(account, ACCOUNT_COMPANIES_FILE)
-    bootstrap = json.dumps({'lang': lang, 'company': {k: company.get(k, '') for k in ('name', 'address')}}, ensure_ascii=False).replace('<', '\\u003c')
+    user = request.scope.get('trade_paper_user') or {}
+    draft_scope = hashlib.sha256((account + '\0' + str(user.get('email', '')).strip().casefold()).encode()).hexdigest()
+    bootstrap = json.dumps({'lang': lang, 'draft_scope': draft_scope, 'company': {k: company.get(k, '') for k in ('name', 'address')}}, ensure_ascii=False).replace('<', '\\u003c')
     template = Path(__file__).with_name('templates').joinpath('document_import.html').read_text()
     return HTMLResponse(template.replace('__LANG__', lang).replace('__BOOTSTRAP__', bootstrap), headers={'Cache-Control': 'no-store'})
 

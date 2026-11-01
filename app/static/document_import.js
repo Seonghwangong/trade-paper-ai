@@ -18,6 +18,16 @@ const words={
  reading:['Reading your file…','파일을 읽고 있습니다…'],ocr:['Reading printed text… The first photo can take longer.','사진의 글자를 읽고 있습니다… 첫 사진은 시간이 조금 걸릴 수 있습니다.'],ready:['Draft ready. Check it against the original before saving.','초안을 채웠습니다. 저장 전 원본과 확인하세요.'],saving:['Saving Invoice…','Invoice 저장 중…'],saved:['Invoice saved.','Invoice를 저장했습니다.'],edit:['Open Invoice','Invoice 열기'],packing:['Continue to Packing List','Packing List로 이어가기'],pdf:['Open Invoice PDF','Invoice PDF 열기'],retrySave:['The save response was interrupted. Check your Invoice list before saving again to avoid duplicates.','저장 결과를 확인하지 못했습니다. 중복 저장을 피하려면 Invoice 목록을 먼저 확인하세요.'],checkInvoices:['Check Invoice list','Invoice 목록 확인'],saveFailed:['Could not save. Your draft remains here.','저장하지 못했습니다. 초안은 이 화면에 남아 있습니다.'],session:['Please sign in again, then reopen this page.','다시 로그인한 뒤 이 화면을 열어 주세요.'],limit:['Your document allowance is exhausted or billing status is unavailable. Your draft is still here.','문서 한도를 사용했거나 구독 상태를 확인할 수 없습니다. 초안은 그대로 있습니다.'],
  too_large:['Use a file up to 8 MB, 5 PDF pages and 100 items.','8MB·PDF 5쪽·품목 100개 이하의 파일을 선택하세요.'],too_many_items:['This file has more than 100 items. Split it into smaller files.','품목 100개를 초과합니다. 파일을 나누어 주세요.'],unsupported:['Use XLSX, CSV, PDF, JPG, PNG or WebP. Convert old XLS or HEIC first.','XLSX·CSV·PDF·JPG·PNG·WebP를 선택하세요. XLS·HEIC는 먼저 변환해 주세요.'],invalid_file:['We could not read this file. Try a clear, upright photo or an unprotected PDF/XLSX.','파일을 읽지 못했습니다. 글자가 선명하고 바르게 선 사진이나 암호 없는 PDF·XLSX로 다시 시도하세요.'],encoding:['Save the CSV as UTF-8 and retry.','CSV를 UTF-8로 저장한 뒤 다시 시도하세요.'],encrypted:['Remove the file password before importing.','암호를 해제한 파일로 다시 시도하세요.'],no_items:['Item columns were not recognized. Compare the source and add the missing items; nothing has been saved.','품목 열을 인식하지 못했습니다. 원본을 보며 누락 품목을 보완해 주세요. 아직 저장되지 않았습니다.'],formulas_skipped:['Formula cells were left empty. Use an Excel copy with values pasted, or check the empty values here.','수식 셀은 비웠습니다. 엑셀에서 값으로 붙여넣은 사본을 사용하거나 빈 값을 확인하세요.'],unrecognized_rows:['Some rows could not be assigned. Check the complete source for missing items.','일부 행을 품목에 연결하지 못했습니다. 원본 전체에서 누락 품목을 확인하세요.'],duplicate_headers:['Repeated column names were ambiguous. Check the item table.','같은 이름의 열이 여러 개여서 구분하지 못했습니다. 품목을 확인하세요.'],conflict:['The file contains conflicting fields. Check the source; values were not silently combined.','파일에 서로 다른 값이 있습니다. 원본을 확인하세요. 임의로 합치지 않았습니다.'],amount:['Quantity × unit price differs from the source amount. Check this item.','수량 × 단가가 원본 금액과 다릅니다. 이 품목을 확인하세요.'],partial:['Check every PDF page for omitted items, especially text inside images.','PDF의 모든 쪽에서 누락된 품목이 없는지 확인하세요. 이미지 안의 글자는 빠질 수 있습니다.'],total:['Calculated total','계산된 합계'],replace:['Replace this unsaved draft?','저장하지 않은 초안을 바꿀까요?'],ocrUnavailable:['Photo reading failed. Your file was not stored. Retry with a clearer photo or a PDF with selectable text.','사진 인식에 실패했습니다. 원본은 저장하지 않았습니다. 더 선명한 사진이나 글자를 선택할 수 있는 PDF로 시도하세요.']};
 Object.assign(words,{
+ draftFound:['Continue your unfinished draft?','작성하던 초안을 이어서 쓸까요?'],
+ draftRestore:['Continue draft','초안 이어쓰기'],draftDiscard:['Start a new draft','새로 시작'],draftClear:['Remove browser copy','브라우저 보관본 지우기'],
+ draftPrivacy:['Draft text is kept in this browser for recovery within 7 days. Original files and audio are not stored.','작성 중인 글자·초안은 이 브라우저에서 7일 이내 복구할 수 있습니다. 원본 파일·음성은 보관하지 않습니다.'],
+ draftStored:['Draft kept in this browser.','이 브라우저에 초안을 보관했습니다.'],
+ draftUnavailable:['Browser storage is unavailable. Keep this page open or copy your text before leaving.','브라우저에 보관하지 못했습니다. 이 화면을 유지하거나 이동 전 내용을 복사하세요.'],
+ draftConflict:['This draft changed in another tab. Copy any new edits, then reload to continue with the latest draft.','다른 탭에서 초안이 변경되었습니다. 새로 적은 내용을 복사한 뒤 새로고침하여 최신 초안을 이어 쓰세요.'],
+ draftConfirmClear:['Remove this browser copy and start over? Saved documents will stay unchanged.','브라우저 보관본을 지우고 새로 시작할까요? 저장된 문서는 유지됩니다.'],
+ draftRestored:['Draft restored. Recheck all values before saving; original file previews are not retained.','초안을 복구했습니다. 저장 전에 내용을 다시 확인하세요. 원본 파일 미리보기는 보관하지 않습니다.'],
+ draftTime:['Last kept: ','마지막 보관: '],draftPending:['A previous save may have completed. Check the Invoice list before creating another document.','이전 저장이 완료됐을 수 있습니다. 다른 문서를 만들기 전에 Invoice 목록을 확인하세요.'],
+
  sourceFile:['File or photo','파일·사진'],sourceNote:['Order note or voice','주문 메모·음성'],
  noteTitle:['Have an order note? Start here.','주문 메모가 있다면 바로 시작하세요'],
  noteHint:['Type or dictate one item per line, then review the draft. No document is saved at this step.','한 줄에 한 품목씩 적거나 말하고 초안을 확인하세요. 이 단계에서는 문서를 저장하지 않습니다.'],
@@ -51,10 +61,15 @@ Object.assign(words,{
 const t=key=>(words[key]||words.invalid_file)[ko?1:0];
 document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));
 document.title=t('title')+' · Trade Paper AI';$('original').alt=t('source');
-let file=null, busy=false, previewURL=null, draftReady=false, saved=false, saveUncertain=false, worker=null, saving=false, selectedSheet=0, voiceActive=false, noteOpening=false;
+let file=null, busy=false, previewURL=null, draftReady=false, saved=false, saveUncertain=false, worker=null, saving=false, selectedSheet=0, voiceActive=false, noteOpening=false, recovering=false, pendingRecovery=false;
+let activeWarnings=[], activeUnmatched=[], sourceLabel='', autoSaveTimer=null;
+let browserStorage=null;try{browserStorage=window.localStorage;}catch(error){}
+const draftStore=window.TPImportDraft?.create(browserStorage,config.draft_scope)||{load:()=>null,write:()=>({ok:false,reason:'unavailable'}),clear:()=>false};
+const recoveredDraft=draftStore.load();
+
 function setStep(step){document.querySelectorAll('[data-step]').forEach(el=>{const n=Number(el.dataset.step);el.classList.toggle('complete',n<step);if(n===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');});}
 function setStatus(key,error=false){$('status').textContent=t(key);$('status').dataset.kind=error?'error':'info';}
-function setBusy(value){busy=value;$('file').disabled=value;$('sheet').disabled=value;$('sample').disabled=value;$('drop-zone').setAttribute('aria-busy',String(value));for(const id of ['note-build','note-sample','order-note','voice-language','source-file','source-note'])$(id).disabled=value;$('note-mic').disabled=value&&!voiceActive;}
+function setBusy(value){value=value||pendingRecovery||saveUncertain;busy=value;$('file').disabled=value;$('sheet').disabled=value;$('sample').disabled=value;$('drop-zone').setAttribute('aria-busy',String(value));$('draft-clear').disabled=value||saving||saveUncertain;for(const id of ['note-build','note-sample','order-note','voice-language','source-file','source-note'])$(id).disabled=value;$('note-mic').disabled=value&&!voiceActive;}
 
 const fields=['seller','seller_address','buyer','buyer_address','buyer_email','invoice_date','currency','trade_term','payment_term','source_reference'];
 const itemFields=['name','quantity','unit','unit_price','hs_code','origin'];
@@ -111,10 +126,11 @@ function updateReviewIssues(){
 }
 $('review-next').addEventListener('click',()=>{const issue=reviewIssues()[0];if(issue)focusIssue(issue.target);});
 function renderDraft(result,extra=[]){
- const values=result.fields||{};if(!values.seller&&!(result.warnings||[]).includes('conflicting_seller')){values.seller=config.company.name||'';values.seller_address=values.seller_address||config.company.address||'';}
+ activeWarnings=[...(result.warnings||[]),...extra];activeUnmatched=result.unmatched_lines||[];if(result.items.some(item=>item.check_amount))activeWarnings.push('amount');sourceLabel=result.source_label||file?.name||t('noteSource');
+ const values=result.fields||{};if(!result.restored&&!values.seller&&!(result.warnings||[]).includes('conflicting_seller')){values.seller=config.company.name||'';values.seller_address=values.seller_address||config.company.address||'';}
  $('fields').replaceChildren();fields.forEach(key=>$('fields').append(makeInput(key,values[key])));$('items').replaceChildren();(result.items.length?result.items:[{}]).forEach(addItem);
  $('source-text').textContent=result.source_text||'';$('warnings').textContent=[...new Set([...(result.warnings||[]),...extra])].map(key=>t(key.startsWith('conflicting_')?'conflict':key)).join('\n');
- $('workspace').hidden=false;$('review-hint').hidden=false;$('review-heading').textContent=t('review');$('review-form').hidden=false;$('saved').hidden=true;$('confirmed').checked=false;$('save').disabled=false;draftReady=true;saved=false;saveUncertain=false;updateTotal();setStatus('ready');setStep(2);$('file-name').textContent=file?file.name:t('noteSource');$('file-name').hidden=false;$('review-heading').focus({preventScroll:true});
+ $('workspace').hidden=false;$('review-hint').hidden=false;$('review-heading').textContent=t('review');$('review-form').hidden=false;$('saved').hidden=true;$('confirmed').checked=false;$('save').disabled=false;draftReady=true;saved=false;saveUncertain=false;updateTotal();setStatus('ready');setStep(2);$('file-name').textContent=sourceLabel;$('file-name').hidden=false;$('review-heading').focus({preventScroll:true});scheduleDraft();
 }
 async function parseResponse(response){if(response.redirected||response.status===401||response.status===403)throw new Error('session');if(!response.headers.get('content-type')?.includes('application/json'))throw new Error('invalid_file');const data=await response.json();if(!response.ok)throw new Error(data.detail||'invalid_file');return data;}
 const positionedText=window.TPImportLayout.positionedText;
@@ -156,7 +172,7 @@ for(const mode of ['file','note'])$('source-'+mode).addEventListener('click',()=
  for(const value of ['file','note'])$('source-'+value).setAttribute('aria-pressed',String(value===mode));
 });
 $('order-note').placeholder=ko?'거래처: ABC사\n머그컵 100개 개당 USD 3\n접시 50개 개당 USD 2':'Buyer: ABC Ltd\nCotton shirts 100 PCS at USD 8.50\nSteel bolts 50 PCS at USD 2';
-$('note-sample').addEventListener('click',()=>{if(!$('order-note').value.trim())$('order-note').value=$('order-note').placeholder;$('order-note').focus();});
+$('note-sample').addEventListener('click',()=>{if(!$('order-note').value.trim())$('order-note').value=$('order-note').placeholder;$('order-note').focus();scheduleDraft();});
 $('note-build').addEventListener('click',async()=>{
  if(busy||saving||saveUncertain||noteOpening)return;
  const text=$('order-note').value.trim();if(!text){setStatus('empty_note',true);$('order-note').focus();return;}
@@ -178,7 +194,7 @@ $('voice-language').value=ko?'ko-KR':'en-US';
 const voice=(window.TPVoiceInput?.create||(()=>({supported:false})))({
  getLanguage:()=>$('voice-language').value,
  getText:()=>$('order-note').value,
- onText:text=>{$('order-note').value=text;},
+ onText:text=>{$('order-note').value=text;scheduleDraft();},
  onState:active=>{voiceActive=active;setBusy(active);$('note-mic').textContent=t(active?'voiceStop':'voiceStart');$('note-mic').setAttribute('aria-pressed',String(active));},
  onMessage:key=>{$('voice-status').textContent=t(key);}
 });
@@ -197,13 +213,73 @@ $('drop-zone').addEventListener('dragleave',e=>{if(!$('drop-zone').contains(e.re
 $('drop-zone').addEventListener('drop',e=>{e.preventDefault();$('drop-zone').classList.remove('drag-over');if(e.dataTransfer.files.length===1)chooseFile(e.dataTransfer.files[0]);else setStatus('oneFile',true);});
 $('add').addEventListener('click',()=>{const count=$('items').children.length;addItem();$('confirmed').checked=false;if($('items').children.length>count)focusIssue($('items').lastElementChild.querySelector('input'));});
 $('review-form').addEventListener('submit',async event=>{
- event.preventDefault();if(saved||saveUncertain||saving||busy||!$('review-form').reportValidity())return;if(!$('items').children.length){$('status').textContent=t('no_items');return;}saving=true;$('save').disabled=true;setStatus('saving');const payload={};$('fields').querySelectorAll('input').forEach(i=>payload[i.dataset.field]=i.value.trim());payload.items=[...$('items').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(i=>[i.dataset.field,i.value.trim()])));let response;const controls=[...$('review-form').querySelectorAll('input,button')];controls.forEach(el=>el.disabled=true);setBusy(true);
- try{response=await fetch('/invoice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch(e){saving=false;setBusy(false);saveUncertain=true;setStatus('retrySave',true);const a=document.createElement('a');a.href='/invoice-list';a.textContent=t('checkInvoices');$('status').append(document.createElement('br'),a);return;}
- if(!response.ok||response.redirected){saving=false;setBusy(false);controls.forEach(el=>el.disabled=false);$('status').textContent=response.redirected?t('session'):([402,503].includes(response.status)?t('limit'):t('saveFailed'));$('save').disabled=false;return;}
- try{const record=await response.json();if(!record.invoice_no)throw Error();saved=true;if(window.tpMarkSaved)window.tpMarkSaved();const id=encodeURIComponent(record.invoice_no);$('review-form').hidden=true;$('review-hint').hidden=true;$('review-heading').textContent=t('stepSaved');$('saved').replaceChildren();const mark=document.createElement('span');mark.className='success-mark';mark.textContent='✓';mark.setAttribute('aria-hidden','true');const h=document.createElement('h3');h.textContent=t('saved');const number=document.createElement('p');number.textContent=t('savedNumber')+' · '+record.invoice_no;const hint=document.createElement('p');hint.textContent=t('nextHint');$('saved').append(mark,h,number,hint);const actions=document.createElement('div');actions.className='actions';for(const [label,url]of [['packing','/packing-page?invoice_no='+id],['pdf','/invoice-pdf/'+id],['edit','/edit-invoice/'+id]]){const a=document.createElement('a');a.textContent=t(label);a.className=label==='packing'?'button next-action':'button secondary';a.href=url+((url.includes('?')?'&':'?')+'lang='+config.lang);actions.append(a);}$('saved').append(actions);$('saved').hidden=false;setStatus('saved');setStep(3);$('saved').focus();window.location.assign('/packing-page?invoice_no='+id+'&lang='+encodeURIComponent(config.lang));}
+ event.preventDefault();if(saved||saveUncertain||saving||busy||!$('review-form').reportValidity())return;if(!$('items').children.length){$('status').textContent=t('no_items');return;}if(draftStore.conflict){showStorageResult({ok:false,reason:'conflict'});return;}saving=true;persistDraft('saving');if(draftStore.conflict){saving=false;return;}$('save').disabled=true;setStatus('saving');const payload={};$('fields').querySelectorAll('input').forEach(i=>payload[i.dataset.field]=i.value.trim());payload.items=[...$('items').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(i=>[i.dataset.field,i.value.trim()])));let response;const controls=[...$('review-form').querySelectorAll('input,button')];controls.forEach(el=>el.disabled=true);setBusy(true);
+ try{response=await fetch('/invoice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch(e){saving=false;setBusy(false);saveUncertain=true;persistDraft('uncertain');setBusy(false);setStatus('retrySave',true);const a=document.createElement('a');a.href='/invoice-list';a.textContent=t('checkInvoices');$('status').append(document.createElement('br'),a);return;}
+ if(response.status>=500&&!response.redirected){saving=false;showUncertainSave();persistDraft('uncertain');setBusy(false);return;}
+ if(!response.ok||response.redirected){saving=false;setBusy(false);controls.forEach(el=>el.disabled=false);$('status').textContent=response.redirected?t('session'):([402,503].includes(response.status)?t('limit'):t('saveFailed'));$('save').disabled=false;persistDraft('draft');return;}
+ try{const record=await response.json();if(!record.invoice_no)throw Error();saved=true;window.clearTimeout(autoSaveTimer);draftStore.clear();$('draft-storage-status').textContent='';if(window.tpMarkSaved)window.tpMarkSaved();const id=encodeURIComponent(record.invoice_no);$('review-form').hidden=true;$('review-hint').hidden=true;$('review-heading').textContent=t('stepSaved');$('saved').replaceChildren();const mark=document.createElement('span');mark.className='success-mark';mark.textContent='✓';mark.setAttribute('aria-hidden','true');const h=document.createElement('h3');h.textContent=t('saved');const number=document.createElement('p');number.textContent=t('savedNumber')+' · '+record.invoice_no;const hint=document.createElement('p');hint.textContent=t('nextHint');$('saved').append(mark,h,number,hint);const actions=document.createElement('div');actions.className='actions';for(const [label,url]of [['packing','/packing-page?invoice_no='+id],['pdf','/invoice-pdf/'+id],['edit','/edit-invoice/'+id]]){const a=document.createElement('a');a.textContent=t(label);a.className=label==='packing'?'button next-action':'button secondary';a.href=url+((url.includes('?')?'&':'?')+'lang='+config.lang);actions.append(a);}$('saved').append(actions);$('saved').hidden=false;setStatus('saved');setStep(3);$('saved').focus();window.location.assign('/packing-page?invoice_no='+id+'&lang='+encodeURIComponent(config.lang));}
 
- catch(e){saveUncertain=true;$('save').disabled=true;setStatus('retrySave',true);const a=document.createElement('a');a.href='/invoice-list';a.textContent=t('checkInvoices');$('status').append(document.createElement('br'),a);}
+ catch(e){saveUncertain=true;persistDraft('uncertain');$('save').disabled=true;setStatus('retrySave',true);const a=document.createElement('a');a.href='/invoice-list';a.textContent=t('checkInvoices');$('status').append(document.createElement('br'),a);}
  finally{saving=false;setBusy(false);if(!saveUncertain)controls.forEach(el=>el.disabled=false);}
 });
-window.addEventListener('beforeunload',event=>{if((draftReady&&!saved)||(!saved&&$('order-note').value.trim())){event.preventDefault();event.returnValue='';}});
+function captureDraft(status='draft'){
+ const result=draftReady?{
+  fields:Object.fromEntries([...$('fields').querySelectorAll('input')].map(input=>[input.dataset.field,input.value])),
+  items:[...$('items').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(input=>[input.dataset.field,input.value]))),
+  source_text:$('source-text').textContent,warnings:activeWarnings,unmatched_lines:activeUnmatched
+ }:null;
+ return {status,note:$('order-note').value,mode:$('note-panel').hidden?'file':'note',label:sourceLabel,result};
+}
+function showStorageResult(result){
+ $('draft-storage-status').textContent=t(result.ok?'draftStored':result.reason==='conflict'?'draftConflict':'draftUnavailable');
+ $('draft-clear').hidden=false;
+ if(result.reason==='conflict')$('save').disabled=true;
+}
+function persistDraft(status){
+ window.clearTimeout(autoSaveTimer);
+ if(saved||pendingRecovery||recovering)return true;
+ if(!draftReady&&!$('order-note').value.trim()){const removed=draftStore.clear();$('draft-storage-status').textContent='';$('draft-clear').hidden=true;return removed;}
+ const result=draftStore.write(captureDraft(status||(saveUncertain?'uncertain':saving?'saving':'draft')));showStorageResult(result);return result.ok;
+}
+function scheduleDraft(){
+ if(saved||pendingRecovery||recovering)return;
+ window.clearTimeout(autoSaveTimer);autoSaveTimer=window.setTimeout(()=>persistDraft(),350);
+}
+function showUncertainSave(){
+ saveUncertain=true;$('save').disabled=true;
+ $('review-form').querySelectorAll('input,button').forEach(input=>input.disabled=true);
+ setStatus('draftPending',true);const link=document.createElement('a');link.href='/invoice-list';link.textContent=t('checkInvoices');$('status').append(document.createElement('br'),link);
+}
+function discardBrowserDraft(){
+ if(!window.confirm(t('draftConfirmClear')))return;
+ window.clearTimeout(autoSaveTimer);
+ if(!draftStore.clear()){showStorageResult({ok:false,reason:draftStore.conflict?'conflict':'unavailable'});return;}
+ saved=true;window.location.reload();
+}
+$('draft-clear').addEventListener('click',discardBrowserDraft);
+$('draft-discard').addEventListener('click',discardBrowserDraft);
+$('draft-restore').addEventListener('click',()=>{
+ if(!recoveredDraft)return;
+ recovering=true;pendingRecovery=false;setBusy(false);
+ $('order-note').value=recoveredDraft.note;
+ $('drop-zone').hidden=recoveredDraft.mode!=='file';$('note-panel').hidden=recoveredDraft.mode!=='note';
+ for(const mode of ['file','note'])$('source-'+mode).setAttribute('aria-pressed',String(mode===recoveredDraft.mode));
+ if(recoveredDraft.result){file=null;renderDraft({...recoveredDraft.result,source_label:recoveredDraft.label,restored:true});
+  if(activeUnmatched.length){const p=document.createElement('p');p.textContent=activeUnmatched.join('\n');$('warnings').append(p);}
+ }
+ $('draft-recovery').hidden=true;recovering=false;
+ if(recoveredDraft.status!=='draft')showUncertainSave();else setStatus('draftRestored');
+ showStorageResult({ok:true});setBusy(false);
+});
+$('order-note').addEventListener('input',scheduleDraft);
+$('review-form').addEventListener('input',scheduleDraft);
+$('review-form').addEventListener('change',scheduleDraft);
+$('review-form').addEventListener('click',event=>{if(event.target.closest('#add,.item-top button'))scheduleDraft();});
+window.addEventListener('pagehide',()=>persistDraft());
+document.addEventListener('visibilitychange',()=>{if(document.hidden)persistDraft();});
+if(recoveredDraft){
+ pendingRecovery=true;setBusy(true);$('draft-recovery').hidden=false;
+ $('draft-recovery-info').textContent=t('draftTime')+new Date(recoveredDraft.updated).toLocaleString(ko?'ko-KR':'en-US')+(recoveredDraft.status==='draft'?'':' — '+t('draftPending'));
+}
+window.addEventListener('beforeunload',event=>{const kept=persistDraft();if((!kept||saving)&&!saved&&(draftReady||$('order-note').value.trim())){event.preventDefault();event.returnValue='';}});
 })();

@@ -37,3 +37,5 @@ input:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible,s
 #note-example{overflow-wrap:anywhere}#warnings p{color:inherit;white-space:pre-wrap}
 
 .source-modes{display:flex;gap:8px;margin:0 0 18px}.source-modes button{background:#e9edef;color:#36474a;flex:1}.source-modes [aria-pressed=true]{background:#252725;color:#f6f4ee}.order-note{margin-top:0}
+
+.draft-recovery{padding:20px;margin:0 0 18px;border:1px solid #bfcfc4;border-radius:14px;background:#f0f6f2}.draft-recovery .actions{margin-top:12px}.draft-storage{margin:0 0 14px}.draft-storage p{margin:4px 0}.draft-storage #draft-storage-status:empty{display:none}
