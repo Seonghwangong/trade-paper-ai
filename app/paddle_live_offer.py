@@ -107,7 +107,9 @@ def validate_completed_transaction(data, offer):
             raise ValueError('Unexpected completed transaction lines')
         line = lines[0]
         if (line['price_id'] != offer.price_id or line['quantity'] != 1
-                or type(line['quantity']) is not int or line['proration'] is not None
+                # Calculated line items may omit proration for a full-period
+                # purchase. A supplied adjustment must still be rejected.
+                or type(line['quantity']) is not int or line.get('proration') is not None
                 or line['product']['id'] != offer.product_id
                 or line['product']['type'] != 'standard' or line['product']['status'] != 'active'):
             raise ValueError('Unexpected completed transaction line')

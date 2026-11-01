@@ -90,6 +90,34 @@ def test_completion_only_binds_and_subscription_snapshot_drives_access(store):
     assert reopened.access_for_account('account-A', now=NOW).starter_access
 
 
+def test_provider_completion_without_calculated_line_proration_grants_access(store):
+    # Paddle's calculated details.line_items omit proration for a normal initial
+    # purchase, even though items[].proration is explicitly null.
+    payload = completion()
+    del payload['data']['details']['line_items'][0]['proration']
+    payload['data']['payments'].append({'status': 'error', 'amount': '29000'})
+    store.register_checkout(TXN, 'account-A')
+    with pytest.raises(BillingConflict):
+        send(store, event(2, kind='subscription.activated'))
+    assert send(store, payload) == 'bound'
+    assert send(store, event(2, kind='subscription.activated')) == 'applied'
+    assert store.access_for_account('account-A', now=NOW).starter_access
+    assert send(store, payload) == 'duplicate'
+    canceled = snapshot()
+    canceled['status'] = 'canceled'
+    assert send(store, event(3, kind='subscription.canceled', data=canceled, day=25)) == 'applied'
+    assert not store.access_for_account('account-A', now=NOW).starter_access
+
+
+def test_nonnull_calculated_line_proration_is_still_rejected(store):
+    payload = completion()
+    payload['data']['details']['line_items'][0]['proration'] = {'rate': '0.5'}
+    store.register_checkout(TXN, 'account-A')
+    with pytest.raises(ValueError):
+        send(store, payload)
+    assert not ledger(store)['bindings']
+
+
 def test_subscription_before_completion_retries_without_consuming_event(store):
     store.register_checkout(TXN, 'account-A')
     early = event(2)
