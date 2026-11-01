@@ -5,19 +5,40 @@ const config=JSON.parse(document.getElementById('import-config').textContent);
 const ko=config.lang==='ko', $=id=>document.getElementById(id);
 const words={
  eyebrow:['YOUR NEXT SHIPMENT, ONE STEP AT A TIME','다음 출하를, 차근차근'],
- stepFile:['Bring your file','파일 가져오기'],stepReview:['Review the draft','초안 확인'],stepSaved:['Invoice saved','Invoice 저장'],
+ stepFile:['Add your source','자료 입력'],stepReview:['Review the draft','초안 확인'],stepSaved:['Invoice saved','Invoice 저장'],
  dropHint:['Drop a file here, or choose one from your device.','파일을 끌어 놓거나 기기에서 선택하세요.'],browse:['Choose file','파일 선택'],sample:['Try a fictional sample','가상 예시로 먼저 보기'],shortLimits:['Excel · CSV · PDF · document photos / up to 8 MB','엑셀 · CSV · PDF · 서류 사진 / 최대 8MB'],fileDetails:['Supported files & how your data is handled','지원 파일과 자료 처리 안내'],
- replaceHint:['Your current draft has not been saved. If the new file cannot be read, we will keep this draft.','현재 초안은 저장되지 않았습니다. 새 파일을 읽지 못하면 기존 초안을 유지합니다.'],keepDraft:['Keep this draft','현재 초안 유지'],replaceDraft:['Read the new file','새 파일 읽기'],
+ replaceHint:['Your current draft has not been saved. If the new source cannot be read, we will keep this draft.','현재 초안은 저장되지 않았습니다. 새 자료를 읽지 못하면 기존 초안을 유지합니다.'],keepDraft:['Keep this draft','현재 초안 유지'],replaceDraft:['Use the new source','새 자료 사용'],
  oneFile:['Choose one file at a time.','파일을 한 번에 하나씩 선택하세요.'],sampleNotice:['Fictional sample — review it freely. Saving uses one document from your allowance.','가상 예시입니다. 자유롭게 확인해 보세요. 저장하면 문서 한도에서 1개를 사용합니다.'],missingFields:['Required fields still need attention: ','아직 확인할 필수 항목: '],reviewAll:['Required fields are filled. Compare every value with the original before saving.','필수 항목이 채워졌습니다. 저장 전 모든 값을 원본과 확인하세요.'],nextHint:['Next, prepare your Packing List from this Invoice. Check actual cartons and weights before saving it.','이 Invoice로 Packing List를 이어서 작성하세요. 저장 전에 실제 박스 수와 중량을 확인하면 됩니다.'],savedNumber:['Saved document','저장한 문서'],
- title:['Start with a file, not an empty form','빈 입력창 대신 파일로 시작하세요'],
- intro:['Bring an Excel sheet, PDF or clear document photo. We prepare an editable Invoice draft; review what was read before saving.','엑셀·PDF·선명한 서류 사진을 가져오세요. 읽은 정보로 Invoice 초안을 채우고, 확인 후 저장합니다.'],
+ title:['Start with a file or a short order note','파일이나 짧은 주문 메모로 시작하세요'],
+ intro:['Choose a file or enter a short order note. Review the Invoice draft, then continue to packing.','파일을 가져오거나 주문 내용을 적으세요. 송장 초안을 확인하고 포장명세서로 이어갑니다.'],
  choose:['Choose a file to read','읽어올 파일 선택'],limits:['XLSX / CSV / PDF / JPG / PNG / WebP · up to 8 MB, 5 PDF pages and 100 items. Printed English and Korean. Handwriting and complex layouts may need correction.','XLSX / CSV / PDF / JPG / PNG / WebP · 최대 8MB, PDF 5쪽, 품목 100개. 인쇄된 영문·한글을 읽습니다. 손글씨·복잡한 서식은 수정이 필요할 수 있습니다.'],
  privacy:['Original files are not kept. PDFs and photos are read on your device; extracted text and spreadsheets are analyzed by this site. Nothing is saved as a document or emailed until you choose to save.','원본 파일은 보관하지 않습니다. 사진·PDF는 기기에서 읽고, 추출한 글자와 엑셀 자료는 이 사이트에서 분석합니다. 저장 전에는 문서를 만들거나 이메일을 보내지 않습니다.'],
- sheet:['Worksheet (review every relevant sheet)','시트 선택 (필요한 시트를 각각 확인하세요)'],source:['Your source','가져온 원본'],readText:['Text read from the file','파일에서 읽은 내용'],review:['Review your draft','자동으로 채운 초안 확인'],reviewHint:['Compare buyer, quantities and prices with the original. Highlighted fields need checking; an unmarked field can still be wrong. Existing company details are suggested only when the source has no seller.','거래처·수량·단가를 원본과 비교하세요. 노란 칸은 수정이 필요하며, 표시 없는 값도 확인해야 합니다. 수출자가 없으면 저장된 내 회사 정보를 제안합니다.'],items:['Items','품목'],add:['Add a missing item','누락된 품목 추가'],confirm:['I checked all items, quantities, prices and parties against the original.','원본과 모든 품목·수량·단가·거래처를 확인했습니다.'],save:['Save Invoice and continue','Invoice 저장하고 계속'],saveHint:['Saves one document against your plan allowance. Continue to Packing List after saving; cartons and weights require review. No charge or email is triggered.','저장 시 플랜의 문서 1개를 사용합니다. 저장 후 Packing List로 이어가며 박스·중량은 확인해야 합니다. 결제·이메일 발송은 하지 않습니다.'],
+ sheet:['Worksheet (review every relevant sheet)','시트 선택 (필요한 시트를 각각 확인하세요)'],source:['Your source','가져온 원본'],readText:['Source text','원본 내용'],review:['Review your draft','자동으로 채운 초안 확인'],reviewHint:['Compare buyer, quantities and prices with the original. Highlighted fields need checking; an unmarked field can still be wrong. Existing company details are suggested only when the source has no seller.','거래처·수량·단가를 원본과 비교하세요. 노란 칸은 수정이 필요하며, 표시 없는 값도 확인해야 합니다. 수출자가 없으면 저장된 내 회사 정보를 제안합니다.'],items:['Items','품목'],add:['Add a missing item','누락된 품목 추가'],confirm:['I checked all items, quantities, prices and parties against the original.','원본과 모든 품목·수량·단가·거래처를 확인했습니다.'],save:['Save Invoice and continue','Invoice 저장하고 계속'],saveHint:['Saves one document against your plan allowance. Continue to Packing List after saving; cartons and weights require review. No charge or email is triggered.','저장 시 플랜의 문서 1개를 사용합니다. 저장 후 Packing List로 이어가며 박스·중량은 확인해야 합니다. 결제·이메일 발송은 하지 않습니다.'],
  seller:['Seller','수출자'],seller_address:['Seller address','수출자 주소'],buyer:['Buyer','수입자'],buyer_address:['Buyer address','수입자 주소'],buyer_email:['Buyer email','수입자 이메일'],invoice_date:['Invoice date','송장 날짜'],currency:['Currency (e.g. USD)','통화 (예: USD)'],trade_term:['Trade term','무역조건'],payment_term:['Payment terms','결제조건'],source_reference:['Original document number','원본 문서번호'],name:['Description','품명'],quantity:['Quantity','수량'],unit_price:['Unit price','단가'],unit:['Unit','단위'],hs_code:['HS code','HS 코드'],origin:['Origin','원산지'],remove:['Remove','삭제'],
  reading:['Reading your file…','파일을 읽고 있습니다…'],ocr:['Reading printed text… The first photo can take longer.','사진의 글자를 읽고 있습니다… 첫 사진은 시간이 조금 걸릴 수 있습니다.'],ready:['Draft ready. Check it against the original before saving.','초안을 채웠습니다. 저장 전 원본과 확인하세요.'],saving:['Saving Invoice…','Invoice 저장 중…'],saved:['Invoice saved.','Invoice를 저장했습니다.'],edit:['Open Invoice','Invoice 열기'],packing:['Continue to Packing List','Packing List로 이어가기'],pdf:['Open Invoice PDF','Invoice PDF 열기'],retrySave:['The save response was interrupted. Check your Invoice list before saving again to avoid duplicates.','저장 결과를 확인하지 못했습니다. 중복 저장을 피하려면 Invoice 목록을 먼저 확인하세요.'],checkInvoices:['Check Invoice list','Invoice 목록 확인'],saveFailed:['Could not save. Your draft remains here.','저장하지 못했습니다. 초안은 이 화면에 남아 있습니다.'],session:['Please sign in again, then reopen this page.','다시 로그인한 뒤 이 화면을 열어 주세요.'],limit:['Your document allowance is exhausted or billing status is unavailable. Your draft is still here.','문서 한도를 사용했거나 구독 상태를 확인할 수 없습니다. 초안은 그대로 있습니다.'],
- too_large:['Use a file up to 8 MB, 5 PDF pages and 100 items.','8MB·PDF 5쪽·품목 100개 이하의 파일을 선택하세요.'],too_many_items:['This file has more than 100 items. Split it into smaller files.','품목 100개를 초과합니다. 파일을 나누어 주세요.'],unsupported:['Use XLSX, CSV, PDF, JPG, PNG or WebP. Convert old XLS or HEIC first.','XLSX·CSV·PDF·JPG·PNG·WebP를 선택하세요. XLS·HEIC는 먼저 변환해 주세요.'],invalid_file:['We could not read this file. Try a clear, upright photo or an unprotected PDF/XLSX.','파일을 읽지 못했습니다. 글자가 선명하고 바르게 선 사진이나 암호 없는 PDF·XLSX로 다시 시도하세요.'],encoding:['Save the CSV as UTF-8 and retry.','CSV를 UTF-8로 저장한 뒤 다시 시도하세요.'],encrypted:['Remove the file password before importing.','암호를 해제한 파일로 다시 시도하세요.'],no_items:['Item columns were not recognized. Compare the source and add the missing items; nothing has been saved.','품목 열을 인식하지 못했습니다. 원본을 보며 누락 품목을 보완해 주세요. 아직 저장되지 않았습니다.'],formulas_skipped:['Formula cells were left empty. Use an Excel copy with values pasted, or check the empty values here.','수식 셀은 비웠습니다. 엑셀에서 값으로 붙여넣은 사본을 사용하거나 빈 값을 확인하세요.'],unrecognized_rows:['Some rows could not be assigned. Check the complete source for missing items.','일부 행을 품목에 연결하지 못했습니다. 원본 전체에서 누락 품목을 확인하세요.'],duplicate_headers:['Repeated column names were ambiguous. Check the item table.','같은 이름의 열이 여러 개여서 구분하지 못했습니다. 품목을 확인하세요.'],conflict:['The file contains conflicting fields. Check the source; values were not silently combined.','파일에 서로 다른 값이 있습니다. 원본을 확인하세요. 임의로 합치지 않았습니다.'],amount:['Quantity × unit price differs from the source amount. Check this item.','수량 × 단가가 원본 금액과 다릅니다. 이 품목을 확인하세요.'],partial:['Check every PDF page for omitted items, especially text inside images.','PDF의 모든 쪽에서 누락된 품목이 없는지 확인하세요. 이미지 안의 글자는 빠질 수 있습니다.'],total:['Calculated total','계산된 합계'],replace:['Replace this unsaved draft with another file?','저장하지 않은 초안을 새 파일로 바꿀까요?'],ocrUnavailable:['Photo reading failed. Your file was not stored. Retry with a clearer photo or a PDF with selectable text.','사진 인식에 실패했습니다. 원본은 저장하지 않았습니다. 더 선명한 사진이나 글자를 선택할 수 있는 PDF로 시도하세요.']};
+ too_large:['Use a file up to 8 MB, 5 PDF pages and 100 items.','8MB·PDF 5쪽·품목 100개 이하의 파일을 선택하세요.'],too_many_items:['This file has more than 100 items. Split it into smaller files.','품목 100개를 초과합니다. 파일을 나누어 주세요.'],unsupported:['Use XLSX, CSV, PDF, JPG, PNG or WebP. Convert old XLS or HEIC first.','XLSX·CSV·PDF·JPG·PNG·WebP를 선택하세요. XLS·HEIC는 먼저 변환해 주세요.'],invalid_file:['We could not read this file. Try a clear, upright photo or an unprotected PDF/XLSX.','파일을 읽지 못했습니다. 글자가 선명하고 바르게 선 사진이나 암호 없는 PDF·XLSX로 다시 시도하세요.'],encoding:['Save the CSV as UTF-8 and retry.','CSV를 UTF-8로 저장한 뒤 다시 시도하세요.'],encrypted:['Remove the file password before importing.','암호를 해제한 파일로 다시 시도하세요.'],no_items:['Item columns were not recognized. Compare the source and add the missing items; nothing has been saved.','품목 열을 인식하지 못했습니다. 원본을 보며 누락 품목을 보완해 주세요. 아직 저장되지 않았습니다.'],formulas_skipped:['Formula cells were left empty. Use an Excel copy with values pasted, or check the empty values here.','수식 셀은 비웠습니다. 엑셀에서 값으로 붙여넣은 사본을 사용하거나 빈 값을 확인하세요.'],unrecognized_rows:['Some rows could not be assigned. Check the complete source for missing items.','일부 행을 품목에 연결하지 못했습니다. 원본 전체에서 누락 품목을 확인하세요.'],duplicate_headers:['Repeated column names were ambiguous. Check the item table.','같은 이름의 열이 여러 개여서 구분하지 못했습니다. 품목을 확인하세요.'],conflict:['The file contains conflicting fields. Check the source; values were not silently combined.','파일에 서로 다른 값이 있습니다. 원본을 확인하세요. 임의로 합치지 않았습니다.'],amount:['Quantity × unit price differs from the source amount. Check this item.','수량 × 단가가 원본 금액과 다릅니다. 이 품목을 확인하세요.'],partial:['Check every PDF page for omitted items, especially text inside images.','PDF의 모든 쪽에서 누락된 품목이 없는지 확인하세요. 이미지 안의 글자는 빠질 수 있습니다.'],total:['Calculated total','계산된 합계'],replace:['Replace this unsaved draft?','저장하지 않은 초안을 바꿀까요?'],ocrUnavailable:['Photo reading failed. Your file was not stored. Retry with a clearer photo or a PDF with selectable text.','사진 인식에 실패했습니다. 원본은 저장하지 않았습니다. 더 선명한 사진이나 글자를 선택할 수 있는 PDF로 시도하세요.']};
 Object.assign(words,{
+ sourceFile:['File or photo','파일·사진'],sourceNote:['Order note or voice','주문 메모·음성'],
+ noteTitle:['Have an order note? Start here.','주문 메모가 있다면 바로 시작하세요'],
+ noteHint:['Type or dictate one item per line, then review the draft. No document is saved at this step.','한 줄에 한 품목씩 적거나 말하고 초안을 확인하세요. 이 단계에서는 문서를 저장하지 않습니다.'],
+ noteLabel:['Buyer and order details','거래처와 주문 내용'],
+ noteExample:['Example: Buyer: ABC Ltd; Cotton shirts 100 PCS at USD 8.50; Steel bolts 50 PCS at USD 2','예: 거래처: ABC사; 머그컵 100개 개당 USD 3; 접시 50개 개당 USD 2'],
+ noteBuild:['Create a draft from this note','메모로 초안 채우기'],noteSample:['Fill a sample note','예시 넣기'],
+ noteReading:['Preparing your order draft…','주문 초안을 채우고 있습니다…'],
+ noteSource:['Order note','주문 메모'],
+ note_review:['Check the original note and every item. Only the shown formats are recognized; unsupported phrases are left for review.','원본 메모와 모든 품목을 확인하세요. 예시 형식으로 인식하며, 해석하지 못한 표현은 확인이 필요합니다.'],
+ note_unmatched:['Some lines could not be read. Add missing details from the original note before saving.','읽지 못한 줄이 있습니다. 저장 전에 아래 원본에서 빠진 내용을 보완하세요.'],
+ note_currency:['Currency is ambiguous or mixed. Confirm one currency and re-enter the unit prices; no conversion was performed.','통화가 불명확하거나 섞여 있습니다. 통화와 단가를 다시 입력하세요. 임의로 환산하지 않았습니다.'],
+ empty_note:['Enter your order note first.','주문 내용을 먼저 입력하세요.'],note_too_large:['Keep your note within 8,000 characters.','메모는 8,000자 이내로 입력하세요.'],
+ voiceStart:['Speak your order','말로 입력'],voiceStop:['Finish speaking','음성 입력 마치기'],voiceLanguage:['Spoken language','말할 언어'],
+ voicePrivacy:['Voice input depends on your browser. After you allow the microphone, your browser may send audio to its speech service. You can always type or use keyboard dictation.','음성 입력은 브라우저 지원에 따라 달라집니다. 마이크를 허용하면 브라우저의 음성 서비스로 소리가 전달될 수 있습니다. 직접 입력하거나 키보드 받아쓰기도 사용할 수 있습니다.'],
+ voiceListening:['Listening… Say one item at a time. Review the text before creating a draft.','듣고 있습니다… 품목을 하나씩 말하세요. 초안을 만들기 전에 인식된 글자를 확인하세요.'],
+ voiceUnsupported:['Use typing or your keyboard’s dictation on this browser.','이 브라우저에서는 직접 입력하거나 키보드의 받아쓰기를 사용하세요.'],
+ voiceDenied:['Microphone access was not allowed. You can keep typing.','마이크 사용이 허용되지 않았습니다. 직접 입력할 수 있습니다.'],
+ voiceError:['Voice input stopped. Keep the text already recognized and continue typing.','음성 입력이 중단되었습니다. 인식된 내용은 유지되며 이어서 입력할 수 있습니다.'],
+ voiceDone:['Check the recognized text, numbers and line breaks before creating a draft.','초안을 만들기 전에 인식된 글자·숫자와 품목별 줄바꿈을 확인하세요.'],
+ voiceEmpty:['No speech was recognized. Try again or type your note.','말소리를 인식하지 못했습니다. 다시 시도하거나 직접 입력하세요.'],
+
  reviewIssues:['Check these fields','이 항목을 확인해 주세요'],
  reviewIssuesHint:['Choose an item to go straight to the field.','항목을 누르면 해당 입력칸으로 바로 이동합니다.'],
  requiredValue:['Enter a value.','값을 입력해 주세요.'],
@@ -30,10 +51,10 @@ Object.assign(words,{
 const t=key=>(words[key]||words.invalid_file)[ko?1:0];
 document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));
 document.title=t('title')+' · Trade Paper AI';$('original').alt=t('source');
-let file=null, busy=false, previewURL=null, draftReady=false, saved=false, saveUncertain=false, worker=null, saving=false, selectedSheet=0;
+let file=null, busy=false, previewURL=null, draftReady=false, saved=false, saveUncertain=false, worker=null, saving=false, selectedSheet=0, voiceActive=false, noteOpening=false;
 function setStep(step){document.querySelectorAll('[data-step]').forEach(el=>{const n=Number(el.dataset.step);el.classList.toggle('complete',n<step);if(n===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');});}
 function setStatus(key,error=false){$('status').textContent=t(key);$('status').dataset.kind=error?'error':'info';}
-function setBusy(value){busy=value;$('file').disabled=value;$('sheet').disabled=value;$('sample').disabled=value;$('drop-zone').setAttribute('aria-busy',String(value));}
+function setBusy(value){busy=value;$('file').disabled=value;$('sheet').disabled=value;$('sample').disabled=value;$('drop-zone').setAttribute('aria-busy',String(value));for(const id of ['note-build','note-sample','order-note','voice-language','source-file','source-note'])$(id).disabled=value;$('note-mic').disabled=value&&!voiceActive;}
 
 const fields=['seller','seller_address','buyer','buyer_address','buyer_email','invoice_date','currency','trade_term','payment_term','source_reference'];
 const itemFields=['name','quantity','unit','unit_price','hs_code','origin'];
@@ -90,10 +111,10 @@ function updateReviewIssues(){
 }
 $('review-next').addEventListener('click',()=>{const issue=reviewIssues()[0];if(issue)focusIssue(issue.target);});
 function renderDraft(result,extra=[]){
- const values=result.fields||{};if(!values.seller){values.seller=config.company.name||'';values.seller_address=values.seller_address||config.company.address||'';}
+ const values=result.fields||{};if(!values.seller&&!(result.warnings||[]).includes('conflicting_seller')){values.seller=config.company.name||'';values.seller_address=values.seller_address||config.company.address||'';}
  $('fields').replaceChildren();fields.forEach(key=>$('fields').append(makeInput(key,values[key])));$('items').replaceChildren();(result.items.length?result.items:[{}]).forEach(addItem);
  $('source-text').textContent=result.source_text||'';$('warnings').textContent=[...new Set([...(result.warnings||[]),...extra])].map(key=>t(key.startsWith('conflicting_')?'conflict':key)).join('\n');
- $('workspace').hidden=false;$('review-hint').hidden=false;$('review-heading').textContent=t('review');$('review-form').hidden=false;$('saved').hidden=true;$('confirmed').checked=false;$('save').disabled=false;draftReady=true;saved=false;saveUncertain=false;updateTotal();setStatus('ready');setStep(2);$('file-name').textContent=file.name;$('file-name').hidden=false;$('review-heading').focus({preventScroll:true});
+ $('workspace').hidden=false;$('review-hint').hidden=false;$('review-heading').textContent=t('review');$('review-form').hidden=false;$('saved').hidden=true;$('confirmed').checked=false;$('save').disabled=false;draftReady=true;saved=false;saveUncertain=false;updateTotal();setStatus('ready');setStep(2);$('file-name').textContent=file?file.name:t('noteSource');$('file-name').hidden=false;$('review-heading').focus({preventScroll:true});
 }
 async function parseResponse(response){if(response.redirected||response.status===401||response.status===403)throw new Error('session');if(!response.headers.get('content-type')?.includes('application/json'))throw new Error('invalid_file');const data=await response.json();if(!response.ok)throw new Error(data.detail||'invalid_file');return data;}
 const positionedText=window.TPImportLayout.positionedText;
@@ -125,10 +146,45 @@ async function readFile(sheet=0){
 }
 function confirmReplacement(){return new Promise(resolve=>{const dialog=$('replace-dialog');dialog.returnValue='cancel';dialog.addEventListener('close',()=>resolve(dialog.returnValue==='replace'),{once:true});dialog.showModal();});}
 async function chooseFile(next){
- if(!next||busy||saving||saveUncertain)return false;
+ if(!next||busy||saving||saveUncertain||noteOpening)return false;
  if(draftReady&&!saved&&!await confirmReplacement())return false;
  const previous=file;file=next;const success=await readFile();if(!success)file=previous;return success;
 }
+for(const mode of ['file','note'])$('source-'+mode).addEventListener('click',()=>{
+ if(busy||saving||noteOpening)return;
+ $('drop-zone').hidden=mode!=='file';$('note-panel').hidden=mode!=='note';
+ for(const value of ['file','note'])$('source-'+value).setAttribute('aria-pressed',String(value===mode));
+});
+$('order-note').placeholder=ko?'거래처: ABC사\n머그컵 100개 개당 USD 3\n접시 50개 개당 USD 2':'Buyer: ABC Ltd\nCotton shirts 100 PCS at USD 8.50\nSteel bolts 50 PCS at USD 2';
+$('note-sample').addEventListener('click',()=>{if(!$('order-note').value.trim())$('order-note').value=$('order-note').placeholder;$('order-note').focus();});
+$('note-build').addEventListener('click',async()=>{
+ if(busy||saving||saveUncertain||noteOpening)return;
+ const text=$('order-note').value.trim();if(!text){setStatus('empty_note',true);$('order-note').focus();return;}
+ noteOpening=true;
+ try{
+  if(draftReady&&!saved&&!await confirmReplacement())return;
+  if(busy||saving||saveUncertain)return;
+  setBusy(true);setStatus('noteReading');
+  const result=await parseResponse(await fetch('/import-document/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'order_note',text})}));
+  if(draftReady&&!result.items.length)throw new Error('no_items');
+  file=null;renderDraft(result);
+  if(previewURL){URL.revokeObjectURL(previewURL);previewURL=null;}
+  $('original').removeAttribute('src');$('original').hidden=true;$('sheet-box').hidden=true;
+  if(result.unmatched_lines?.length){const p=document.createElement('p');p.textContent=result.unmatched_lines.join('\n');$('warnings').append(p);}
+  $('review-heading').scrollIntoView({block:'start',behavior:'auto'});
+ }catch(e){setStatus(e.message,true);}finally{noteOpening=false;setBusy(false);}
+});
+$('voice-language').value=ko?'ko-KR':'en-US';
+const voice=(window.TPVoiceInput?.create||(()=>({supported:false})))({
+ getLanguage:()=>$('voice-language').value,
+ getText:()=>$('order-note').value,
+ onText:text=>{$('order-note').value=text;},
+ onState:active=>{voiceActive=active;setBusy(active);$('note-mic').textContent=t(active?'voiceStop':'voiceStart');$('note-mic').setAttribute('aria-pressed',String(active));},
+ onMessage:key=>{$('voice-status').textContent=t(key);}
+});
+$('note-mic').hidden=!voice.supported;$('voice-language-label').hidden=!voice.supported;
+if(!voice.supported)$('voice-status').textContent=t('voiceUnsupported');
+$('note-mic').addEventListener('click',()=>{if(voiceActive)voice.stop();else if(!busy&&!saving&&!saveUncertain&&!noteOpening)voice.start();});
 $('file').addEventListener('change',async()=>{await chooseFile($('file').files[0]);$('file').value='';});
 $('sheet').addEventListener('change',async()=>{if(saveUncertain||saving||busy){$('sheet').value=String(selectedSheet);return;}if(draftReady&&!saved&&!await confirmReplacement()){$('sheet').value=String(selectedSheet);return;}readFile(Number($('sheet').value));});
 $('sample').addEventListener('click',async()=>{
@@ -149,5 +205,5 @@ $('review-form').addEventListener('submit',async event=>{
  catch(e){saveUncertain=true;$('save').disabled=true;setStatus('retrySave',true);const a=document.createElement('a');a.href='/invoice-list';a.textContent=t('checkInvoices');$('status').append(document.createElement('br'),a);}
  finally{saving=false;setBusy(false);if(!saveUncertain)controls.forEach(el=>el.disabled=false);}
 });
-window.addEventListener('beforeunload',event=>{if(draftReady&&!saved){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if((draftReady&&!saved)||(!saved&&$('order-note').value.trim())){event.preventDefault();event.returnValue='';}});
 })();

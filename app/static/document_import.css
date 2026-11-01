@@ -30,3 +30,10 @@ input:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible,s
 .review-issues .review-issue-link{display:block;width:100%;text-align:left;overflow-wrap:anywhere;background:transparent;color:#263f59;text-decoration:underline;text-underline-offset:3px;font-weight:500;padding:8px 0;border-radius:4px}
 .review-issues .review-issue-link:hover{background:#f5ecd9}
 #review-next{margin-top:8px;padding-left:0;justify-content:flex-start;text-align:left}
+.order-note{margin-top:20px}.order-note textarea{resize:vertical;min-height:140px;font-size:16px;line-height:1.7}
+.note-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
+.note-actions label{display:flex;align-items:center;gap:8px;margin:0}.note-actions select{width:auto;font-size:14px}
+#note-mic[aria-pressed=true]{background:#743b32;color:white}#voice-status:empty{display:none}
+#note-example{overflow-wrap:anywhere}#warnings p{color:inherit;white-space:pre-wrap}
+
+.source-modes{display:flex;gap:8px;margin:0 0 18px}.source-modes button{background:#e9edef;color:#36474a;flex:1}.source-modes [aria-pressed=true]{background:#252725;color:#f6f4ee}.order-note{margin-top:0}

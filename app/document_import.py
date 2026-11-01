@@ -38,7 +38,7 @@ META = {
     'buyer_address': ('buyer address', 'consignee address', '수입자 주소', '거래처 주소'),
     'buyer_email': ('buyer email', '수입자 이메일'),
     'currency': ('currency', '통화'),
-    'invoice_date': ('invoice date', 'date', '발행일', '작성일'),
+    'invoice_date': ('invoice date', 'date', '발행일', '작성일', '송장 날짜'),
     'trade_term': ('incoterms', 'incoterm', 'trade term', '무역조건', '인도조건'),
     'payment_term': ('payment terms', 'payment term', '결제조건'),
     'source_reference': ('invoice no', 'invoice number', 'invoice #', '송장번호'),
@@ -290,7 +290,11 @@ async def extract(request: Request):
             text = body.get('text')
             if not isinstance(text, str) or len(text) > MAX_TEXT:
                 raise ValueError('too_large')
-            result = parse_rows(text_rows(text))
+            if body.get('mode') == 'order_note':
+                from app.order_notes import parse_order_note
+                result = parse_order_note(text)
+            else:
+                result = parse_rows(text_rows(text))
         else:
             async with request.form(max_files=1, max_fields=1) as form:
                 upload = form.get('file')
@@ -305,5 +309,5 @@ async def extract(request: Request):
                 result['warnings'] = sorted(set(result['warnings'] + warnings))
         return JSONResponse(result, headers={'Cache-Control': 'no-store'})
     except (ValueError, TypeError, csv.Error, AttributeError) as exc:
-        code = str(exc) if str(exc) in {'too_large', 'too_many_items', 'unsupported', 'encoding', 'encrypted', 'invalid_sheet'} else 'invalid_file'
+        code = str(exc) if str(exc) in {'too_large', 'too_many_items', 'unsupported', 'encoding', 'encrypted', 'invalid_sheet', 'empty_note', 'note_too_large'} else 'invalid_file'
         raise HTTPException(422, code) from exc

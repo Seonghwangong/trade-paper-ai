@@ -1768,7 +1768,7 @@ td{{padding:14px;border-bottom:1px solid #E5E7EB;font-size:14px;}}
 <section class="section"><h2 class="section-title">Notification Center</h2><div class="notification-list">{notification_rows}</div></section>
 
 <section class="section"><h2 class="section-title">Quick Actions</h2><div class="action-row">
-<a class="action-link" href="/import-document"><span class="action-icon" aria-hidden="true">↑</span><span class="action-copy"><b>Start from a file</b><small>Read Excel, PDF or a photo into an invoice draft.</small></span></a>
+<a class="action-link" href="/import-document"><span class="action-icon" aria-hidden="true">↑</span><span class="action-copy"><b>Start from a file or order note</b><small>Turn a file or a short order note into an editable invoice draft.</small></span></a>
 <a class="action-link" href="/export-wizard"><span class="action-icon" aria-hidden="true">⚡</span><span class="action-copy"><b>Export Wizard</b><small>Create the core document chain.</small></span></a>
 <a class="action-link" href="/invoice"><span class="action-icon" aria-hidden="true">＋</span><span class="action-copy"><b>New Invoice</b><small>Create an export invoice.</small></span></a>
 <a class="action-link" href="/packing-page"><span class="action-icon" aria-hidden="true">＋</span><span class="action-copy"><b>New Packing List</b><small>Generate packing documents.</small></span></a>
