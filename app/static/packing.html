@@ -228,6 +228,7 @@ function fillCompanyFields(prefix, company){
     setValueIfExists(`#${prefix}_address`, company.address);
     setValueIfExists(`#${prefix}_email`, company.email);
     setValueIfExists(`#${prefix}_phone`, company.phone);
+    document.dispatchEvent(new Event("tp:prefill-complete"));
 }
 
 function selectSellerCompany(){
@@ -350,6 +351,7 @@ async function loadInvoiceData(){
     }else{
         addItem();
     }
+    document.dispatchEvent(new Event("tp:prefill-complete"));
 }
 
 function getPackingData(){

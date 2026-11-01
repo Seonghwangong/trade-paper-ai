@@ -398,6 +398,18 @@ def _ux_script(path: str) -> str:
     });
   }
   const workLabel=__WORK_LABEL__;
+  // Account navigation contains a POST logout form; it is never an editor.
+  const editingForm=Array.from(document.querySelectorAll('form[method="post"]')).find(function(form){return !form.closest('.tp-auth-user')&&form.querySelector('input:not([type="hidden"]),select,textarea');});
+  const editingRoot=editingForm||document.querySelector('main,.container')||document.body;
+  let workspaceTools=null;
+  function toolsHost(){
+    if(!workspaceTools){
+      workspaceTools=document.createElement('div');workspaceTools.className='tp-workspace-tools';
+      const firstSection=editingForm?editingForm.firstChild:Array.from(editingRoot.children).find(function(child){return child.matches('.card,section,form');});
+      editingRoot.insertBefore(workspaceTools,firstSection||null);
+    }
+    return workspaceTools;
+  }
   const lastWorkKey='trade-paper-ai-last-work';
   let formDirty=false;
   function markSaved(){formDirty=false;if(workLabel==='Commercial Invoice'&&window.tpClearInvoiceDraft)window.tpClearInvoiceDraft();try{sessionStorage.removeItem(lastWorkKey);}catch(error){}}
@@ -452,12 +464,12 @@ def _ux_script(path: str) -> str:
       if(label&&!label.querySelector('.tp-required-mark'))label.insertAdjacentHTML('beforeend',' <span class="tp-required-mark" aria-hidden="true">*</span>');
       else if(field.placeholder&&!field.placeholder.endsWith(' *'))field.placeholder+=' *';
   });
-  if(requiredInputs.length){
+  if(requiredInputs.length&&workLabel!=='Packing List'){
     const progress=document.createElement('div');progress.className='tp-form-progress';progress.setAttribute('role','status');
     progress.innerHTML='<span class="tp-form-progress-label"></span><span class="tp-form-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span></span>';
     const progressLabel=progress.querySelector('.tp-form-progress-label');const progressTrack=progress.querySelector('.tp-form-progress-track');const progressFill=progressTrack.firstElementChild;
     const updateProgress=function(){const completed=requiredInputs.filter(function(field){return String(field.value||'').trim();}).length;const percentage=Math.round(completed*100/requiredInputs.length);progressLabel.textContent=completed===requiredInputs.length?'Ready to save · '+completed+' / '+requiredInputs.length:'Required fields: '+completed+' / '+requiredInputs.length;progressFill.style.width=percentage+'%';progressTrack.setAttribute('aria-valuenow',String(percentage));progress.classList.toggle('complete',completed===requiredInputs.length);};
-    const firstForm=document.querySelector('form[method="post"]');(firstForm||document.body).insertBefore(progress,(firstForm||document.body).firstChild);requiredInputs.forEach(function(field){field.addEventListener('input',updateProgress);field.addEventListener('change',updateProgress);});document.addEventListener('tp:prefill-complete',updateProgress);updateProgress();
+    const progressHost=toolsHost();progressHost.insertBefore(progress,progressHost.firstChild);requiredInputs.forEach(function(field){field.addEventListener('input',updateProgress);field.addEventListener('change',updateProgress);});document.addEventListener('tp:prefill-complete',updateProgress);updateProgress();
   }
   function enhanceItemRow(row){
     if(row.querySelector(':scope > .tp-duplicate-item'))return;
@@ -477,7 +489,7 @@ def _ux_script(path: str) -> str:
   }
   try{
     const recent=JSON.parse(sessionStorage.getItem(recentKey)||'{}');const available=recentNames.some(function(name){return recent[name]&&fieldsByName(document,name).some(function(field){return !field.value;});});
-    if(available){const useRecent=document.createElement('button');useRecent.type='button';useRecent.className='tp-use-recent';useRecent.textContent='Use Recent Values';useRecent.addEventListener('click',function(){recentNames.forEach(function(name){fieldsByName(document,name).forEach(function(field){if(!field.value&&recent[name]){field.value=recent[name];field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));}});});});const form=document.querySelector('form[method="post"]');if(form)form.insertBefore(useRecent,form.firstChild);}
+    if(available){const useRecent=document.createElement('button');useRecent.type='button';useRecent.className='tp-use-recent';useRecent.textContent='Use Recent Values';useRecent.addEventListener('click',function(){recentNames.forEach(function(name){fieldsByName(document,name).forEach(function(field){if(!field.value&&recent[name]){field.value=recent[name];field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));}});});});const host=toolsHost();host.insertBefore(useRecent,host.firstChild);}
   }catch(error){}
   const selectableNames=recentNames.filter(function(name){return fieldsByName(document,name).length;});
   if(selectableNames.length){
@@ -497,7 +509,7 @@ def _ux_script(path: str) -> str:
       if(!pinned){pin.textContent='Enter a reusable value first';setTimeout(function(){pin.textContent='☆ Pin Current Values';},1400);return;}
       try{localStorage.setItem(favoriteKey,JSON.stringify(favorites));}catch(error){}renderFavorites();pin.textContent='★ Values Pinned';setTimeout(function(){pin.textContent='☆ Pin Current Values';},1200);
     });panel.appendChild(pin);renderFavorites();
-    const host=document.querySelector('form[method="post"]')||document.querySelector('.container,.card,main')||document.body;host.insertBefore(panel,host.firstChild);
+    const host=toolsHost();host.insertBefore(panel,host.firstChild);
     let recent={};try{recent=JSON.parse(sessionStorage.getItem(recentKey)||'{}')||{};}catch(error){}
     selectableNames.forEach(function(name,index){const values=[];(favorites[name]||[]).concat(recent[name]?[recent[name]]:[]).forEach(function(value){if(value&&!values.includes(value))values.push(value);});if(!values.length)return;fieldsByName(document,name).forEach(function(field,fieldIndex){if(field.tagName!=='INPUT'||field.type==='hidden'||field.hasAttribute('list'))return;const id='tp-suggestions-'+index+'-'+fieldIndex;const list=document.createElement('datalist');list.id=id;values.forEach(function(value){const option=document.createElement('option');option.value=value;list.appendChild(option);});document.body.appendChild(list);field.setAttribute('list',id);field.setAttribute('autocomplete','off');});});
   }
@@ -586,7 +598,7 @@ def _ux_script(path: str) -> str:
   enhanceProductMaster();document.querySelectorAll('#items_area,.items-container').forEach(function(container){new MutationObserver(enhanceProductMaster).observe(container,{childList:true,subtree:true});});
   librarySearch.addEventListener('input',renderItemLibrary);libraryOverlay.querySelector('.tp-item-library-close').addEventListener('click',closeItemLibrary);libraryOverlay.addEventListener('click',function(event){if(event.target===libraryOverlay)closeItemLibrary();});libraryClear.addEventListener('click',function(){if(!itemLibrary.length||!window.confirm('Delete all saved Items from the Item Library?'))return;itemLibrary=[];persistItemLibrary();renderItemLibrary();});document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!libraryOverlay.hidden)closeItemLibrary();});
   const invoiceDraftKey='trade-paper-ai-invoice-draft';let invoiceDraftTimer=null;let invoiceDraftIndicator=null;let invoiceDraftRestoreCard=null;
-  function invoiceDraftRoot(){return document.querySelector('form[method="post"]')||document.querySelector('.container,main')||document.body;}
+  function invoiceDraftRoot(){return editingRoot;}
   function invoiceDraftFields(){const excluded='.tp-favorites,.tp-templates,.tp-smart-validation,.tp-item-library-overlay,.tp-context-control,.tp-draft-card,.tp-draft-indicator';return Array.from(invoiceDraftRoot().querySelectorAll('input,select,textarea')).filter(function(field){const key=String(field.name||field.id||'').trim();return key&&field.type!=='hidden'&&field.type!=='submit'&&field.type!=='button'&&!field.readOnly&&!field.disabled&&!/^invoice_?no$/i.test(key)&&!field.closest(excluded);});}
   function captureInvoiceDraft(){const values={};invoiceDraftFields().forEach(function(field){const key=field.name||field.id;if(!values[key])values[key]=[];values[key].push(field.type==='checkbox'||field.type==='radio'?Boolean(field.checked):String(field.value||''));});return {updated:Date.now(),values:values};}
   function ensureDraftIndicator(){if(invoiceDraftIndicator)return invoiceDraftIndicator;invoiceDraftIndicator=document.createElement('div');invoiceDraftIndicator.className='tp-draft-indicator';const text=document.createElement('span');text.textContent='Draft saved locally.';const clear=document.createElement('button');clear.type='button';clear.textContent='Clear Draft';clear.addEventListener('click',function(){clearInvoiceDraft(true);});invoiceDraftIndicator.appendChild(text);invoiceDraftIndicator.appendChild(clear);invoiceDraftRoot().appendChild(invoiceDraftIndicator);return invoiceDraftIndicator;}
@@ -601,7 +613,7 @@ def _ux_script(path: str) -> str:
   }
   if(workLabel==='Commercial Invoice'){document.addEventListener('input',scheduleInvoiceDraft,true);document.addEventListener('change',scheduleInvoiceDraft,true);window.addEventListener('load',showInvoiceDraftRestore);}
   const templateKey='trade-paper-ai-smart-templates';
-  const templateFields=Array.from(document.querySelectorAll('input,select,textarea')).filter(function(field){return field.type!=='hidden'&&field.type!=='submit'&&field.type!=='button'&&!field.readOnly&&!field.disabled&&(field.name||field.id)&&!field.closest('.tp-favorites,.tp-templates');});
+  const templateFields=Array.from(editingRoot.querySelectorAll('input,select,textarea')).filter(function(field){return field.type!=='hidden'&&field.type!=='submit'&&field.type!=='button'&&!field.readOnly&&!field.disabled&&(field.name||field.id)&&!field.closest('.tp-favorites,.tp-templates');});
   if(workLabel&&templateFields.length){
     let templateStore={};try{templateStore=JSON.parse(localStorage.getItem(templateKey)||'{}')||{};}catch(error){}
     let templates=Array.isArray(templateStore[workLabel])?templateStore[workLabel].slice(0,10):[];
@@ -626,7 +638,14 @@ def _ux_script(path: str) -> str:
     });
     loadTemplate.addEventListener('click',function(){if(templateSelect.value==='')return;const index=Number(templateSelect.value);if(!Number.isInteger(index)||!templates[index])return;applyTemplateValues(templates[index].values);loadTemplate.textContent='✓ Template Applied';setTimeout(function(){loadTemplate.textContent='Use Template';},1200);});
     deleteTemplate.addEventListener('click',function(){if(templateSelect.value==='')return;const index=Number(templateSelect.value);if(!Number.isInteger(index)||!templates[index])return;if(!window.confirm('Delete template “'+templates[index].name+'”?'))return;templates.splice(index,1);persistTemplates();renderTemplates();});
-    renderTemplates();const favoritePanel=document.querySelector('.tp-favorites');const templateHost=document.querySelector('form[method="post"]')||document.querySelector('.container,.card,main')||document.body;if(favoritePanel&&favoritePanel.parentNode===templateHost)favoritePanel.insertAdjacentElement('afterend',templatePanel);else templateHost.insertBefore(templatePanel,templateHost.firstChild);
+    renderTemplates();const favoritePanel=document.querySelector('.tp-favorites');const templateHost=toolsHost();if(favoritePanel&&favoritePanel.parentNode===templateHost)favoritePanel.insertAdjacentElement('afterend',templatePanel);else templateHost.insertBefore(templatePanel,templateHost.firstChild);
+  }
+  if(workLabel==='Packing List'){
+    const reusable=document.createElement('details');reusable.className='tp-reusable-tools';
+    reusable.style.cssText='margin:14px 0 20px;padding:12px 16px;border:1px solid #dce3eb;border-radius:12px;background:#f8fafc';
+    const summary=document.createElement('summary');summary.textContent=document.documentElement.lang==='ko'?'저장한 값과 양식 사용':'Use saved values and templates';summary.style.cssText='cursor:pointer;font-weight:600;color:#334155';reusable.appendChild(summary);
+    const panels=Array.from(toolsHost().querySelectorAll('.tp-favorites,.tp-templates,.tp-use-recent'));
+    if(panels.length){panels.forEach(function(panel){reusable.appendChild(panel);});toolsHost().appendChild(reusable);}
   }
   const validationDefinitions=[
     {key:'buyer',label:'Buyer',selectors:['[name="buyer"]','[name="buyer_name"]','#buyer','#buyer_name']},
@@ -636,15 +655,22 @@ def _ux_script(path: str) -> str:
     {key:'items',label:'At least 1 Item',selectors:['[name="item_name"]','input.item','input[id^="item"]']}
   ];
   function smartValidationFields(definition){const fields=[];definition.selectors.forEach(function(selector){document.querySelectorAll(selector).forEach(function(field){if(field.matches('input,select,textarea')&&field.type!=='hidden'&&!field.disabled&&!fields.includes(field))fields.push(field);});});return fields;}
+  if(workLabel==='Packing List')validationDefinitions.unshift(
+    {key:'invoice',label:'Invoice No',selectors:['[name="invoice_no"]','#invoice_no']},
+    {key:'seller',label:'Seller',selectors:['[name="seller"]','#seller']}
+  );
   const activeValidationDefinitions=validationDefinitions.filter(function(definition){return smartValidationFields(definition).length;});
   if(workLabel&&activeValidationDefinitions.length){
     const validationPanel=document.createElement('section');validationPanel.className='tp-smart-validation';validationPanel.setAttribute('aria-label','Smart Validation');
-    const validationHeading=document.createElement('div');validationHeading.className='tp-smart-validation-heading';validationHeading.innerHTML='<div><strong>Smart Validation</strong><span>Check key information before saving.</span></div><small aria-live="polite"></small>';validationPanel.appendChild(validationHeading);
+    const validationHeading=document.createElement('div');validationHeading.className='tp-smart-validation-heading';validationHeading.innerHTML='<div><strong>Smart Validation</strong><span>Check key information before saving.</span></div><small aria-live="polite"></small>';if(workLabel==='Packing List'){
+      validationHeading.querySelector('strong').textContent=document.documentElement.lang==='ko'?'기본 정보 확인':'Basic details';
+      validationHeading.querySelector('span').textContent=document.documentElement.lang==='ko'?'저장 전 품목별 수량·박스·중량도 확인하세요.':'Also check each item’s quantity, cartons and weights before saving.';
+    }validationPanel.appendChild(validationHeading);
     const validationStatuses=document.createElement('div');validationStatuses.className='tp-validation-statuses';validationPanel.appendChild(validationStatuses);
     const statusButtons=new Map();
     activeValidationDefinitions.forEach(function(definition){const status=document.createElement('button');status.type='button';status.className='tp-validation-status';status.dataset.key=definition.key;status.addEventListener('click',function(){if(status.classList.contains('complete'))return;const field=smartValidationFields(definition)[0];if(!field)return;field.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(function(){field.focus({preventScroll:true});},250);});validationStatuses.appendChild(status);statusButtons.set(definition.key,status);});
     function updateSmartValidation(){let completed=0;activeValidationDefinitions.forEach(function(definition){const fields=smartValidationFields(definition);const complete=fields.some(function(field){return String(field.value||'').trim();});const status=statusButtons.get(definition.key);status.classList.toggle('complete',complete);status.classList.toggle('missing',!complete);status.innerHTML='<span aria-hidden="true">'+(complete?'✓':'⚠')+'</span><b>'+definition.label+'</b><small>'+(complete?'Complete':'Missing')+'</small>';status.setAttribute('aria-label',definition.label+': '+(complete?'Complete':'Missing. Activate to jump to the field.'));if(complete)completed++;});validationHeading.querySelector('small').textContent=completed+' / '+activeValidationDefinitions.length+' complete';validationPanel.classList.toggle('complete',completed===activeValidationDefinitions.length);}
-    const validationHost=document.querySelector('form[method="post"]')||document.querySelector('.container,.card,main')||document.body;validationHost.insertBefore(validationPanel,validationHost.firstChild);
+    const validationHost=toolsHost();validationHost.insertBefore(validationPanel,validationHost.firstChild);
     document.addEventListener('input',updateSmartValidation,true);document.addEventListener('change',updateSmartValidation,true);
     document.querySelectorAll('#items_area,.items-container').forEach(function(container){new MutationObserver(updateSmartValidation).observe(container,{childList:true,subtree:true});});
     document.addEventListener('tp:prefill-complete',updateSmartValidation);
@@ -663,9 +689,9 @@ def _ux_script(path: str) -> str:
     function updateSmartProgress(){
       const states=activeProgressDefinitions.map(function(definition){return {label:definition.label,complete:smartValidationFields(definition).some(function(field){return String(field.value||'').trim();})};});const completed=states.filter(function(state){return state.complete;});const remaining=states.filter(function(state){return !state.complete;});const percentage=Math.round(completed.length*100/states.length);const color=percentage<=30?'gray':percentage<=70?'blue':percentage<100?'green':'success';progressCard.classList.remove('gray','blue','green','success');progressCard.classList.add(color);progressPercent.textContent=percentage+'%';progressMessage.textContent=percentage===100?'Ready to Save':remaining.length+' remaining';progressFill.style.width=percentage+'%';progressTrack.setAttribute('aria-valuenow',String(percentage));completedList.replaceChildren();remainingList.replaceChildren();if(completed.length)completed.forEach(function(state){completedList.appendChild(progressListItem(state.label,true));});else completedList.appendChild(progressListItem('None yet',false));if(remaining.length)remaining.forEach(function(state){remainingList.appendChild(progressListItem(state.label,false));});else remainingList.appendChild(progressListItem('Nothing remaining',true));
     }
-    const progressHost=document.querySelector('form[method="post"]')||document.querySelector('.container,.card,main')||document.body;progressHost.insertBefore(progressCard,progressHost.firstChild);document.addEventListener('input',updateSmartProgress,true);document.addEventListener('change',updateSmartProgress,true);document.querySelectorAll('#items_area,.items-container').forEach(function(container){new MutationObserver(updateSmartProgress).observe(container,{childList:true,subtree:true});});document.addEventListener('tp:prefill-complete',updateSmartProgress);updateSmartProgress();
+    const progressHost=toolsHost();progressHost.insertBefore(progressCard,progressHost.firstChild);document.addEventListener('input',updateSmartProgress,true);document.addEventListener('change',updateSmartProgress,true);document.querySelectorAll('#items_area,.items-container').forEach(function(container){new MutationObserver(updateSmartProgress).observe(container,{childList:true,subtree:true});});document.addEventListener('tp:prefill-complete',updateSmartProgress);updateSmartProgress();
   }
-  const firstEditable=document.querySelector('input:not([type="hidden"]):not([readonly]):not([disabled]),select:not([disabled]),textarea:not([readonly]):not([disabled])');
+  const firstEditable=Array.from(editingRoot.querySelectorAll('input:not([type="hidden"]):not([readonly]):not([disabled]),select:not([disabled]),textarea:not([readonly]):not([disabled])')).find(function(field){return !field.closest('.tp-workspace-tools');});
   if(firstEditable)setTimeout(function(){firstEditable.focus({preventScroll:true});},0);
   document.querySelectorAll('a,button').forEach(function(control){
     const label=(control.dataset.tpOriginalLabel||control.textContent||'').trim();
@@ -707,7 +733,7 @@ def _ux_script(path: str) -> str:
   },true);
   window.addEventListener('beforeunload',function(event){if(!formDirty)return;event.preventDefault();event.returnValue='';});
   document.addEventListener('click',function(event){
-    const button=event.target.closest('button');if(!button||button.form||button.closest('.packing-calculator'))return;
+    const button=event.target.closest('button');if(!button||button.form||button.closest('.packing-calculator,.tp-workspace-tools'))return;
     if(!/^(save|update|create)/i.test((button.dataset.tpOriginalLabel||button.textContent||'').trim()))return;
     rememberFormValues(document);
     showLoading('Saving...');
