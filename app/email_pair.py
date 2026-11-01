@@ -97,6 +97,7 @@ iframe{width:100%;height:470px;border:1px solid #dbe2e9;border-radius:8px;backgr
 a{color:#244d71}button,.action{display:inline-block;background:#183b58;color:white;padding:12px 20px;border:0;border-radius:9px;text-decoration:none;font:inherit;cursor:pointer}
 label{display:block;margin:14px 0 5px}input:not([type=checkbox]),textarea{width:100%;padding:12px;border:1px solid #aebdcc;border-radius:8px;font:inherit}textarea{min-height:130px}
 .notice{border-left:4px solid #b4873e;padding:12px 18px;background:#fff7e9}.muted{color:#536679}button:disabled{opacity:.6}p{overflow-wrap:anywhere}
+.pdf-pair-preview [hidden]{display:none!important}
 .tp-release-footer{padding:24px;font-size:12px}.tp-release-footer span,.tp-release-footer a{margin-right:10px}
 @media(max-width:760px){.pair-review{padding:0 16px;margin:20px auto}.pair{grid-template-columns:1fr}.pair-review section,.pair-review form{padding:16px}iframe{height:360px}}
 """
@@ -172,8 +173,8 @@ def _review_page(token, row, context, request, *, values=None, error="", status=
     content += '<div class="pair">'
     for index, name in enumerate(meta["filenames"]):
         url = f"/email-pair/pdf/{token}/{index}"
-        content += f'<section><h2>{"Commercial Invoice" if index == 0 else "Packing List"}</h2><p translate="no">{esc(name)}</p><iframe title="{esc(name)}" src="{url}#navpanes=0&amp;view=FitH"></iframe><p><a href="{url}" target="_blank" rel="noopener">{_text(request, "Open this PDF", "PDF 크게 보기")}</a></p></section>'
-    content += '</div>'
+        content += f'<section><h2>{"Commercial Invoice" if index == 0 else "Packing List"}</h2><p translate="no">{esc(name)}</p><iframe title="{esc(name)}" data-pdf-preview="true" src="{url}#navpanes=0&amp;view=FitH"></iframe><p><a href="{url}" target="_blank" rel="noopener">{_text(request, "Open this PDF", "PDF 크게 보기")}</a></p></section>'
+    content += '</div><script src="/static/pdf-pair-preview.js?v=20261101" defer></script>'
     if stale:
         content += f'<p class="notice">{_text(request, "Source details changed after preparation. Prepare and review new copies before sending.", "PDF 준비 후 원본 정보가 바뀌었습니다. 새 사본을 준비하고 다시 확인해 주세요.")}</p>'
     elif row["state"] == "ready":

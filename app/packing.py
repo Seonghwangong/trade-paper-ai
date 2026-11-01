@@ -117,15 +117,17 @@ def create_packing_list(request: Request, payload: dict = Body(...)):
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
     company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
     buyer = _buyer_master(account_id, record["buyer"])
-    snapshot_fallbacks = {
-        "seller_address": source_invoice.get("seller_address") or company.get("address", ""),
-        "seller_email": source_invoice.get("seller_email") or company.get("email", ""),
-        "seller_phone": source_invoice.get("seller_phone") or company.get("phone", ""),
-        "buyer_address": source_invoice.get("buyer_address") or buyer.get("address", ""),
-        "buyer_email": source_invoice.get("buyer_email") or buyer.get("email", ""),
-    }
-    for field, fallback in snapshot_fallbacks.items():
-        record[field] = record.get(field) or fallback
+    # Preserve the reviewed Invoice snapshot, including deliberately empty fields.
+    # Master data is a legacy fallback only, never an unrelated party's address.
+    for party, fields, master in (
+        ("seller", (("seller_address", "address"), ("seller_email", "email"), ("seller_phone", "phone")), company),
+        ("buyer", (("buyer_address", "address"), ("buyer_email", "email")), buyer),
+    ):
+        same_source = str(source_invoice.get(party, "")).strip().casefold() == record[party].casefold()
+        same_master = str(master.get("name", "")).strip().casefold() == record[party].casefold()
+        for field, key in fields:
+            if field not in record:
+                record[field] = source_invoice[field] if same_source and field in source_invoice else (master.get(key, "") if same_master else "")
     require_items(record.get("items", []))
     from app import product as product_module
     product_module.enrich_items_from_products(record.get("items", []), account_id)
@@ -483,12 +485,12 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
     today = datetime.now().strftime("%Y-%m-%d")
 
     buyer = payload.get("buyer", "")
-    buyer_address = payload.get("buyer_address") or buyer_master.get("address", "")
-    buyer_email = payload.get("buyer_email") or buyer_master.get("email", "")
+    buyer_address = payload.get("buyer_address", buyer_master.get("address", ""))
+    buyer_email = payload.get("buyer_email", buyer_master.get("email", ""))
     seller = payload.get("seller") or company.get("name", "")
-    seller_address = payload.get("seller_address") or company.get("address", "")
-    seller_email = payload.get("seller_email") or company.get("email", "")
-    seller_phone = payload.get("seller_phone") or company.get("phone", "")
+    seller_address = payload.get("seller_address", company.get("address", ""))
+    seller_email = payload.get("seller_email", company.get("email", ""))
+    seller_phone = payload.get("seller_phone", company.get("phone", ""))
 
     items = payload.get("items", [])
 

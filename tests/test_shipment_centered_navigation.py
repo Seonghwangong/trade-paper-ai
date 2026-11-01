@@ -56,5 +56,5 @@ def test_all_scoped_document_create_and_edit_paths_use_shipment_navigation():
 def test_packing_browser_save_preserves_shipment_return_and_offers_contextless_next_step():
     source = inspect.getsource(main._workflow_browser_enhancement)
     assert 'tpSavedThenRedirect("/shipment/"+encodeURIComponent(shipmentNo))' in source
-    assert "showPackingNextActions(result.packing_no)" in source
+    assert "showPackingNextActions(result.packing_no,result.invoice_no||data.invoice_no)" in source
     assert '"/si-form?packing_no="+encodeURIComponent(packingNo)' in source

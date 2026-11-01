@@ -288,9 +288,9 @@ def _success_experience(kind: str) -> tuple[str, str, str]:
     return SUCCESS_EXPERIENCES.get(kind, SUCCESS_EXPERIENCES["saved"])
 
 
-def _success_journey(kind: str) -> str:
+def _success_journey(kind: str, path: str = "") -> str:
     _, next_label, next_url = _success_experience(kind)
-    if not next_label:
+    if not next_label or (next_url and path == next_url):
         return ""
     action = f'<a href="{html_escape(next_url, attribute=True)}">Continue</a>' if next_url else ""
     quick_actions = ""
@@ -844,7 +844,7 @@ def inject_user_experience(source: str, path: str = "", success_message: str = "
     styles += '<style data-first-user-success="true">.tp-success-journey{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;width:min(900px,calc(100% - 36px));margin:16px auto;padding:16px;border:1px solid #BBF7D0;border-radius:14px;background:#F0FDF4;color:#166534;text-align:center}.tp-success-journey>a,.tp-success-actions a{display:inline-flex;min-height:42px;align-items:center;justify-content:center;padding:9px 13px;border-radius:10px;background:#111827;color:#fff;text-decoration:none;font-weight:700}.tp-success-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;width:100%;margin-top:5px}.tp-confirm-overlay{position:fixed;z-index:11000;inset:0;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.5)}.tp-confirm-dialog{width:min(440px,100%);padding:24px;border-radius:16px;background:#fff;color:#111827;box-shadow:0 22px 48px rgba(15,23,42,.28);text-align:center}.tp-confirm-dialog h2{margin:0 0 9px}.tp-confirm-dialog p{margin:0;color:#64748B}.tp-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:22px}.tp-confirm-actions button{min-height:44px;border:0;border-radius:10px;font-weight:700;cursor:pointer}.tp-confirm-actions .cancel{background:#E5E7EB;color:#111827}.tp-confirm-actions .confirm{background:#991B1B;color:#fff}@media(max-width:640px){.tp-success-journey{align-items:stretch;flex-direction:column}.tp-success-journey>a,.tp-success-actions,.tp-success-actions a{width:100%}.tp-success-actions{display:grid;grid-template-columns:1fr}.tp-confirm-actions{grid-template-columns:1fr}.tp-confirm-actions button{min-height:46px}}</style>'
     if success:
         source = source.replace("<body>", "<body>" + success, 1)
-    journey = _success_journey(success_kind) if success_kind else ""
+    journey = _success_journey(success_kind, path) if success_kind else ""
     if journey:
         source = source.replace("<body>", "<body>" + journey, 1)
     source = source.replace("<body>", "<body>" + _help_panel(path), 1)

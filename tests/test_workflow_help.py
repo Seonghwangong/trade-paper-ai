@@ -23,3 +23,9 @@ def test_unrelated_pages_do_not_inherit_document_workflow_help(path):
 def test_document_routes_keep_their_own_workflow_help(path, expected):
     assert expected in _workflow_tip(path)
     assert 'class="tp-workflow-tip"' in _help_panel(path)
+
+
+def test_success_journey_does_not_send_user_back_to_current_step():
+    from app.ui import _success_journey
+    assert _success_journey('invoice', '/packing-page') == ''
+    assert 'href="/packing-page"' in _success_journey('invoice', '/invoice-list')

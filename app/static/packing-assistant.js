@@ -5,7 +5,7 @@
   const find = (row, name) => row.querySelector(`[name="${name === 'name' ? 'item_name' : name}"], .${name === 'name' ? 'item' : name}`);
   const identity = row => Object.fromEntries(['name','hs_code','origin','unit'].map(k => [k, (find(row,k)?.value || '').trim()]));
   let saved = [];
-  const ready = fetch('/packing-defaults').then(r => r.ok ? r.json() : []).then(data => { saved = data; }).catch(() => {});
+  const ready = fetch('/packing-defaults').then(r => r.ok ? r.json() : []).then(data => { saved = Array.isArray(data) ? data : []; }).catch(() => {});
   async function post(url, data) {
     const response = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     const result = await response.json();
@@ -81,6 +81,31 @@
       status.textContent=text('Packing settings saved in your account.','계정에 포장 기준을 저장했습니다.');
     });
     box.append(status); row.append(box);
+    // Suggest only a unique exact item match, and never overwrite typed settings.
+    let settingsEdited = false, suggestedIdentity = null;
+    Object.values(inputs).forEach(input => input.addEventListener('input', () => { settingsEdited = true; }));
+    async function suggestSavedSettings() {
+      await ready;
+      if (!row.isConnected) return;
+      const key = identity(row), signature = JSON.stringify(key);
+      if (suggestedIdentity && suggestedIdentity !== signature) {
+        if (!settingsEdited) Object.values(inputs).forEach(input => { input.value = ''; });
+        status.textContent = text('Item changed. Check the packing settings for this item.', '품목이 바뀌었습니다. 이 품목의 포장 기준을 확인하세요.');
+        suggestedIdentity = null;
+        refreshReview();
+      }
+      if (!key.name || settingsEdited || Object.values(inputs).some(input => input.value !== '')) return;
+      const matches = saved.filter(setting => setting && Object.keys(key).every(k => String(setting[k] || '').trim() === key[k]));
+      if (matches.length !== 1) return;
+      const match = matches[0];
+      if (Object.keys(inputs).some(k => match[k] === '' || match[k] == null || !Number.isFinite(Number(match[k])) || Number(match[k]) < 0) || Number(match.units_per_carton) <= 0) return;
+      Object.keys(inputs).forEach(k => { inputs[k].value = match[k]; });
+      suggestedIdentity = signature;
+      status.textContent = text('Saved packing settings filled automatically. Check them, then calculate the actual totals.', '저장한 포장 기준을 자동으로 채웠습니다. 기준을 확인한 뒤 박스·중량을 계산하세요.');
+    }
+    row.addEventListener('change', suggestSavedSettings);
+    document.addEventListener('tp:prefill-complete', suggestSavedSettings);
+    suggestSavedSettings();
   }
   function scan(){document.querySelectorAll('.item-card,.item-row,.packing-sync-item').forEach(attach);}
   scan(); new MutationObserver(scan).observe(document.body,{childList:true,subtree:true});

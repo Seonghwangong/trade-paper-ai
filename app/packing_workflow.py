@@ -147,7 +147,7 @@ def attach_routes(router):
                 content += f'<label>{key.replace("_", " ").title()}<input name="{key}" type="number" min="0" step="{"1" if key == "carton" else "0.001"}" required value="{esc(row.get(key))}"></label>'
             content += '</section>'
         content += '<p>All weights are shipment-line totals in kg. Check the actual packing before applying.</p><button type="submit">Apply reviewed Invoice changes</button></form>'
-        content += f'<p><a href="/edit-packing/{target}">Cancel</a></p><script src="/static/packing-assistant.js?v=20261101" defer></script>'
+        content += f'<p><a href="/edit-packing/{target}">Cancel</a></p><script src="/static/packing-assistant.js?v=20261101-flow" defer></script>'
         return HTMLResponse(page_shell('Refresh Packing List from Invoice', content), headers={'Cache-Control': 'no-store'})
 
     @router.post('/packing-sync/{packing_no}')

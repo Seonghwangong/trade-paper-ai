@@ -168,3 +168,32 @@ def test_legacy_packing_without_snapshot_falls_back_to_current_masters(monkeypat
         b"current-buyer@example.com",
     ):
         assert value in pdf.body
+
+
+def test_blank_imported_party_fields_survive_packing_and_pdf(tmp_path, monkeypatch):
+    from app.packing_workflow import comparable
+    from app import invoice
+    pp=tmp_path/'packing_lists.json'; pp.write_text('[]')
+    ip=tmp_path/'invoices.json'
+    source={'account_id':'a','invoice_no':'INV-IMPORTED','seller':'External Supplier','buyer':'Buyer',
+            'seller_address':'','seller_email':'','seller_phone':'','buyer_address':'','buyer_email':'',
+            'items':[{'name':'Shirt','quantity':100,'unit':'PCS','unit_price':8.5,'hs_code':'','origin':''}]}
+    ip.write_text(json.dumps([source])); users=tmp_path/'users.json';users.write_text('[]')
+    monkeypatch.setattr(packing,'PACKING_FILE',pp);monkeypatch.setattr(packing,'USERS_FILE',users)
+    monkeypatch.setattr(invoice,'INVOICE_FILE',ip);monkeypatch.setattr(invoice,'USERS_FILE',users)
+    company={'name':'My Company','address':'Wrong Company Address','email':'wrong@example.com','phone':'9999'}
+    buyer={'name':'Buyer','address':'Changed Buyer Address','email':'changed@example.com'}
+    monkeypatch.setattr(packing,'load_account_company',lambda *args:company)
+    monkeypatch.setattr(packing,'_buyer_master',lambda *args:buyer)
+    for explicit in [False,True]:
+        payload={'invoice_no':source['invoice_no'],'seller':source['seller'],'buyer':source['buyer'],
+                 'items':[{**source['items'][0],'carton':5,'net_weight':'20','gross_weight':'22.5'}]}
+        if explicit:
+            payload.update({key:'' for key in ['seller_address','seller_email','seller_phone','buyer_address','buyer_email']})
+        created=packing.create_packing_list(_request('a'),payload)
+        assert comparable(created)==comparable(source)
+        monkeypatch.setattr(rl_config,'pageCompression',0)
+        pdf=packing.create_packing_list_pdf(created,company,buyer)
+        assert pdf.body.startswith(b'%PDF')
+        for value in [b'Wrong Company Address',b'wrong@example.com',b'Changed Buyer Address',b'changed@example.com']:
+            assert value not in pdf.body

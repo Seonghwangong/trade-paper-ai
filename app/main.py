@@ -587,20 +587,21 @@ function showInvoiceNextActions(invoiceNo){
     ["Download PDF","/invoice-pdf/"+encodeURIComponent(invoiceNo),"",true],
     ["Back to Invoice List","/invoice-list","",false]
   ];links.forEach(function(item){const link=document.createElement("a");link.className="invoice-next-action"+(item[2]?" "+item[2]:"");link.href=item[1];link.textContent=item[0];if(item[3])link.setAttribute("download",invoiceNo+".pdf");actions.appendChild(link);});card.appendChild(actions);document.body.appendChild(card);
-  let timer=window.setTimeout(function(){card.remove();},15000);close.addEventListener("click",function(){window.clearTimeout(timer);card.remove();});
+  close.addEventListener("click",function(){card.remove();});
 }
-function showPackingNextActions(packingNo){
+function showPackingNextActions(packingNo,invoiceNo){
+  const ko=document.documentElement.lang==="ko";const label=(en,kr)=>ko?kr:en;const lang=ko?"ko":"en";
   if(window.tpMarkSaved)window.tpMarkSaved();if(window.tpRestoreSavingButtons)window.tpRestoreSavingButtons();
   const existing=document.getElementById("packing-next-actions");if(existing)existing.remove();
   const card=document.createElement("aside");card.id="packing-next-actions";card.className="invoice-next-actions";card.setAttribute("role","status");card.setAttribute("aria-live","polite");
-  const heading=document.createElement("div");heading.className="invoice-next-heading";const copy=document.createElement("div");const saved=document.createElement("strong");saved.textContent="✓ Packing List Saved";const number=document.createElement("p");number.textContent="Packing "+packingNo;copy.appendChild(saved);copy.appendChild(number);const close=document.createElement("button");close.type="button";close.className="invoice-next-close";close.textContent="✕";close.setAttribute("aria-label","Close Next Actions");heading.appendChild(copy);heading.appendChild(close);card.appendChild(heading);
+  const heading=document.createElement("div");heading.className="invoice-next-heading";const copy=document.createElement("div");const saved=document.createElement("strong");saved.textContent=label("✓ Packing List saved","✓ 포장명세서를 저장했습니다");const number=document.createElement("p");number.textContent="Packing "+packingNo;copy.appendChild(saved);copy.appendChild(number);const close=document.createElement("button");close.type="button";close.className="invoice-next-close";close.textContent="✕";close.setAttribute("aria-label","Close Next Actions");heading.appendChild(copy);heading.appendChild(close);card.appendChild(heading);
   const actions=document.createElement("div");actions.className="invoice-next-grid";const links=[
-    ["Create Shipping Instruction","/si-form?packing_no="+encodeURIComponent(packingNo),"primary",false],
-    ["Create Another Packing List","/packing-page","",false],
-    ["Download PDF","/packing-list-pdf/"+encodeURIComponent(packingNo),"",true],
-    ["Back to Packing List","/packing-list","",false]
-  ];links.forEach(function(item){const link=document.createElement("a");link.className="invoice-next-action"+(item[2]?" "+item[2]:"");link.href=item[1];link.textContent=item[0];if(item[3])link.setAttribute("download",packingNo+".pdf");actions.appendChild(link);});card.appendChild(actions);document.body.appendChild(card);
-  let timer=window.setTimeout(function(){card.remove();},15000);close.addEventListener("click",function(){window.clearTimeout(timer);card.remove();});
+    [label("Review both PDFs / email","두 PDF 확인 · 이메일 준비"),"/email-pair/prepare/"+encodeURIComponent(packingNo)+"?lang="+lang,"primary",false],
+    [label("Download Packing List PDF","포장명세서 PDF 받기"),"/packing-list-pdf/"+encodeURIComponent(packingNo),"",true],
+    [label("Create Shipping Instruction","선적지시서 이어서 작성"),"/si-form?packing_no="+encodeURIComponent(packingNo),"",false],
+    [label("Back to Packing List","포장명세서 목록"),"/packing-list","",false]
+  ];if(invoiceNo)links.splice(2,0,[label("Download Invoice PDF","송장 PDF 받기"),"/invoice-pdf/"+encodeURIComponent(invoiceNo),"",true]);links.forEach(function(item){const link=document.createElement("a");link.className="invoice-next-action"+(item[2]?" "+item[2]:"");link.href=item[1]+(item[1].includes("lang=")?"":(item[1].includes("?")?"&":"?")+"lang="+lang);link.textContent=item[0];if(item[3])link.setAttribute("download",(item[1].startsWith("/invoice-pdf/")?invoiceNo:packingNo)+".pdf");actions.appendChild(link);});card.appendChild(actions);document.body.appendChild(card);
+  close.addEventListener("click",function(){card.remove();});
 }
 </script>
 """
@@ -635,7 +636,7 @@ window.savePacking=async function(){
   try{result=type.includes("application/json")?await response.json():null;}catch(error){showWorkflowError("The Packing List was not confirmed by the server.");return;}
   if(!result||!result.packing_no){showWorkflowError("The Packing List was not confirmed by the server.");return;}
   if(shipmentNo){await window.tpSavedThenRedirect("/shipment/"+encodeURIComponent(shipmentNo));return;}
-  showPackingNextActions(result.packing_no);
+  showPackingNextActions(result.packing_no,result.invoice_no||data.invoice_no);
 };
 </script>
 """
