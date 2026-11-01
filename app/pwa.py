@@ -14,11 +14,11 @@ def app_head(source):
     if 'rel="manifest"' not in source:
         tags.append('<link rel="manifest" href="/static/site.webmanifest">')
     if 'rel="apple-touch-icon"' not in source:
-        tags.append('<link rel="apple-touch-icon" href="/static/app-icons/tradepaper-apple.png">')
+        tags.append('<link rel="apple-touch-icon" href="/static/app-icons/tp-apple.png">')
     if 'rel="icon"' not in source:
-        tags.append('<link rel="icon" type="image/svg+xml" href="/static/brand/mark.svg">')
+        tags.append('<link rel="icon" type="image/svg+xml" href="/static/brand/tp-icon.svg">')
     if 'name="theme-color"' not in source:
-        tags.append('<meta name="theme-color" content="#17283d">')
+        tags.append('<meta name="theme-color" content="#252725">')
     if 'name="apple-mobile-web-app-title"' not in source:
         tags.append('<meta name="apple-mobile-web-app-title" content="Trade Paper AI">')
     return source.replace('</head>', ''.join(tags) + '</head>', 1)

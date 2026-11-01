@@ -137,7 +137,7 @@ def test_web_manifest_is_valid_and_uses_existing_icon():
     assert manifest["name"] == "Trade Paper AI"
     assert manifest["start_url"] == "/"
     icon = manifest["icons"][0]
-    assert icon["src"] == "/static/app-icons/tradepaper-192.png"
+    assert icon["src"] == "/static/app-icons/tp-192.png"
     assert (root / "app" / icon["src"].lstrip("/")).is_file()
 
 
