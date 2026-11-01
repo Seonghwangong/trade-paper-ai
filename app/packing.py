@@ -333,7 +333,7 @@ def edit_packing(packing_no: str, request: Request):
 </div>
 """
 
-            html += form_footer("/packing-list", "Update Packing") + '</form><script src="/static/packing-assistant.js" defer></script>'
+            html += form_footer("/packing-list", "Update Packing") + '</form><script src="/static/packing-assistant.js?v=20261101" defer></script>'
             navigation = navigation_footer("/packing-list", "← Packing List", state="Editing")
             return HTMLResponse(form_page("Edit Packing List", html, subtitle="Update packing list information", navigation=navigation))
 
