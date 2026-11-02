@@ -619,7 +619,7 @@ def _ux_script(path: str) -> str:
     let templateStore={};try{templateStore=JSON.parse(localStorage.getItem(templateKey)||'{}')||{};}catch(error){}
     let templates=Array.isArray(templateStore[workLabel])?templateStore[workLabel].slice(0,10):[];
     const templatePanel=document.createElement('section');templatePanel.className='tp-templates';templatePanel.setAttribute('aria-label','Smart templates');
-    const templateHeading=document.createElement('div');templateHeading.className='tp-template-heading';templateHeading.innerHTML='<strong>Templates</strong><span>Reuse a frequent '+workLabel+' configuration.</span>';templatePanel.appendChild(templateHeading);
+    const templateHeading=document.createElement('div');templateHeading.className='tp-template-heading';templateHeading.innerHTML='<strong>Templates</strong><span>Reuse these entries next time in this browser. This does not create a document.</span>';templatePanel.appendChild(templateHeading);
     const templateActions=document.createElement('div');templateActions.className='tp-template-actions';
     const templateSelect=document.createElement('select');templateSelect.className='tp-template-select';templateSelect.setAttribute('aria-label','Select a template');
     const loadTemplate=document.createElement('button');loadTemplate.type='button';loadTemplate.className='tp-template-load';loadTemplate.textContent='Use Template';

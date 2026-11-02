@@ -747,6 +747,8 @@ app.include_router(audit_log_router)
 app.include_router(backup_restore_router)
 app.include_router(archive_router)
 app.include_router(auth_router)
+from app.social_auth import router as social_auth_router
+app.include_router(social_auth_router)
 def load_packing_lists():
     return load_json_strict(PACKING_FILE, [], list)
 def load_invoices():

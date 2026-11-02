@@ -62,8 +62,8 @@ def onboarding_page(request: Request, replay: int = 0, next: str = ""):
         mark(account_id, "completed_at")
     steps = (
         ("Company", "/company?next=/onboarding"),
-        ("Buyer", "/buyer-form"),
-        ("Product", "/product-form"),
+        ("Buyer", "/buyer-form?flow=setup"),
+        ("Product", "/product-form?flow=setup"),
         ("Export Wizard", "/export-wizard"),
     )
     cards = "".join(f'<a class="step{" done" if details["checks"][index] else ""}" href="{url}"><span>{"✓" if details["checks"][index] else index + 1}</span><b>{label}</b><small>{"Complete" if details["checks"][index] else "Continue"}</small></a>' for index, (label, url) in enumerate(steps))

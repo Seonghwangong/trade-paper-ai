@@ -113,7 +113,7 @@ def buyer_workspace_metrics(buyer, account_id):
 def _status_options(current):
     selected = current if current in CUSTOMER_STATUSES else "Lead"
     return "".join(
-        f'<option value="{status}"{" selected" if status == selected else ""}>{status}</option>'
+        f'<option data-ui-label="true" value="{status}"{" selected" if status == selected else ""}>{status}</option>'
         for status in CUSTOMER_STATUSES
     )
 
@@ -216,7 +216,7 @@ Total Buyers : """ + str(len(entries)) + """
 
 
 @router.get("/buyer-form")
-def buyer_form(demo: int = 0):
+def buyer_form(demo: int = 0, flow: str = ""):
     demo_values = {
         "name": "Sakura Retail Co.",
         "address": "Tokyo, Japan",
@@ -267,6 +267,7 @@ __DEMO_NOTICE__
 <h2>Buyer Information</h2>
 
 <form action="/save-buyer" method="post">
+<input type="hidden" name="flow" value="__SETUP_FLOW__">
 <input type="text" name="name" value="__DEMO_NAME__" placeholder="Buyer Name">
 <input type="text" name="address" value="__DEMO_ADDRESS__" placeholder="Address">
 <input type="text" name="email" value="__DEMO_EMAIL__" placeholder="Email">
@@ -305,6 +306,7 @@ __DEMO_NOTICE__
         .replace("__PREFERRED_DESTINATION_PORT__", "")
         .replace("__DEFAULT_REMARKS__", "")
     )
+    html = html.replace("__SETUP_FLOW__", "setup" if flow == "setup" else "")
     return HTMLResponse(html)
 
 
@@ -323,6 +325,7 @@ def save_buyer(
     preferred_loading_port: str = Form(""),
     preferred_destination_port: str = Form(""),
     default_remarks: str = Form(""),
+    flow: str = Form(""),
 ):
     name = require_text("Buyer name", name)
     defaults = [default_currency, default_trade_term, default_payment_term, preferred_carrier, preferred_loading_port, preferred_destination_port, default_remarks]
@@ -347,7 +350,7 @@ def save_buyer(
     from app.audit_log import record_request_audit
     record_request_audit(request, "Create", "Buyer", name, path=BUYER_FILE.with_name("audit_log.json"))
 
-    return RedirectResponse(url="/buyers", status_code=303)
+    return RedirectResponse(url="/product-form?flow=setup" if flow == "setup" else "/buyers", status_code=303)
 
 
 @router.get("/edit-buyer/{index}")

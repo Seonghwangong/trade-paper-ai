@@ -108,6 +108,7 @@ async function loadCompany(){
         document.getElementById("email").value = data.email || "";
         document.getElementById("phone").value = data.phone || "";
         applyDemoPrefill(data);
+        document.dispatchEvent(new Event("tp:prefill-complete"));
     }catch(e){
         document.getElementById("result").innerHTML =
             "Failed to load company information.";
@@ -140,7 +141,8 @@ async function saveCompany(){
         address: document.getElementById("address").value,
         email: document.getElementById("email").value,
         phone: document.getElementById("phone").value,
-        next: params.get("next") || "/"
+        next: params.get("next") || "/",
+        flow: params.get("flow") || ""
     };
 
     try{
@@ -161,7 +163,7 @@ async function saveCompany(){
             "✓ Company saved successfully.";
         document.getElementById("result").style.color = "#059669";
         if(window.tpMarkSaved) window.tpMarkSaved();
-        if(params.get("setup") === "1"){
+        if(params.get("setup") === "1" || saved.continue_setup){
             window.location.assign(saved.redirect_to || "/");
         }
     }catch(e){

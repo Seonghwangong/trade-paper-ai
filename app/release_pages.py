@@ -231,6 +231,7 @@ def privacy_page():
             "Information We Collect",
             "<ul>"
             "<li><b>Account information:</b> company name, login email address, and password credentials.</li>"
+            "<li><b>Optional social sign-in:</b> when enabled and chosen, the provider name, provider-specific user identifier and shared email address. We do not receive your provider password or request mailbox, contacts or messaging access.</li>"
             "<li><b>Business information:</b> company contact details and the buyer, customer, and product records you enter.</li>"
             "<li><b>Export document information:</b> commercial, shipping, customs, certificate, cargo, party, and reference information used to create documents and PDFs.</li>"
             "<li><b>Security information:</b> signed session data, password reset status, reset-token hashes, request times, and limited IP-based rate-limit information.</li>"
@@ -255,7 +256,8 @@ def privacy_page():
             "Passwords, Sessions, and Email",
             "<p>Passwords are protected using one-way password hashing. Compatible older credentials are upgraded after a successful sign-in. We do not display stored password values.</p>"
             "<p>Authentication uses a signed session cookie with a limited lifetime. Production cookies are configured with HttpOnly, SameSite, and Secure protections.</p>"
-            "<p>Your login email is used for account access and password recovery. If email delivery is enabled, the configured email delivery provider receives the recipient address and reset message needed to send the email. Password reset tokens are stored by Trade Paper AI only as hashes and expire after 30 minutes.</p>",
+            "<p>Optional Google, Kakao, NAVER and Apple sign-in uses a short-lived browser-binding cookie and a one-use authorization state. Provider tokens are discarded after sign-in. Social-only accounts sign in through their provider and do not use email password-reset links. Matching email addresses do not automatically link accounts.</p>"
+            "<p>For password-based accounts, your login email is used for account access and password recovery. If email delivery is enabled, the configured email delivery provider receives the recipient address and reset message needed to send the email. Password reset tokens are stored by Trade Paper AI only as hashes and expire after 30 minutes.</p>",
         )
         + section_card(
             "Payment Information",
@@ -281,7 +283,7 @@ def privacy_page():
             "<p>You may review and update supported information in the service. To request access assistance, correction, or deletion of your account and associated data, use the <a href=\"/contact\">Contact page</a>. We may need to verify that the request comes from the account owner before acting on it.</p>",
         )
     )
-    return information_page("Privacy Policy", "Trade Paper AI · Effective August 10, 2026 · Updated October 25, 2026", content)
+    return information_page("Privacy Policy", "Trade Paper AI · Effective August 10, 2026 · Updated November 2, 2026", content)
 
 
 @router.get("/terms")

@@ -27,6 +27,7 @@ from app.landing import landing_page
 from app import email_delivery
 from app.account_company import company_setup_complete, ensure_account_companies
 from app.storage import data_path, load_json_strict, locked_json_mutation
+from app.social_auth import PUBLIC_PATHS as SOCIAL_PUBLIC_PATHS
 
 
 router = APIRouter()
@@ -136,6 +137,7 @@ def user_is_admin(record, environment=None):
     """Platform operators are server-configured, never tenant-assigned team roles."""
     return bool(
         isinstance(record, dict)
+        and not record.get("social_only")
         and _normalized_email(record.get("email")) in _admin_emails(environment)
     )
 
@@ -406,7 +408,7 @@ class AuthenticationMiddleware:
             return
         request = Request(scope)
         path = request.url.path
-        is_public = path in PUBLIC_PATHS or path == "/static" or path.startswith("/static/") or request.method == "OPTIONS"
+        is_public = path in (PUBLIC_PATHS | SOCIAL_PUBLIC_PATHS) or path == "/static" or path.startswith("/static/") or request.method == "OPTIONS"
         # Provider webhooks use their own signature authentication, not browser sessions.
         if path in {"/webhooks/paddle-sandbox", "/webhooks/paddle-live"} and request.method == "POST":
             await self.app(scope, receive, send)
@@ -516,10 +518,12 @@ def _auth_page(mode, *, error="", registered=False, reset=False, company="", ema
     next_html = f'<input type="hidden" name="next" value="{_escape(next_path, True)}">' if next_path else ""
     benefits = f'<aside class="benefits"><strong>{t("Free · 5 documents per month · No card required")}</strong><p>{t("Invoice and Packing List count separately. Save documents in your own workspace.")}</p><p>{t("After registration, sign in to set up your workspace.")}</p></aside>' if register else ""
     reassurance = f'<p class="alternate"><a href="/try-sample?lang={lang}">{t("Try sample PDFs without signing up")}</a></p>' if register else ""
+    from app.social_auth import buttons as social_buttons
+    social_html = social_buttons(next_path or "/", lang)
     policy_links = f'<p class="alternate"><a href="/privacy">{t("Privacy")}</a> · <a href="/terms">{t("Terms")}</a> · <a href="/contact">{t("Help")}</a></p>'
     return HTMLResponse(f'''<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{t(title)} · {APP_NAME}</title><style>
 *{{box-sizing:border-box}}body{{margin:0;background:#F3F4F6;color:#111827;font-family:Arial,sans-serif}}.auth-page{{min-height:100vh;display:grid;place-items:center;padding:28px}}.auth-card{{width:min(440px,100%);padding:34px;background:#fff;border:1px solid #E5E7EB;border-radius:18px;box-shadow:0 18px 44px rgba(15,23,42,.1)}}.benefits{{background:#EFF6FF;padding:14px;border-radius:10px;margin-bottom:18px;font-size:14px;line-height:1.6}}.benefits p{{margin:6px 0 0;color:#475569}}.languages{{text-align:right;margin-bottom:20px;font-size:14px}}.languages a{{color:#1D4ED8}}.brand{{margin:0 0 30px;text-align:center}}.brand span{{display:block;color:#64748B;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}}h1{{margin:9px 0 8px;font-size:30px}}.subtitle{{margin:0;color:#6B7280;line-height:1.5}}form{{display:grid;gap:9px}}label{{margin-top:7px;font-size:14px;font-weight:700}}input{{width:100%;min-height:46px;padding:11px 13px;border:1px solid #CBD5E1;border-radius:10px;background:#fff;color:#111827;font:inherit}}input:focus{{border-color:#2563EB;outline:3px solid #DBEAFE}}.field-help{{margin:0;color:#64748B;font-size:13px;line-height:1.45}}button{{min-height:46px;margin-top:13px;border:0;border-radius:10px;background:#111827;color:#fff;font-size:15px;font-weight:800;cursor:pointer}}button:hover{{background:#1F2937}}button:focus-visible,a:focus-visible{{outline:3px solid #2563EB;outline-offset:3px}}.message{{margin-bottom:16px;padding:12px 14px;border-radius:10px;font-size:14px;font-weight:700}}.error{{border:1px solid #FECACA;background:#FEF2F2;color:#991B1B}}.success{{border:1px solid #BBF7D0;background:#F0FDF4;color:#166534}}.alternate{{margin:22px 0 0;text-align:center;color:#64748B;font-size:14px}}.alternate a{{color:#1D4ED8;font-weight:700}}@media(max-width:520px){{.auth-page{{padding:16px}}.auth-card{{padding:25px 20px}}}}
-</style></head><body><main class="auth-page"><section class="auth-card"><nav class="languages" aria-label="Language">{language_links}</nav><header class="brand"><span>{APP_NAME}</span><h1>{t(title)}</h1><p class="subtitle">{t(subtitle)}</p></header>{benefits}{success_html}{error_html}<form method="post" action="/{mode}{"?lang=ko" if lang == "ko" else ""}" data-native-submit="true">{next_html}{HONEYPOT_HTML if register else ""}{company_html}<label for="email">{t("Email")}</label><input id="email" name="email" type="email" value="{_escape(email, True)}" autocomplete="email" required><label for="password">{t("Password")}</label><input id="password" name="password" type="password" autocomplete="{password_autocomplete}"{password_constraints} required>{password_help}{confirm_html}<button type="submit">{t("Register") if register else t("Login")}</button></form>{alternate}{reassurance}{policy_links}</section></main></body></html>''', status_code=status_code)
+</style></head><body><main class="auth-page"><section class="auth-card"><nav class="languages" aria-label="Language">{language_links}</nav><header class="brand"><span>{APP_NAME}</span><h1>{t(title)}</h1><p class="subtitle">{t(subtitle)}</p></header>{benefits}{success_html}{error_html}{social_html}<form method="post" action="/{mode}{"?lang=ko" if lang == "ko" else ""}" data-native-submit="true">{next_html}{HONEYPOT_HTML if register else ""}{company_html}<label for="email">{t("Email")}</label><input id="email" name="email" type="email" value="{_escape(email, True)}" autocomplete="email" required><label for="password">{t("Password")}</label><input id="password" name="password" type="password" autocomplete="{password_autocomplete}"{password_constraints} required>{password_help}{confirm_html}<button type="submit">{t("Register") if register else t("Login")}</button></form>{alternate}{reassurance}{policy_links}</section></main></body></html>''', status_code=status_code)
 
 
 def _escape(value, attribute=False):
@@ -653,13 +657,13 @@ def request_password_reset(email: str = Form(""), request: Request = None):
             None,
         )
         last_requested = _integer((existing or {}).get("password_reset_requested_at", 0))
-        if existing is not None and now - last_requested >= PASSWORD_RESET_REQUEST_INTERVAL_SECONDS:
+        if existing is not None and not existing.get("social_only") and now - last_requested >= PASSWORD_RESET_REQUEST_INTERVAL_SECONDS:
             def issue(records):
                 record = next(
                     (item for item in records if isinstance(item, dict) and _normalized_email(item.get("email")) == normalized_email),
                     None,
                 )
-                if record is None:
+                if record is None or record.get("social_only"):
                     return
                 current_requested = _integer(record.get("password_reset_requested_at", 0))
                 if now - current_requested < PASSWORD_RESET_REQUEST_INTERVAL_SECONDS:
@@ -685,6 +689,7 @@ def _valid_password_reset_record(token):
         (
             record for record in load_users()
             if isinstance(record, dict)
+            and not record.get("social_only")
             and hmac.compare_digest(str(record.get("password_reset_token_hash", "") or ""), token_hash)
             and _integer(record.get("password_reset_expires_at", 0)) >= now
         ),

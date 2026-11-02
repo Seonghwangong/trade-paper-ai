@@ -12,7 +12,7 @@
   }
   if (!document.querySelector('nav[aria-label="Language"]')) document.body.prepend(nav);
   if(selected!=='ko') return;
-  const response=await fetch('/static/workspace-ko.json?v=20261101-app');
+  const response=await fetch('/static/workspace-ko.json?v=20261102-setup');
   if(!response.ok) return;
   const dictionary=await response.json();
   if(dictionary[document.title]) document.title=dictionary[document.title];
@@ -23,11 +23,11 @@
       const parent=root.parentElement;
       if(!parent || parent.closest(blocked) || !parent.matches(eligible)) return;
       if(parent.closest('td') && !parent.closest('a,button,label,.tp-guided-empty')) return;
-      if(parent.tagName==='OPTION' && parent.value) return;
+      if(parent.tagName==='OPTION' && parent.value && !parent.hasAttribute('data-ui-label')) return;
       const raw=root.textContent, key=raw.trim().replace(/\s+/g,' ');
       const control=parent.closest('button,a');
       if(control && !control.dataset.tpOriginalLabel) control.dataset.tpOriginalLabel=control.textContent.trim();
-      if(/^([✓•] )/.test(key) && dictionary[key.slice(2)]) {root.textContent=key.slice(0,2)+dictionary[key.slice(2)];return;}
+      if(/^([✓•←] )/.test(key) && dictionary[key.slice(2)]) {root.textContent=key.slice(0,2)+dictionary[key.slice(2)];return;}
       if(dictionary[key]) root.textContent=raw.replace(raw.trim(),dictionary[key]);
       else if(/^\d+% Complete$/.test(key)) root.textContent=key.replace('Complete','완료');
       else if(/^Trial · \d+ \/ \d+ documents this month$/.test(key)) root.textContent=key.replace('Trial ·','무료 이용 ·').replace('documents this month','문서 / 이번 달');

@@ -259,6 +259,7 @@ Update registered product information
 </div>
 
 </div>
+<script src="/static/hs-assistant.js?v=20261102-setup" defer></script>
 </body>
 </html>
 """
@@ -300,7 +301,7 @@ def update_product(
     return RedirectResponse(url="/products", status_code=303)
 
 @router.get("/product-form")
-def product_form(demo: int = 0):
+def product_form(demo: int = 0, flow: str = ""):
     demo_values = {
         "name": "Notebook Computer",
         "hs_code": "847130",
@@ -355,6 +356,7 @@ __DEMO_NOTICE__
 <h2 style="margin-top:0;">Add Product</h2>
 
 <form action="/save-product" method="post">
+<input type="hidden" name="flow" value="__SETUP_FLOW__">
 
 <input name="name" value="__DEMO_NAME__" placeholder="Product Name">
 <input name="hs_code" value="__DEMO_HS_CODE__" placeholder="HS Code">
@@ -368,6 +370,7 @@ __DEMO_NOTICE__
 </div>
 
 </div>
+<script src="/static/hs-assistant.js?v=20261102-setup" defer></script>
 </body>
 </html>
 """
@@ -380,6 +383,7 @@ __DEMO_NOTICE__
         .replace("__DEMO_ORIGIN__", demo_values["origin"])
         .replace("__DEMO_UNIT__", demo_values["unit"])
     )
+    html = html.replace("__SETUP_FLOW__", "setup" if flow == "setup" else "")
     return HTMLResponse(html)
 
 @router.post("/save-product")
@@ -390,6 +394,7 @@ def save_product(
     unit_price: str = Form(""),
     origin: str = Form(""),
     unit: str = Form(""),
+    flow: str = Form(""),
 ):
     name = require_text("Product name", name)
     unit = unit if isinstance(unit, str) else ""
@@ -406,7 +411,7 @@ def save_product(
     from app.audit_log import record_request_audit
     record_request_audit(request, "Create", "Product", name, path=PRODUCT_FILE.with_name("audit_log.json"))
 
-    return RedirectResponse(url="/products", status_code=303)
+    return RedirectResponse(url="/invoice" if flow == "setup" else "/products", status_code=303)
 
 
 @router.get("/delete-product/{index}")

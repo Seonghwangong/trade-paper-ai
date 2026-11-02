@@ -25,3 +25,7 @@ uvicorn==0.39.0
 uvloop==0.22.1
 watchfiles==1.1.1
 websockets==15.0.1
+
+# OAuth ID-token signature verification (Google / Apple)
+PyJWT==2.15.1
+cryptography==50.0.2
