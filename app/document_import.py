@@ -272,9 +272,48 @@ def import_page(request: Request):
     company = load_account_company(account, ACCOUNT_COMPANIES_FILE)
     user = request.scope.get('trade_paper_user') or {}
     draft_scope = hashlib.sha256((account + '\0' + str(user.get('email', '')).strip().casefold()).encode()).hexdigest()
-    bootstrap = json.dumps({'lang': lang, 'draft_scope': draft_scope, 'company': {k: company.get(k, '') for k in ('name', 'address')}}, ensure_ascii=False).replace('<', '\\u003c')
+    repeat_no = request.query_params.get('repeat_invoice', '').strip()
+    repeat_draft = repeat_invoice_draft(account, repeat_no) if repeat_no else None
+    bootstrap = json.dumps({'lang': lang, 'draft_scope': draft_scope, 'repeat_draft': repeat_draft, 'company': {k: company.get(k, '') for k in ('name', 'address')}}, ensure_ascii=False).replace('<', '\\u003c')
     template = Path(__file__).with_name('templates').joinpath('document_import.html').read_text()
     return HTMLResponse(template.replace('__LANG__', lang).replace('__BOOTSTRAP__', bootstrap), headers={'Cache-Control': 'no-store'})
+
+
+def repeat_invoice_draft(account, invoice_no):
+    """Read a tenant-owned invoice into an unsaved, explicitly reviewed new order."""
+    from app.invoice import _owned_invoice
+    record = _owned_invoice(invoice_no, account)
+    if record.get('archived_at'):
+        raise HTTPException(404, 'Invoice not found')
+    source_items = record.get('items', [])
+    if not isinstance(source_items, list) or len(source_items) > MAX_ITEMS:
+        raise HTTPException(422, 'This invoice cannot be reused in the draft editor. Open the original invoice instead.')
+    def text(value):
+        result = '' if value is None else str(value)
+        if len(result) > 1000:
+            raise HTTPException(422, 'This invoice contains text too long for the draft editor. Open the original invoice instead.')
+        return result
+    fields = {key: text(record.get(key)) for key in META if key != 'source_reference'}
+    fields['invoice_date'] = date.today().isoformat()
+    fields['source_reference'] = ''
+    items = []
+    for item in source_items:
+        if not isinstance(item, dict):
+            raise HTTPException(422, 'This invoice contains an unreadable item. Open the original invoice instead.')
+        items.append({key: text(item.get(key)) for key in ('name', 'quantity', 'unit', 'unit_price', 'hs_code', 'origin')})
+    # Only supported editable fields travel to the new document. Old document,
+    # shipment, payment, PDF and packing identifiers must never be inherited.
+    lines = ['Invoice: ' + invoice_no, 'Invoice date: ' + text(record.get('invoice_date'))]
+    lines += [key.replace('_', ' ').title() + ': ' + value for key, value in fields.items()
+              if key not in ('invoice_date', 'source_reference') and value]
+    lines.append('Description\tQty\tUnit\tUnit price\tHS code\tOrigin')
+    lines += ['\t'.join(item.values()) for item in items]
+    source_text = '\n'.join(lines)
+    if len(source_text) > MAX_TEXT:
+        raise HTTPException(422, 'This invoice is too large for the draft editor. Open the original invoice instead.')
+    return {'fields': fields, 'items': items, 'source_text': source_text,
+            'warnings': ['repeat_review'], 'unmatched_lines': [],
+            'source_label': invoice_no, 'restored': True}
 
 
 @router.post('/import-document/extract')

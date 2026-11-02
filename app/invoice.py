@@ -9,6 +9,7 @@ from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf
 import html as html_lib
 import os
 import math
+from urllib.parse import urlencode
 from typing import Annotated, Optional
 
 from app.storage import data_path, load_json_strict, locked_json_mutation, next_identifier
@@ -629,7 +630,7 @@ def invoice_list(request: Request, search: str = ""):
             button("PDF", f"/invoice-pdf/{invoice_no}", "secondary"),
             button("Send Email", f"/send-email/invoice/{invoice_no}", "secondary"),
             button("Created" if packing_exists else "Packing", packing_href, "secondary"),
-            button("Edit", f"/edit-invoice/{invoice_no}", "secondary"),
+            button("Edit", f"/edit-invoice/{invoice_no}", "secondary") + " " + button("Repeat order", "/import-document?" + urlencode({'repeat_invoice': invoice_no}), "secondary"),
             button("Delete", f"/delete-invoice/{invoice_no}", "danger"),
         ])
     content = search_toolbar(button("+ New Invoice", "/invoice"), button("← Dashboard", "/", "secondary"), action="/invoice-list", value=search, placeholder="Search invoice, buyer, seller or item", reset_url="/invoice-list", count_label=f"Total Invoices : {len(valid_invoices)}")
