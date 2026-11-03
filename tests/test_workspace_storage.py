@@ -16,8 +16,9 @@ def test_storage_prefix_is_stable_and_does_not_embed_identity_or_markup():
 def test_workspace_storage_is_bound_before_editor_code():
     script = _ux_script("/invoice", "account-a")
     assert '__WORKSPACE_STORAGE__' not in script
+    assert '__INVOICE_DRAFT_STORE__' not in script
     assert json.dumps(storage_prefix("account-a")) in script
-    assert script.index('const localStorage=') < script.index('const invoiceDraftKey=')
+    assert script.index('const localStorage=') < script.index('function invoiceDraftStore(')
     assert script.index('const sessionStorage=') < script.index('const lastWorkKey=')
     assert 'const workspaceStoragePrefix="";' in _ux_script('/register')
 
