@@ -8,6 +8,7 @@ from urllib.parse import parse_qs
 from app.export import pdf_export_filename
 from app.release import APP_NAME, BUSINESS_PHONE
 from app.pwa import app_head
+from app.workspace_storage import storage_script
 
 
 DESIGN_TOKENS = {
@@ -362,11 +363,12 @@ def _work_context(path: str) -> str:
     )
 
 
-def _ux_script(path: str) -> str:
+def _ux_script(path: str, account_id: str = "") -> str:
     required_fields = json.dumps(_required_fields(path))
     work_label = json.dumps(_work_context(path))
     script = """<script data-trade-paper-ux="true">
 (function(){
+__WORKSPACE_STORAGE__
   function restoreSavingButtons(){
     document.querySelectorAll('[data-tp-saving="true"]').forEach(function(button){
       button.disabled=false;button.textContent=button.dataset.tpOriginalText||'Save';button.removeAttribute('data-tp-saving');
@@ -773,10 +775,10 @@ def _ux_script(path: str) -> str:
   if(typeof window.showWorkflowError==='function'){const original=window.showWorkflowError;window.showWorkflowError=function(message){restoreSavingButtons();return original(message);};}
 })();
 </script>"""
-    return script.replace("__REQUIRED_FIELDS__", required_fields).replace("__WORK_LABEL__", work_label)
+    return script.replace("__REQUIRED_FIELDS__", required_fields).replace("__WORK_LABEL__", work_label).replace("__WORKSPACE_STORAGE__", storage_script(account_id))
 
 
-def inject_user_experience(source: str, path: str = "", success_message: str = "", demo_mode: bool = False, empty_search: bool = False, success_kind: str = "") -> str:
+def inject_user_experience(source: str, path: str = "", success_message: str = "", demo_mode: bool = False, empty_search: bool = False, success_kind: str = "", account_id: str = "") -> str:
     """Apply presentation-only UX behavior to an HTML response."""
     if path in {"/try-sample", "/install"}:
         # These public pages own their interactions. The workspace script
@@ -850,7 +852,7 @@ def inject_user_experience(source: str, path: str = "", success_message: str = "
     source = source.replace("<body>", "<body>" + _help_panel(path), 1)
     if 'data-trade-paper-ux="true"' not in source:
         demo_script = _demo_script(path) if demo_mode else ""
-        source = source.replace("</body>", styles + _ux_script(path) + demo_script + "</body>", 1)
+        source = source.replace("</body>", styles + _ux_script(path, account_id) + demo_script + "</body>", 1)
     return source
 
 
@@ -935,7 +937,7 @@ class ReleaseFooterMiddleware:
                 text = body.decode(charset)
                 effective_kind = success_kind or mutation_kind
                 success_message = _success_experience(effective_kind)[0] if effective_kind and start_message.get("status", 500) < 400 else ""
-                text = inject_user_experience(text, request_path, success_message, demo_mode, empty_search, effective_kind)
+                text = inject_user_experience(text, request_path, success_message, demo_mode, empty_search, effective_kind, account_id=(authenticated_user or {}).get("account_id", ""))
                 if authenticated_user and request_path not in {"/login", "/register", "/install"} and "<body" in text:
                     body_end = text.find(">", text.find("<body"))
                     text = text[:body_end + 1] + authenticated_user_control(authenticated_user) + text[body_end + 1:]
