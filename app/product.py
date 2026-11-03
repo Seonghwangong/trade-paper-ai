@@ -411,7 +411,7 @@ def save_product(
     from app.audit_log import record_request_audit
     record_request_audit(request, "Create", "Product", name, path=PRODUCT_FILE.with_name("audit_log.json"))
 
-    return RedirectResponse(url="/invoice" if flow == "setup" else "/products", status_code=303)
+    return RedirectResponse(url="/invoice?flow=setup" if flow == "setup" else "/products", status_code=303)
 
 
 @router.get("/delete-product/{index}")

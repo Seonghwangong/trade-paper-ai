@@ -39,6 +39,7 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 <h1>Invoice</h1>
 <p class="sub">Create invoice from customer and product master data</p>
 <div class="demo-preview" id="demo-preview"><b>Demo Preview</b><br>Temporary values — nothing is saved until you press Save.</div>
+<p id="setup-preview" hidden role="status">Saved details are filled in. Review them and enter the quantity.</p>
 
 <div class="card">
 <h2>Invoice Information</h2>
@@ -98,6 +99,10 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 let products = [];
 let companies = [];
 let buyers = [];
+const setupEdited = new Set();
+document.querySelectorAll('input,select,textarea').forEach(field => {
+    for(const event of ['input','change']) field.addEventListener(event, () => setupEdited.add(field.id));
+});
 
 function getPiNoFromUrl(){
     const params = new URLSearchParams(window.location.search);
@@ -359,12 +364,43 @@ function applyDemoPrefill(){
     calculateTotal();
 }
 
+function applySetupPrefill(){
+    const params = new URLSearchParams(window.location.search);
+    if(params.get('flow') !== 'setup' || params.get('demo') === '1' || getPiNoFromUrl()) return;
+    // Only one unambiguous record from the authenticated account; never guess by list order.
+    const untouched = ids => ids.every(id => {
+        const field = document.getElementById(id);
+        return field && !setupEdited.has(id) && !String(field.value || '').trim();
+    });
+    let loaded = false;
+    if(buyers.length === 1 && buyers[0]?.name && untouched(['buyerCompanySelect','buyer','buyer_address','buyer_email'])){
+        const currency = document.getElementById('currency');
+        const previousCurrency = currency.value;
+        const keepCurrency = setupEdited.has('currency') || (previousCurrency && previousCurrency !== 'USD');
+        document.getElementById('buyerCompanySelect').value = '0';
+        selectBuyerCompany();
+        if(keepCurrency) currency.value = previousCurrency;
+        loaded = true;
+    }
+    if(products.length === 1 && products[0]?.name && untouched(['product1','item1','hs1','origin1','unit1','price1'])){
+        document.getElementById('product1').value = '0';
+        selectProduct(1);
+        loaded = true;
+    }
+    // Quantity is a transaction fact: it remains blank or exactly as entered by the user.
+    if(loaded){
+        document.getElementById('setup-preview').hidden = false;
+        calculateTotal();
+    }
+}
+
 window.onload = async function(){
     await loadCompany();
     await loadBuyers();
     await loadProducts();
     await loadProformaPrefill();
     applyDemoPrefill();
+    applySetupPrefill();
     document.dispatchEvent(new Event("tp:prefill-complete"));
 };
 

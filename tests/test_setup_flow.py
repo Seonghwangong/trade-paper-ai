@@ -38,7 +38,7 @@ def test_setup_flow_continues_but_ordinary_create_keeps_list(tmp_path, monkeypat
     monkeypatch.setattr(product, "PRODUCT_FILE", tmp_path / "products.json")
     for flow, expected in [("setup", "/product-form?flow=setup"), ("", "/buyers"), ("https://evil.invalid", "/buyers")]:
         assert buyer.save_buyer(request(), name="Test buyer", address="", email="", country="", status="Lead", flow=flow).headers["location"] == expected
-    for flow, expected in [("setup", "/invoice"), ("", "/products")]:
+    for flow, expected in [("setup", "/invoice?flow=setup"), ("", "/products")]:
         assert product.save_product(request(), name="Laptop", hs_code="847130", unit_price="850", origin="KR", unit="PCS", flow=flow).headers["location"] == expected
     assert 'name="flow" value="setup"' in buyer.buyer_form(flow="setup").body.decode()
     assert 'name="flow" value="setup"' in product.product_form(flow="setup").body.decode()
