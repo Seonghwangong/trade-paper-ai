@@ -79,10 +79,10 @@ def test_edit_preserves_other_items_and_first_item_metadata(store):
     store.write_text(json.dumps(records))
     before = store.read_bytes()
     page = invoice.edit_invoice(saved['invoice_no'], _request('account-a')).body.decode()
-    assert 'First Item' in page
-    assert 'Other items kept unchanged' in page
+    assert 'class="card invoice-item"' in page
+    assert 'name="extra_name"' in page
     assert 'Second Item' in page
-    assert 'quantity * unitPrice + 12' in page
+    assert 'name="extra_quantity" value="4"' in page
     assert store.read_bytes() == before
     update(saved['invoice_no'])
     items = json.loads(store.read_text())[0]['items']

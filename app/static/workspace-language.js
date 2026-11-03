@@ -12,7 +12,7 @@
   }
   if (!document.querySelector('nav[aria-label="Language"]')) document.body.prepend(nav);
   if(selected!=='ko') return;
-  const response=await fetch('/static/workspace-ko.json?v=20261103-setup-prefill');
+  const response=await fetch('/static/workspace-ko.json?v=20261103-all-items');
   if(!response.ok) return;
   const dictionary=await response.json();
   if(dictionary[document.title]) document.title=dictionary[document.title];

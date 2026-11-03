@@ -3,7 +3,7 @@ const source = fs.readFileSync(require('path').join(__dirname, '../app/static/in
 const code = source.match(/<script>([\s\S]*?)<\/script>/)[1];
 const fields = Object.fromEntries(['currency','buyerCompanySelect','buyer','buyer_address','buyer_email','item1','hs1','origin1','unit1','qty1','price1','total'].map(k=>[k,{value:'',textContent:'',addEventListener:()=>{}}]));
 fields.item1.value='Sample Item'; fields.currency.value='USD'; fields.qty1.value='2'; fields.price1.value='25';
-const context = vm.createContext({document:{getElementById:id=>fields[id],dispatchEvent:()=>{}},window:{},Event:class{}});
+const context = vm.createContext({document:{querySelectorAll:()=>Object.values(fields),getElementById:id=>fields[id],dispatchEvent:()=>{}},window:{},Event:class{}});
 vm.runInContext(code,context);
 vm.runInContext('buyers=[{name:"Euro Buyer",default_currency:" eur "},{name:"No Default"}];',context);
 fields.buyerCompanySelect.value='0'; vm.runInContext('selectBuyerCompany()',context);

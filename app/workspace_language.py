@@ -22,4 +22,4 @@ def inject(source, selected):
     before, closing, after = source.rpartition('</body>')
     if not closing:
         return source
-    return before + f'<script src="/static/workspace-language.js?v=20261103-setup-prefill" data-language="{selected}" defer></script>' + closing + after
+    return before + f'<script src="/static/workspace-language.js?v=20261103-all-items" data-language="{selected}" defer></script>' + closing + after

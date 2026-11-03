@@ -9,6 +9,8 @@ from app.pdf_fonts import TP_UNICODE, TP_UNICODE_BOLD, ensure_pdf_fonts, fit_pdf
 import html as html_lib
 import os
 import math
+import hashlib
+import json
 from urllib.parse import urlencode
 from typing import Annotated, Optional
 
@@ -333,142 +335,71 @@ def create_invoice_pdf(payload, company=None):
             "Content-Disposition": f'attachment; filename="{invoice_no}.pdf"'
         }
     )
+def _invoice_revision(invoice):
+    """Detect any saved change while an invoice editor is open."""
+    payload = json.dumps(public_invoice(invoice), sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 @router.get("/edit-invoice/{invoice_no}")
 def edit_invoice(invoice_no: str, request: Request):
     account_id = _account_id(request)
     inv = public_invoice(_owned_invoice(invoice_no, account_id))
     company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
-    if inv:
-            items = inv.get("items", [])
-            item = items[0] if items else {}
-            item_name = item.get("name", "")
-            hs_code = item.get("hs_code", "")
-            quantity = item.get("quantity", "")
-            unit_price = item.get("unit_price", "")
-            origin = item.get("origin", "")
-            unit = item.get("unit", "")
-            remaining_total = sum(
-                _invoice_number("Quantity", extra.get("quantity", 0))
-                * _invoice_number("Unit price", extra.get("unit_price", 0))
-                for extra in items[1:]
-            )
-            remaining_notice = ""
-            if len(items) > 1:
-                remaining_rows = [[html_lib.escape(str(extra.get("name", ""))),
-                                   html_lib.escape(str(extra.get("quantity", ""))),
-                                   html_lib.escape(str(extra.get("unit_price", "")))] for extra in items[1:]]
-                remaining_notice = section_card("Other items kept unchanged",
-                    "<p>This form edits the first item only. The items below remain in the Invoice and are included in the total. Party details and currency apply to the whole Invoice.</p>"
-                    + table(["Item", "Quantity", "Unit Price"], remaining_rows))
-
-            html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Edit Invoice</title>
-<style>{form_css()}</style>
-</head>
-
-<body>
-<div class="container">
-
+    escape = lambda value: html_lib.escape(str(value if value is not None else ""), quote=True)
+    items = inv.get("items") or [{}]
+    cards = []
+    fields = [("name", "item_name", "Item Name"), ("hs_code", "hs_code", "HS Code"),
+              ("origin", "origin", "Country of Origin"), ("unit", "unit", "Unit"),
+              ("quantity", "quantity", "Quantity"), ("unit_price", "unit_price", "Unit Price")]
+    for index, item in enumerate(items):
+        inputs = []
+        for key, legacy_name, label in fields:
+            name = legacy_name if index == 0 else "extra_" + key
+            prefix = {"name": "item", "hs_code": "hs", "origin": "origin", "unit": "unit", "quantity": "qty", "unit_price": "price"}[key]
+            field_id = f"{prefix}{index + 1}"
+            numeric = key in ("quantity", "unit_price")
+            attrs = 'type="number" step="any" min="0"' if numeric else 'type="text"'
+            required = ' required' if key in ("name", "quantity", "unit_price") else ''
+            inputs.append(f'<div><label for="{field_id}">{label}</label>'
+                          f'<input {attrs} id="{field_id}" name="{name}" value="{escape(item.get(key, ""))}"'
+                          f' data-field="{key}"{required}></div>')
+        cards.append(f'<section class="card invoice-item"><h2><span>Item</span> {index + 1}</h2>'
+                     '<label>Saved product<select class="saved-product"><option value="">Select Product Master</option></select></label>'
+                     '<div class="grid">' + ''.join(inputs) + '</div></section>')
+    party_fields = []
+    for key, label, fallback in [
+        ("currency", "Currency", "USD"), ("seller", "Seller", ""),
+        ("seller_address", "Seller Address", company.get("address", "")),
+        ("seller_email", "Seller Email", company.get("email", "")),
+        ("seller_phone", "Seller Phone", company.get("phone", "")),
+        ("buyer", "Buyer", ""), ("buyer_address", "Buyer Address", ""), ("buyer_email", "Buyer Email", ""),
+    ]:
+        value = inv.get(key, fallback)
+        party_fields.append((label, f'<input type="text" name="{key}" value="{escape(value)}" placeholder="{label}">'))
+    content = f"""
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Edit Invoice</title>
+<style>{form_css()}
+.invoice-item .grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}
+.invoice-item .grid>div:first-child{{grid-column:1/-1}}
+.invoice-item label{{display:block;margin-bottom:6px}}
+@media(max-width:480px){{.invoice-item .grid{{grid-template-columns:1fr}}}}
+</style></head><body><div class="container">
 {navigation_footer("/invoice-list", "← Invoice List", state="Editing")}
-
-<h1>Edit Invoice</h1>
-<p class="sub">Update invoice information</p>
-
-<form action="/update-invoice/{invoice_no}" method="post">
-
-{section_card("Invoice Information", metadata([
-    ("Currency", f'<input type="text" name="currency" value="{html_lib.escape(str(inv.get("currency") or "USD"), quote=True)}" placeholder="Currency" oninput="calculateTotal()" onchange="calculateTotal()">'),
-    ("Seller", f'<input type="text" name="seller" value="{inv.get("seller", "")}" placeholder="Seller Name">'),
-    ("Seller Address", f'<input type="text" name="seller_address" value="{inv.get("seller_address", company.get("address", ""))}" placeholder="Seller Address">'),
-    ("Seller Email", f'<input type="text" name="seller_email" value="{inv.get("seller_email", company.get("email", ""))}" placeholder="Seller Email">'),
-    ("Seller Phone", f'<input type="text" name="seller_phone" value="{inv.get("seller_phone", company.get("phone", ""))}" placeholder="Seller Phone">'),
-    ("Buyer", f'<input type="text" name="buyer" value="{inv.get("buyer", "")}" placeholder="Buyer Name">'),
-    ("Buyer Address", f'<input type="text" name="buyer_address" value="{inv.get("buyer_address", "")}" placeholder="Buyer Address">'),
-    ("Buyer Email", f'<input type="text" name="buyer_email" value="{inv.get("buyer_email", "")}" placeholder="Buyer Email">'),
-]))}
-
-<div class="card">
-<h2>{"First Item" if len(items) > 1 else "Product Information"}</h2>
-
-<select id="product1" onchange="selectProduct(1)">
-<option value="">Select Product Master</option>
-</select>
-
-<input type="text" name="item_name" value="{item_name}" placeholder="Item Name">
-<input type="text" name="hs_code" id="hs1" value="{hs_code}" placeholder="HS Code">
-<input type="text" name="origin" id="origin1" value="{origin}" placeholder="Country of Origin">
-<input type="text" name="unit" id="unit1" value="{unit}" placeholder="Unit">
-<input type="number" step="any" min="0" name="quantity" id="qty1" value="{quantity}" placeholder="Quantity" oninput="calculateTotal()">
-<input type="number" step="any" min="0" name="unit_price" id="price1" value="{unit_price}" placeholder="Unit Price" oninput="calculateTotal()">
-</div>
-
-{remaining_notice}
-<div class="total" id="total">Total: USD 0</div>
-
+<h1>Edit Invoice</h1><p class="sub">Review and update every item before saving.</p>
+<form id="invoice-edit-form" data-managed-submit="true" action="/update-invoice/{escape(invoice_no)}" method="post">
+<input type="hidden" name="revision" value="{_invoice_revision(inv)}">
+{section_card("Invoice Information", metadata(party_fields))}
+{''.join(cards)}
+<div class="total" id="total" aria-live="polite"></div>
+<p>After saving, review the Packing List and download updated PDFs. Previously downloaded files stay unchanged.</p>
+<p id="edit-error" role="alert" hidden></p>
 {form_footer("/invoice-list", "Update Invoice")}
+</form></div><script src="/static/invoice-edit.js?v=20261103-all-items" defer></script></body></html>
+"""
+    return HTMLResponse(content)
 
-</form>
 
-</div>
-<script>
-let products = [];
-
-async function loadProducts(){{
-    const response = await fetch("/product-data");
-    products = await response.json();
-
-    const select = document.getElementById("product1");
-    select.innerHTML = '<option value="">Select Product Master</option>';
-
-    products.forEach((product, index) => {{
-        const option = document.createElement("option");
-        option.value = index;
-        option.textContent = product.name;
-        select.appendChild(option);
-    }});
-
-    const currentName = document.querySelector('input[name="item_name"]').value.toLowerCase();
-    const selectedIndex = products.findIndex(product => (product.name || "").toLowerCase() === currentName);
-    if(selectedIndex >= 0){{
-        select.value = selectedIndex;
-    }}
-}}
-
-function selectProduct(number){{
-    const index = document.getElementById("product" + number).value;
-    if(index === "") return;
-
-    const product = products[index];
-
-    document.querySelector('input[name="item_name"]').value = product.name || "";
-    document.getElementById("price" + number).value = product.unit_price || 0;
-    document.getElementById("hs" + number).value = product.hs_code || "";
-    document.getElementById("origin" + number).value = product.origin || "";
-    document.getElementById("unit" + number).value = product.unit || "";
-    calculateTotal();
-}}
-
-function calculateTotal(){{
-    const quantity = Number(document.getElementById("qty1").value || 0);
-    const unitPrice = Number(document.getElementById("price1").value || 0);
-    const currency = document.querySelector('input[name="currency"]').value.trim().toUpperCase() || "USD";
-    document.getElementById("total").textContent = "Total: " + currency + " " + (quantity * unitPrice + {remaining_total!r});
-}}
-
-window.onload = function(){{
-    loadProducts();
-    calculateTotal();
-}};
-</script>
-</body>
-</html>
-            """
-
-            return HTMLResponse(html)
 @router.post("/update-invoice/{invoice_no}")
 def update_invoice(
     invoice_no: str,
@@ -487,6 +418,13 @@ def update_invoice(
     seller_address: Annotated[Optional[str], Form()] = None,
     seller_email: Annotated[Optional[str], Form()] = None,
     seller_phone: Annotated[Optional[str], Form()] = None,
+    revision: Annotated[Optional[str], Form()] = None,
+    extra_name: Annotated[Optional[list[str]], Form()] = None,
+    extra_hs_code: Annotated[Optional[list[str]], Form()] = None,
+    extra_quantity: Annotated[Optional[list[str]], Form()] = None,
+    extra_unit_price: Annotated[Optional[list[str]], Form()] = None,
+    extra_origin: Annotated[Optional[list[str]], Form()] = None,
+    extra_unit: Annotated[Optional[list[str]], Form()] = None,
 ):
     seller = require_text("Seller", seller)
     buyer = require_text("Buyer", buyer)
@@ -501,8 +439,28 @@ def update_invoice(
                 or str(inv.get("account_id", "") or "").strip() != account_id
             ):
                 continue
-            quantity_value = _invoice_number("Quantity", quantity)
-            unit_price_value = _invoice_number("Unit price", unit_price)
+            existing_items = inv.get("items", [])
+            extra_fields = {"name": extra_name, "hs_code": extra_hs_code, "quantity": extra_quantity,
+                            "unit_price": extra_unit_price, "origin": extra_origin, "unit": extra_unit}
+            if revision is None and any(value is not None for value in extra_fields.values()):
+                raise HTTPException(status_code=409, detail="Reopen this Invoice before editing all items.")
+            if revision is not None and revision != _invoice_revision(inv):
+                raise HTTPException(status_code=409, detail="This Invoice changed while you were editing. Keep your changes for reference and reopen the latest Invoice before saving.")
+            if revision is not None:
+                count = max(0, len(existing_items) - 1)
+                if any(len(value or []) != count for value in extra_fields.values()):
+                    raise DataValidationError("Items", "The submitted item list is incomplete.", "Reopen the Invoice and review all items before saving.")
+            updates = [{"name": require_text("Item Name", item_name), "hs_code": hs_code,
+                        "quantity": quantity, "unit_price": unit_price, "origin": origin, "unit": unit}]
+            if revision is not None:
+                updates.extend({key: values[index] for key, values in extra_fields.items()}
+                               for index in range(max(0, len(existing_items) - 1)))
+            updated_items = [dict(item) for item in existing_items] or [{}]
+            for index, values in enumerate(updates):
+                values["name"] = require_text(f"Item {index + 1} name", values["name"])
+                values["quantity"] = _invoice_number(f"Item {index + 1} quantity", values["quantity"])
+                values["unit_price"] = _invoice_number(f"Item {index + 1} unit price", values["unit_price"])
+                updated_items[index].update(values)
 
             inv["seller"] = seller
             if seller_address is not None:
@@ -515,17 +473,7 @@ def update_invoice(
             inv["buyer"] = buyer
             inv["buyer_address"] = buyer_address
             inv["buyer_email"] = buyer_email
-            existing_items = inv.get("items", [])
-            updated_item = dict(existing_items[0]) if existing_items else {}
-            updated_item.update({
-                "name": item_name,
-                "hs_code": hs_code,
-                "quantity": quantity_value,
-                "unit_price": unit_price_value,
-                "origin": origin,
-                "unit": unit,
-            })
-            inv["items"] = [updated_item, *existing_items[1:]]
+            inv["items"] = updated_items
             return
         raise HTTPException(status_code=404, detail="Invoice not found")
     locked_json_mutation(INVOICE_FILE, [], replace_invoice, list)

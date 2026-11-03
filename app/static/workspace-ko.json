@@ -542,5 +542,8 @@
   "✅ Company information saved successfully.": "회사 정보를 저장했습니다.",
   "✅ Buyer created successfully.": "거래처를 저장했습니다.",
   "✅ Product created successfully.": "품목을 저장했습니다.",
-  "Create invoice from customer and product master data": "저장한 거래처와 품목을 불러와 송장을 작성하세요."
+  "Create invoice from customer and product master data": "저장한 거래처와 품목을 불러와 송장을 작성하세요.",
+  "Review and update every item before saving.": "모든 품목을 확인하고 수정한 뒤 저장하세요.",
+  "Saved product": "저장한 품목",
+  "After saving, review the Packing List and download updated PDFs. Previously downloaded files stay unchanged.": "저장 후 포장명세서를 확인하고 새 PDF를 내려받으세요. 이미 내려받은 파일은 바뀌지 않습니다."
 }
