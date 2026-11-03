@@ -468,7 +468,7 @@ __WORKSPACE_STORAGE__
       if(label&&!label.querySelector('.tp-required-mark'))label.insertAdjacentHTML('beforeend',' <span class="tp-required-mark" aria-hidden="true">*</span>');
       else if(field.placeholder&&!field.placeholder.endsWith(' *'))field.placeholder+=' *';
   });
-  if(requiredInputs.length&&workLabel!=='Packing List'){
+  if(requiredInputs.length&&workLabel!=='Packing List'&&workLabel!=='Commercial Invoice'){
     const progress=document.createElement('div');progress.className='tp-form-progress';progress.setAttribute('role','status');
     progress.innerHTML='<span class="tp-form-progress-label"></span><span class="tp-form-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span></span>';
     const progressLabel=progress.querySelector('.tp-form-progress-label');const progressTrack=progress.querySelector('.tp-form-progress-track');const progressFill=progressTrack.firstElementChild;
@@ -703,7 +703,7 @@ __INVOICE_DRAFT_STORE__
     deleteTemplate.addEventListener('click',function(){if(templateSelect.value==='')return;const index=Number(templateSelect.value);if(!Number.isInteger(index)||!templates[index])return;if(!window.confirm('Delete template “'+templates[index].name+'”?'))return;templates.splice(index,1);persistTemplates();renderTemplates();});
     renderTemplates();const favoritePanel=document.querySelector('.tp-favorites');const templateHost=toolsHost();if(favoritePanel&&favoritePanel.parentNode===templateHost)favoritePanel.insertAdjacentElement('afterend',templatePanel);else templateHost.insertBefore(templatePanel,templateHost.firstChild);
   }
-  if(workLabel==='Packing List'){
+  if(workLabel==='Packing List'||workLabel==='Commercial Invoice'){
     const reusable=document.createElement('details');reusable.className='tp-reusable-tools';
     reusable.style.cssText='margin:14px 0 20px;padding:12px 16px;border:1px solid #dce3eb;border-radius:12px;background:#f8fafc';
     const summary=document.createElement('summary');summary.textContent=document.documentElement.lang==='ko'?'저장한 값과 양식 사용':'Use saved values and templates';summary.style.cssText='cursor:pointer;font-weight:600;color:#334155';reusable.appendChild(summary);
@@ -725,9 +725,11 @@ __INVOICE_DRAFT_STORE__
   const activeValidationDefinitions=validationDefinitions.filter(function(definition){return smartValidationFields(definition).length;});
   if(workLabel&&activeValidationDefinitions.length){
     const validationPanel=document.createElement('section');validationPanel.className='tp-smart-validation';validationPanel.setAttribute('aria-label','Smart Validation');
-    const validationHeading=document.createElement('div');validationHeading.className='tp-smart-validation-heading';validationHeading.innerHTML='<div><strong>Smart Validation</strong><span>Check key information before saving.</span></div><small aria-live="polite"></small>';if(workLabel==='Packing List'){
+    const validationHeading=document.createElement('div');validationHeading.className='tp-smart-validation-heading';validationHeading.innerHTML='<div><strong>Smart Validation</strong><span>Check key information before saving.</span></div><small aria-live="polite"></small>';if(workLabel==='Packing List'||workLabel==='Commercial Invoice'){
       validationHeading.querySelector('strong').textContent=document.documentElement.lang==='ko'?'기본 정보 확인':'Basic details';
-      validationHeading.querySelector('span').textContent=document.documentElement.lang==='ko'?'저장 전 품목별 수량·박스·중량도 확인하세요.':'Also check each item’s quantity, cartons and weights before saving.';
+      validationHeading.querySelector('span').textContent=workLabel==='Packing List'
+        ?(document.documentElement.lang==='ko'?'저장 전 품목별 수량·박스·중량도 확인하세요.':'Also check each item’s quantity, cartons and weights before saving.')
+        :(document.documentElement.lang==='ko'?'저장 전 품목별 수량과 단가도 확인하세요.':'Also check each item’s quantity and unit price before saving.');
     }validationPanel.appendChild(validationHeading);
     const validationStatuses=document.createElement('div');validationStatuses.className='tp-validation-statuses';validationPanel.appendChild(validationStatuses);
     const statusButtons=new Map();
@@ -738,21 +740,6 @@ __INVOICE_DRAFT_STORE__
     document.querySelectorAll('#items_area,.items-container').forEach(function(container){new MutationObserver(updateSmartValidation).observe(container,{childList:true,subtree:true});});
     document.addEventListener('tp:prefill-complete',updateSmartValidation);
     updateSmartValidation();
-  }
-  const progressExtras=[
-    {key:'loading_port',label:'Loading Port',selectors:['[name="port_of_loading"]','[name="loading_port"]','#port_of_loading','#loading_port']},
-    {key:'destination_port',label:'Destination Port',selectors:['[name="port_of_discharge"]','[name="destination_port"]','[name="port_of_destination"]','#port_of_discharge','#destination_port']}
-  ];
-  const progressDefinitions=validationDefinitions.concat(progressExtras).map(function(definition){return Object.assign({},definition,{label:definition.key==='items'?'Items':definition.label});});
-  const activeProgressDefinitions=progressDefinitions.filter(function(definition){return smartValidationFields(definition).length;});
-  if(workLabel==='Commercial Invoice'&&activeProgressDefinitions.length){
-    const progressCard=document.createElement('section');progressCard.className='tp-smart-progress gray';progressCard.setAttribute('aria-label','Document Progress');progressCard.innerHTML='<div class="tp-smart-progress-heading"><div><strong>Document Progress</strong><span class="tp-smart-progress-message" aria-live="polite"></span></div><b class="tp-smart-progress-percent">0%</b></div><div class="tp-smart-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div><div class="tp-smart-progress-columns"><div><h3>Completed</h3><ul class="tp-progress-completed"></ul></div><div><h3>Remaining</h3><ul class="tp-progress-remaining"></ul></div></div>';
-    const progressPercent=progressCard.querySelector('.tp-smart-progress-percent');const progressMessage=progressCard.querySelector('.tp-smart-progress-message');const progressTrack=progressCard.querySelector('.tp-smart-progress-track');const progressFill=progressTrack.firstElementChild;const completedList=progressCard.querySelector('.tp-progress-completed');const remainingList=progressCard.querySelector('.tp-progress-remaining');
-    function progressListItem(label,complete){const item=document.createElement('li');item.textContent=(complete?'✓ ':'• ')+label;return item;}
-    function updateSmartProgress(){
-      const states=activeProgressDefinitions.map(function(definition){return {label:definition.label,complete:smartValidationFields(definition).some(function(field){return String(field.value||'').trim();})};});const completed=states.filter(function(state){return state.complete;});const remaining=states.filter(function(state){return !state.complete;});const percentage=Math.round(completed.length*100/states.length);const color=percentage<=30?'gray':percentage<=70?'blue':percentage<100?'green':'success';progressCard.classList.remove('gray','blue','green','success');progressCard.classList.add(color);progressPercent.textContent=percentage+'%';progressMessage.textContent=percentage===100?'Ready to Save':remaining.length+' remaining';progressFill.style.width=percentage+'%';progressTrack.setAttribute('aria-valuenow',String(percentage));completedList.replaceChildren();remainingList.replaceChildren();if(completed.length)completed.forEach(function(state){completedList.appendChild(progressListItem(state.label,true));});else completedList.appendChild(progressListItem('None yet',false));if(remaining.length)remaining.forEach(function(state){remainingList.appendChild(progressListItem(state.label,false));});else remainingList.appendChild(progressListItem('Nothing remaining',true));
-    }
-    const progressHost=toolsHost();progressHost.insertBefore(progressCard,progressHost.firstChild);document.addEventListener('input',updateSmartProgress,true);document.addEventListener('change',updateSmartProgress,true);document.querySelectorAll('#items_area,.items-container').forEach(function(container){new MutationObserver(updateSmartProgress).observe(container,{childList:true,subtree:true});});document.addEventListener('tp:prefill-complete',updateSmartProgress);updateSmartProgress();
   }
   const firstEditable=Array.from(editingRoot.querySelectorAll('input:not([type="hidden"]):not([readonly]):not([disabled]),select:not([disabled]),textarea:not([readonly]):not([disabled])')).find(function(field){return !field.closest('.tp-workspace-tools');});
   if(firstEditable)setTimeout(function(){firstEditable.focus({preventScroll:true});},0);
