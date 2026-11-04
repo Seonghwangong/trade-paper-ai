@@ -111,3 +111,36 @@ def test_legacy_invoice_without_snapshot_falls_back_to_company_master(monkeypatc
     assert b"Current Address" in pdf.body
     assert b"current@example.com" in pdf.body
     assert b"333-4444" in pdf.body
+
+
+def test_invoice_pdf_missing_contacts_never_invents_trade_parties(monkeypatch):
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+    base = {
+        "invoice_no": "INV-CONTACTS",
+        "seller": "Actual Seller",
+        "buyer": "Actual Buyer",
+        "items": [{"name": "Item", "quantity": 1, "unit_price": 10}],
+    }
+    for contacts in ({}, {"buyer_address": None, "buyer_email": None,
+                          "seller_address": None, "seller_email": None}):
+        pdf = invoice.create_invoice_pdf({**base, **contacts}, {})
+        assert b"Actual Seller" in pdf.body
+        assert b"Actual Buyer" in pdf.body
+        for invented in (b"Dubai, UAE", b"sales@abctrading.com", b"Seoul, Korea",
+                         b"contact@tradepaper.ai"):
+            assert invented not in pdf.body
+
+
+def test_invoice_pdf_explicit_empty_snapshot_does_not_use_company_contacts(monkeypatch):
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+    for empty in ("", None):
+        pdf = invoice.create_invoice_pdf({
+            "invoice_no": "INV-EMPTY-CONTACTS", "seller": "Actual Seller", "buyer": "Actual Buyer",
+            "seller_address": empty, "seller_email": empty,
+            "buyer_address": "Buyer Saved Address", "buyer_email": "buyer-saved@example.com",
+            "items": [{"name": "Item", "quantity": 2, "unit_price": 5}],
+        }, {"address": "Changed Address", "email": "changed@example.com"})
+        assert b"Changed Address" not in pdf.body
+        assert b"changed@example.com" not in pdf.body
+        assert b"Buyer Saved Address" in pdf.body
+        assert b"buyer-saved@example.com" in pdf.body

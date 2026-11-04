@@ -168,12 +168,12 @@ def create_invoice_pdf(payload, company=None):
     today = datetime.now().strftime("%Y-%m-%d")
 
     buyer = payload.get("buyer", "Unknown Buyer")
-    buyer_address = payload.get("buyer_address", "Dubai, UAE")
-    buyer_email = payload.get("buyer_email", "sales@abctrading.com")
+    buyer_address = payload.get("buyer_address") or ""
+    buyer_email = payload.get("buyer_email") or ""
 
     seller = payload.get("seller") or company.get("name") or "Unknown Seller"
-    seller_address = payload.get("seller_address") if "seller_address" in payload else company.get("address") or "Seoul, Korea"
-    seller_email = payload.get("seller_email") if "seller_email" in payload else company.get("email") or "contact@tradepaper.ai"
+    seller_address = (payload.get("seller_address") if "seller_address" in payload else company.get("address")) or ""
+    seller_email = (payload.get("seller_email") if "seller_email" in payload else company.get("email")) or ""
     seller_phone = payload.get("seller_phone") if "seller_phone" in payload else company.get("phone") or ""
 
     items = require_items(payload.get("items", []))
