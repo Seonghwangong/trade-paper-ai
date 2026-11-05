@@ -38,6 +38,7 @@
         const params = new URLSearchParams(window.location.search);
         const data = Object.fromEntries(fieldIds.map(id => [id, document.getElementById(id).value]));
         data.items = getItems();
+        data.include_signature = document.getElementById('include-signature')?.checked === true;
         for (const key of ['pi_no', 'shipment_no']) { const value = (params.get(key) || '').trim(); if (value) data[key] = value; }
         let response;
         try { response = await fetch('/invoice', {method:'POST', headers:{'Content-Type':'application/json', Accept:'application/json'}, body:JSON.stringify(data)}); }

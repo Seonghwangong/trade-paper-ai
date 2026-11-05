@@ -704,6 +704,8 @@ app.include_router(shipment_router)
 app.include_router(container_router)
 app.include_router(booking_router)
 app.include_router(customs_router)
+from app.company_signature import router as company_signature_router
+app.include_router(company_signature_router)
 app.include_router(company_router)
 app.include_router(product_router)
 app.include_router(buyer_router)

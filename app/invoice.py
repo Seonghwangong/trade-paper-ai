@@ -28,6 +28,9 @@ from app import proforma as proforma_module
 from app import product as product_module
 from app import buyer as buyer_module
 from app.export import set_pdf_export_record
+from app.company_signature import signature_for_invoice, signature_edit_control, normalize_signature
+from reportlab.lib.utils import ImageReader
+import base64
 
 COMPANY_FILE = data_path("company.json")
 INVOICE_FILE = data_path("invoices.json")
@@ -99,11 +102,15 @@ def load_proformas(account_id):
 def create_invoice(request: Request, payload: dict = Body(...)):
     record = dict(payload)
     record.pop("account_id", None)
+    record.pop("signature_image", None)
+    include_signature = record.pop("include_signature", False) is True
     record["account_id"] = _account_id(request)
     record["invoice_date"] = new_document_date(record.get("invoice_date"), "Invoice date")
     shipment_no = str(record.pop("shipment_no", "") or "").strip()
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
+    if include_signature:
+        record["signature_image"] = signature_for_invoice(_account_id(request), record["seller"])
     company = load_account_company(_account_id(request), ACCOUNT_COMPANIES_FILE)
     # An imported supplier invoice may name a different seller. Never attach
     # this account's address/contact to that other company implicitly.
@@ -204,7 +211,7 @@ def create_invoice_pdf(payload, company=None):
     table_right = table_x + table_w
     table_header_h = 28
     row_h = 30
-    row_min_bottom = 145
+    row_min_bottom = 190 if payload.get("signature_image") else 145
     total_w = 225
     total_h = 45
     total_gap = 20
@@ -273,6 +280,10 @@ def create_invoice_pdf(payload, company=None):
         pdf.setFont(TP_UNICODE, 10)
         pdf.drawString(45, 115, "Authorized Signature:")
         pdf.line(170, 115, 330, 115)
+        if payload.get("signature_image"):
+            image = normalize_signature(payload["signature_image"])
+            pdf.drawImage(ImageReader(BytesIO(base64.b64decode(image.split(',', 1)[1]))),
+                          175, 118, width=150, height=58, preserveAspectRatio=True, anchor='sw', mask='auto')
 
         pdf.setFillColor(colors.HexColor("#6B7280"))
         pdf.setFont(TP_UNICODE, 8)
@@ -392,6 +403,7 @@ def edit_invoice(invoice_no: str, request: Request):
 <input type="hidden" name="revision" value="{_invoice_revision(inv)}">
 {section_card("Invoice Information", metadata(party_fields))}
 {''.join(cards)}
+{signature_edit_control()}
 <div class="total" id="total" aria-live="polite"></div>
 <p>After saving, review the Packing List and download updated PDFs. Previously downloaded files stay unchanged.</p>
 <p id="edit-error" role="alert" hidden></p>
@@ -420,6 +432,7 @@ def update_invoice(
     seller_email: Annotated[Optional[str], Form()] = None,
     seller_phone: Annotated[Optional[str], Form()] = None,
     revision: Annotated[Optional[str], Form()] = None,
+    signature_action: Annotated[Optional[str], Form()] = None,
     extra_name: Annotated[Optional[list[str]], Form()] = None,
     extra_hs_code: Annotated[Optional[list[str]], Form()] = None,
     extra_quantity: Annotated[Optional[list[str]], Form()] = None,
@@ -431,6 +444,9 @@ def update_invoice(
     buyer = require_text("Buyer", buyer)
     require_items([item_name])
     account_id = _account_id(request)
+    if signature_action not in (None, "preserve", "use", "remove"):
+        raise DataValidationError("Signature", "Choose a signature option.", "Reopen this invoice and select the signature to use.")
+    selected_signature = signature_for_invoice(account_id, seller) if signature_action == "use" else None
     origin = origin if isinstance(origin, str) else ""
     unit = unit if isinstance(unit, str) else ""
     def replace_invoice(invoices):
@@ -463,6 +479,10 @@ def update_invoice(
                 values["unit_price"] = _invoice_number(f"Item {index + 1} unit price", values["unit_price"])
                 updated_items[index].update(values)
 
+            if signature_action == "use":
+                inv["signature_image"] = selected_signature
+            elif signature_action == "remove" or str(inv.get("seller", "")).strip().casefold() != seller.casefold():
+                inv.pop("signature_image", None)
             inv["seller"] = seller
             if seller_address is not None:
                 inv["seller_address"] = seller_address

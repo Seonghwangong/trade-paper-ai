@@ -60,7 +60,7 @@ PUBLIC_PATHS = frozenset({
 })
 COMPANY_SETUP_PATHS = frozenset({
     "/about", "/release-notes", "/version-history",
-    "/company", "/company-data", "/save-company", "/logout",
+    "/company", "/company-data", "/save-company", "/company-signature", "/logout",
     "/getting-started", "/try-sample", "/try-sample/documents", "/install",
     "/forgot-password", "/reset-password",
 })
