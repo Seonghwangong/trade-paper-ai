@@ -1,0 +1,83 @@
+Trade Paper AI 첫 정시 개발 실행 기록 — 2026-11-05 15:00 Asia/Seoul 예정
+
+실행 증거
+- 실제 연결된 managed cloud /workspace에서 Python, Git, pytest, Chromium과
+  격리 Uvicorn 서버를 실행했다. Mac 실행이나 알림으로 대체하지 않았다.
+- 공식 environment_status: provider=cloud, observed_phase=running,
+  connectivity=connected, observations_current=true, network policy=enforced.
+- 환경 ID: ccarenv_b64_Y2NhcmVudl9iNGFhMTNiZWE0Nzg4MTkxOTM3MTJkNjQ4MTFiNTVmMA.
+- automations.peek의 last_run_time은 2026-11-05T06:04:15.320125Z
+  (15:04:15 KST). 상세 run ID/완료 상태는 null로 제공되었다.
+  따라서 위 값만으로 정각 실행·완료를 증명하지 않는다. 실제 실행 증거는
+  이번 쉘 명령, 테스트 로그, 브라우저 검증과 코드 변경이다.
+
+시작 확인과 동시 작업 보존
+- /workspace/trade-paper-ai의 이전 44c6c93 커밋과
+  docs/cloud-first-run-2026-11-05.txt를 읽었다.
+- 최신 원격 main을 fetch: 82f656627d0a5e0fd085ab3d39a7dd1b06987a7f
+  (2026-11-05 14:59:36 KST).
+- 최신 main에는 제품 생성 후 Invoice 연결, Invoice/packing 저장·미리보기,
+  서명 이미지 선택, PDF 쌍 자동 준비가 이미 들어 있었다. 반복 구현하지 않았다.
+- 기존 작업공간을 덮어쓰거나 이전 미푸시 커밋을 섞지 않고
+  /workspace/work/scheduled-dev, branch cloud/2026-11-05-1500에서 작업.
+- tests/README.md, pytest.ini 및 기존 기록의 격리 지침을 따랐다.
+- 별도 AGENTS.md/시작 지침 파일은 발견되지 않았고 공식 런타임 도구도
+  설정의 시작 지침 원문을 노출하지 않는다. 원문 대조는 여전히 미검증.
+
+재현 가능한 제품 결함과 개선 1건
+- XLSX는 논리값 TRUE/FALSE를 t="b"와 v=1/0으로 저장한다.
+- 기존 reader는 cell type을 놓쳐 TRUE가 수량 1 또는 단가 1,
+  FALSE가 수량 0 또는 단가 0으로 초안에 들어갔다.
+- 실제 XLSX multipart 추출 endpoint에서 수량/단가 각각 TRUE/FALSE
+  4개 회귀 케이스가 수정 전 실패하는 것을 확인했다.
+- typed boolean을 TRUE/FALSE 원문 표시로 복원하여 숫자 파서가 거부하게 했다.
+  수량/단가는 빈칸으로 두고 고객이 원본 검토 후 직접 입력하도록 한다.
+  실제 숫자 단가/수량은 보존된다. 날짜·HS·중량·통관 정보는 변경하지 않았다.
+- 고객 화면 구조, 로고, 색상, 유료 권한 및 결제 활성 설정은 변경하지 않았다.
+
+검증
+- 수정 전 전체 비브라우저: 1603 passed, 5 failed, 38 deselected (25.83초).
+- 수정 전 새 회귀: 4 failed. 수정 후 관련 테스트: 59 passed.
+- 수정 후 전체 비브라우저: 1607 passed, 동일 5 failed,
+  38 deselected, 9 warnings (26.63초).
+- 4건은 이전 기록에 있는 오래된 라우트 수/digest, Packing 동작 문자열,
+  약관 제목, Product Hunt 메타 설명 기대값 불일치.
+- 최신 main에서 추가된 1건은 test_shipment_centered_navigation의
+  test_packing_browser_save_preserves_shipment_return_and_offers_contextless_next_step.
+  기존 inline tpSavedThenRedirect 코드를 inspect로 찾지만 93d3263에서
+  packing-complete.js와 showShipmentReturn으로 옮겨졌기 때문이다.
+- 별도 실제 시스템 Chromium + Playwright에서 XLSX 업로드 후
+  원문 TRUE 표시, 수량 공란/required/aria-invalid, 단가 6 보존,
+  form.checkValidity=false, Invoice 미생성을 확인했다.
+- 같은 격리 서버 /health 200, status=ok/version=3.6.5.
+  HTTP 가상 Invoice/Packing PDF 두 장을 생성하고 pypdf 파싱·워터마크 확인.
+- 실제 브라우저 검증 전후 기존 주 작업공간 data, 별도 데이터 경로,
+  worktree data 총 44개 파일 SHA-256 동일. 서버/브라우저 종료 완료.
+- 데이터는 /workspace/work/scheduled-1500/data 및 browser-data에 격리.
+  TRADE_PAPER_ENV=test, EMAIL_BACKEND=disabled, PADDLE_LIVE_SCHEDULER/ALERTS=0.
+- 고객 자료, 실제 구매, 메일, 홍보, 실결제 호출·설정 변경 없음.
+- 브라우저 전체 38개 테스트를 실행했다고 주장하지 않음. 별도 실브라우저
+  가져오기 검증만 위와 같이 수행했다. git diff --check 통과.
+
+원격 반영 및 운영 배포
+- 전체 검증 실패가 남아 있으므로 이번 변경은 로컬 검토용 커밋으로 보존.
+- push, force push, 수동 배포, Render 설정 변경은 하지 않았다.
+- Render list_services는 workspace 미선택으로 거절됐다. 공식 도구 지침에 따라
+  list_workspaces를 조회한 결과 My Workspace (tradepaper.ai@gmail.com),
+  tea-d9g1qp3tqb8s73f0qhpg 1개가 표시되었다.
+- 도구는 사용자의 workspace 확인을 요구한다. 선택 승인을 질문했으나
+  이 기록 시점까지 응답이 없어 임의 선택하지 않았다.
+- 따라서 실제 운영 커밋, Render 자동 배포 여부, 운영 health는 미확인.
+  격리 서버 health와 운영 배포 health를 혼동하지 않는다.
+- 기존 로컬 예약을 변경하거나 다시 켜지 않았다.
+
+다음 우선순위
+- 사용자에게 Render workspace 선택 확인을 받아 실제 운영 커밋과 main을 대조.
+- 기존 테스트 기대값 5건을 의도된 현재 동작과 비교해 복구하고 전체 검증을
+  다시 확보한 후, 동시 main 변경을 확인하여 이 작은 수정의 안전한 반영 검토.
+- 이전 44c6c93은 별도 미푸시 커밋으로 보존되어 있으며 이번 브랜치에 포함하지 않음.
+
+실행 자료
+- /workspace/work/scheduled-1500/baseline.log, reproduction.log, final.log
+- /workspace/work/scheduled-1500/browser_check.py, browser-result.json, xlsx-review.png
+- /workspace/work/scheduled-1500/invoice.pdf, packing.pdf (가상 샘플)

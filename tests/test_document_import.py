@@ -105,6 +105,30 @@ def test_xlsx_formula_is_not_executed_or_replaced_by_stale_cached_value():
     assert result['items'][0]['unit_price']==''
 
 
+@pytest.mark.parametrize('column,field', [('B', 'quantity'), ('C', 'unit_price')])
+@pytest.mark.parametrize('stored,display', [('1', 'TRUE'), ('0', 'FALSE')])
+def test_xlsx_boolean_is_reviewable_but_never_a_quantity_or_price(column, field, stored, display):
+    sheet = (
+        '<row r="1"><c r="A1" t="inlineStr"><is><t>Description</t></is></c>'
+        '<c r="B1" t="inlineStr"><is><t>Qty</t></is></c>'
+        '<c r="C1" t="inlineStr"><is><t>Unit Price</t></is></c></row>'
+        '<row r="2"><c r="A2" t="inlineStr"><is><t>Fictional Mug</t></is></c>'
+        + (f'<c r="B2" t="b"><v>{stored}</v></c><c r="C2"><v>6</v></c>'
+           if column == 'B' else f'<c r="B2"><v>12</v></c><c r="C2" t="b"><v>{stored}</v></c>')
+        + '</row>'
+    )
+    data = workbook(sheet)
+    body = (b'--boundary\r\nContent-Disposition: form-data; name="file"; filename="order.xlsx"\r\n'
+            b'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n'
+            + data + b'\r\n--boundary--\r\n')
+    response = asyncio.run(subject.extract(request(body, 'multipart/form-data; boundary=boundary')))
+    draft = json.loads(response.body)
+    assert response.headers['cache-control'] == 'no-store'
+    assert draft['items'][0][field] == ''
+    assert display in draft['source_text']
+    assert draft['items'][0]['unit_price' if field == 'quantity' else 'quantity'] == ('6' if field == 'quantity' else '12')
+
+
 def test_xlsx_refuses_traversal_oversized_archives_and_entities():
     with pytest.raises(ValueError): subject.spreadsheet_rows(workbook(target='../outside.xml'),'a.xlsx')
     with pytest.raises(ValueError): subject.spreadsheet_rows(workbook(sheet='<!DOCTYPE x>'),'a.xlsx')

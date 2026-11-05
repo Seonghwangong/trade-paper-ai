@@ -244,6 +244,9 @@ def spreadsheet_rows(data, filename, sheet_index=0):
                         value = cell.findtext('s:v', '', ns)
                         if cell.attrib.get('t') == 's':
                             value = strings[int(value)]
+                        elif cell.attrib.get('t') == 'b':
+                            # Excel stores booleans as 0/1; these are not order numbers.
+                            value = {'1': 'TRUE', '0': 'FALSE', 'true': 'TRUE', 'false': 'FALSE'}.get(value, '')
                     values[col - 1] = value
                 rows.append([values.get(i, '') for i in range(max(values, default=-1) + 1)])
                 if len(rows) > 2000 or sum(len(str(c)) for c in rows[-1]) > MAX_TEXT:
