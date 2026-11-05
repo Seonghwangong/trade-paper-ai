@@ -377,7 +377,10 @@ def safe_next_path(value):
     parsed = urlsplit(candidate)
     if parsed.scheme or parsed.netloc:
         return "/"
-    return parsed.path + (f"?{parsed.query}" if parsed.query else "")
+    # Login completes with a GET redirect. Never return to the product's
+    # POST-only mutation URL after a session expires during form submission.
+    path = "/product-form" if parsed.path == "/save-product" else parsed.path
+    return path + (f"?{parsed.query}" if parsed.query else "")
 
 
 def session_cookie_secure(request=None):
@@ -425,7 +428,7 @@ class AuthenticationMiddleware:
                 if path.startswith("/subscription/billing-test/")
                 else path + (f"?{request.url.query}" if request.url.query else "")
             )
-            response = RedirectResponse(f"/login?next={quote(requested, safe='')}", status_code=303)
+            response = RedirectResponse(f"/login?next={quote(safe_next_path(requested), safe='')}", status_code=303)
             await response(scope, receive, send)
             return
         if user is not None:

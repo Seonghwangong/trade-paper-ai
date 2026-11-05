@@ -386,6 +386,14 @@ __DEMO_NOTICE__
     html = html.replace("__SETUP_FLOW__", "setup" if flow == "setup" else "")
     return HTMLResponse(html)
 
+@router.get("/save-product", include_in_schema=False)
+def recover_product_form(request: Request):
+    """Recover old login return URLs without replaying a product write."""
+    from app.auth import safe_next_path
+    target = safe_next_path("/save-product" + (f"?{request.url.query}" if request.url.query else ""))
+    return RedirectResponse(target, status_code=303)
+
+
 @router.post("/save-product")
 def save_product(
     request: Request,
