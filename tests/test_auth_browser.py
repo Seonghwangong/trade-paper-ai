@@ -404,7 +404,7 @@ def test_authentication_browser_flow(auth_server, browser_name):
             assert page.locator("#total").text_content() == "Total: USD 100"
             page.locator("#price1").fill("30")
             assert page.locator("#total").text_content() == "Total: USD 120"
-            page.get_by_role("button", name="Save Invoice").click()
+            page.get_by_role("button", name="Complete Invoice").click()
             page.locator("#invoice-next-actions").wait_for(state="visible")
             invoice_a_data = page.evaluate("fetch('/invoice-data').then(response => response.json())")
             assert len(invoice_a_data) == 1
@@ -739,7 +739,7 @@ def test_authentication_browser_flow(auth_server, browser_name):
             page.locator("#product1").select_option(label=product_b_name)
             page.locator("#qty1").fill("2")
             page.locator("#price1").fill("35")
-            page.get_by_role("button", name="Save Invoice").click()
+            page.get_by_role("button", name="Complete Invoice").click()
             page.locator("#invoice-next-actions").wait_for(state="visible")
             invoice_b_data = page.evaluate("fetch('/invoice-data').then(response => response.json())")
             assert len(invoice_b_data) == 1

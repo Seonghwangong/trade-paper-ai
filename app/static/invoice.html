@@ -90,8 +90,8 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 
 <div class="total" id="total">Total: USD 0</div>
 
-<button class="full" onclick="generatePDF()">Generate Invoice PDF</button>
-<button class="full" onclick="saveInvoice()">Save Invoice</button>
+<button id="complete-invoice" class="full" type="button" onclick="saveInvoice()">Complete Invoice</button>
+<section id="completed-invoice-pdf" hidden aria-live="polite"></section>
 
 </div>
 
@@ -177,46 +177,6 @@ function calculateTotal(){
     const total = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
     const currency = document.getElementById("currency").value.trim().toUpperCase() || "USD";
     document.getElementById("total").textContent = "Total: " + currency + " " + total;
-}
-
-async function saveInvoice(){
-    const data = {
-        seller: document.getElementById("seller").value,
-        seller_address: document.getElementById("seller_address").value,
-        seller_email: document.getElementById("seller_email").value,
-        seller_phone: document.getElementById("seller_phone").value,
-        currency: document.getElementById("currency").value,
-        buyer: document.getElementById("buyer").value,
-        buyer_address: document.getElementById("buyer_address").value,
-        buyer_email: document.getElementById("buyer_email").value,
-        items: getItems()
-    };
-
-    const response = await fetch("/invoice",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(data)
-    });
-
-    const result = await response.json();
-    alert("Invoice Saved : " + result.invoice_no);
-    window.location.href = "/invoice-list";
-}
-
-async function generatePDF(){
-    const data = {
-        currency: document.getElementById("currency").value,
-        seller: document.getElementById("seller").value,
-        seller_address: document.getElementById("seller_address").value,
-        seller_email: document.getElementById("seller_email").value,
-        seller_phone: document.getElementById("seller_phone").value,
-        buyer: document.getElementById("buyer").value,
-        buyer_address: document.getElementById("buyer_address").value,
-        buyer_email: document.getElementById("buyer_email").value,
-        items: getItems()
-    };
-
-    await previewWorkflowPDF("/invoice/pdf", data);
 }
 
 async function loadCompany(){

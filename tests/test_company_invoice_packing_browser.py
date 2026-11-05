@@ -193,7 +193,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             assert page.locator("#unit1").input_value() == "PCS"
             page.locator("#qty1").fill("4")
             assert page.locator("#total").text_content() == "Total: USD 500"
-            page.get_by_role("button", name="Save Invoice").click()
+            page.get_by_role("button", name="Complete Invoice").click()
             page.locator("#invoice-next-actions").wait_for(state="visible")
             invoices = page.evaluate("fetch('/invoice-data').then(response => response.json())")
             assert len(invoices) == 1
