@@ -52,3 +52,20 @@ test('re-running setup does not replace already loaded or edited values',()=>{
  const f=fixture();f.apply();f.field('price1').value='99';f.ctx.products[0].name='New';f.apply();
  assert.equal(f.field('item1').value,'Cup');assert.equal(f.field('price1').value,'99');
 });
+test('newly saved product is selected among multiple account masters',()=>{
+ const f=fixture('?flow=setup&product='+encodeURIComponent('New & 컵'));
+ f.ctx.products.push({name:'New & 컵',hs_code:'691110',unit_price:'5.00',origin:'South Korea',unit:'PCS'});
+ f.apply();
+ assert.equal(f.field('product1').value,'1');
+ for(const [id,value] of Object.entries({item1:'New & 컵',price1:'5.00',hs1:'691110',origin1:'South Korea',unit1:'PCS',qty1:''}))assert.equal(f.field(id).value,value,id);
+});
+test('missing or ambiguous requested product never selects a different item',()=>{
+ for(const names of [['Other'],['Cup','Cup'],[]]){
+  const f=fixture('?flow=setup&product=Cup');f.ctx.products=names.map(name=>({name,unit_price:'5'}));f.apply();
+  assert.equal(f.field('item1').value,'');
+ }
+});
+test('requested product cannot overwrite edits or proforma prefill',()=>{
+ const f=fixture('?flow=setup&product=Cup');f.field('price1').value='12';f.apply();assert.equal(f.field('price1').value,'12');assert.equal(f.field('item1').value,'');
+ const g=fixture('?flow=setup&product=Cup&pi_no=PI-1');g.apply();assert.equal(g.field('item1').value,'');
+});

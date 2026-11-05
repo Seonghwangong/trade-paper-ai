@@ -33,14 +33,26 @@ def test_company_setup_advances_and_preserves_chosen_task(tmp_path, monkeypatch)
     assert result["redirect_to"] == "/"
 
 
-def test_setup_flow_continues_but_ordinary_create_keeps_list(tmp_path, monkeypatch):
+def test_buyer_setup_continues_and_all_new_products_advance_to_invoice(tmp_path, monkeypatch):
     monkeypatch.setattr(buyer, "BUYER_FILE", tmp_path / "buyers.json")
     monkeypatch.setattr(product, "PRODUCT_FILE", tmp_path / "products.json")
     for flow, expected in [("setup", "/product-form?flow=setup"), ("", "/buyers"), ("https://evil.invalid", "/buyers")]:
         assert buyer.save_buyer(request(), name="Test buyer", address="", email="", country="", status="Lead", flow=flow).headers["location"] == expected
-    for flow, expected in [("setup", "/invoice?flow=setup"), ("", "/products")]:
-        assert product.save_product(request(), name="Laptop", hs_code="847130", unit_price="850", origin="KR", unit="PCS", flow=flow).headers["location"] == expected
+    for flow in ["setup", "", "https://evil.invalid"]:
+        assert product.save_product(request(), name="Laptop", hs_code="847130", unit_price="850", origin="KR", unit="PCS", flow=flow).headers["location"] == "/invoice?flow=setup&product=Laptop"
     assert 'name="flow" value="setup"' in buyer.buyer_form(flow="setup").body.decode()
     assert 'name="flow" value="setup"' in product.product_form(flow="setup").body.decode()
     assert 'name="flow" value=""' in buyer.buyer_form().body.decode()
     assert 'data-ui-label="true" value="Lead"' in buyer.buyer_form().body.decode()
+
+
+def test_product_invoice_redirect_encodes_name_and_saves_values_once(tmp_path, monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+    path = tmp_path / "products.json"
+    monkeypatch.setattr(product, "PRODUCT_FILE", path)
+    name = "테스트 컵 & mug + 350ml/#?"
+    response = product.save_product(request(), name=name, hs_code="691110", unit_price="5.00", origin="KR", unit="PCS")
+    target = urlsplit(response.headers["location"])
+    assert target.path == "/invoice"
+    assert parse_qs(target.query) == {"flow": ["setup"], "product": [name]}
+    assert json.loads(path.read_text()) == [{"account_id": "a", "name": name, "hs_code": "691110", "unit_price": "5.00", "origin": "KR", "unit": "PCS"}]

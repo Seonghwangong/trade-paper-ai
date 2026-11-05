@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Form, HTTPException, Request
 from difflib import get_close_matches
+from urllib.parse import urlencode
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.account_product import ensure_legacy_product_ownership, public_product
 from app.auth import USERS_FILE
@@ -419,7 +420,9 @@ def save_product(
     from app.audit_log import record_request_audit
     record_request_audit(request, "Create", "Product", name, path=PRODUCT_FILE.with_name("audit_log.json"))
 
-    return RedirectResponse(url="/invoice?flow=setup" if flow == "setup" else "/products", status_code=303)
+    # Saving a new master product continues the document workflow even when
+    # the user entered this page without the onboarding flow query parameter.
+    return RedirectResponse(url="/invoice?" + urlencode({"flow": "setup", "product": name}), status_code=303)
 
 
 @router.get("/delete-product/{index}")

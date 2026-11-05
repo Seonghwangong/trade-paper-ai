@@ -382,8 +382,13 @@ function applySetupPrefill(){
         if(keepCurrency) currency.value = previousCurrency;
         loaded = true;
     }
-    if(products.length === 1 && products[0]?.name && untouched(['product1','item1','hs1','origin1','unit1','price1'])){
-        document.getElementById('product1').value = '0';
+    // The redirect after product creation identifies the user's chosen item.
+    // Resolve only against this account's masters; duplicate names need review.
+    const requestedProduct = params.get('product');
+    const candidates = products.map((product,index)=>({product,index})).filter(entry =>
+        requestedProduct !== null ? entry.product.name === requestedProduct : products.length === 1 && entry.product.name);
+    if(candidates.length === 1 && untouched(['product1','item1','hs1','origin1','unit1','price1'])){
+        document.getElementById('product1').value = String(candidates[0].index);
         selectProduct(1);
         loaded = true;
     }
