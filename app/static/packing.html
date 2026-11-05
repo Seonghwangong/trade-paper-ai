@@ -164,8 +164,8 @@ button{
 <button type="button" class="add" onclick="addItem()">+ Add Item</button>
 </div>
 
-<button class="full" onclick="savePacking()">Save Packing List</button>
-<button class="full" onclick="generatePackingPDF()">Generate Packing PDF</button>
+<button id="complete-packing" class="full" type="button" onclick="savePacking()">Complete Packing List</button>
+<section id="completed-packing-pdf" hidden aria-live="polite"></section>
 
 </div>
 
@@ -384,33 +384,6 @@ function getPackingData(){
         buyer_email: document.getElementById("buyer_email").value,
         items: items
     };
-}
-
-async function savePacking(){
-    const data = getPackingData();
-    if(!data.invoice_no){
-        alert("Please select Invoice No.");
-        return;
-    }
-
-    const res = await fetch("/packing-list", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(data)
-    });
-
-    const result = await res.json();
-    alert("Packing Saved : " + result.packing_no);
-    window.location.href = "/packing-list";
-}
-
-async function generatePackingPDF(){
-    clearWorkflowMessage();
-    if(!document.getElementById("invoice_no").value){
-        showWorkflowError("Please select Invoice No. before generating the PDF.");
-        return;
-    }
-    await previewWorkflowPDF("/packing-list/pdf", getPackingData());
 }
 
 window.onload = async function(){

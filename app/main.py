@@ -612,20 +612,7 @@ function showPackingNextActions(packingNo,invoiceNo){
 """
     else:
         behavior = """
-<script>
-window.savePacking=async function(){
-  clearWorkflowMessage();
-  const data=getPackingData();if(!data.invoice_no){showWorkflowError("Please select Invoice No.");return;}
-  const shipmentNo=(new URLSearchParams(window.location.search).get("shipment_no")||"").trim();if(shipmentNo)data.shipment_no=shipmentNo;
-  let response;try{response=await fetch("/packing-list",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},body:JSON.stringify(data)});}catch(error){showWorkflowError("The Packing List could not be saved because the server could not be reached.");return;}
-  if(!response.ok){showWorkflowError(await workflowErrorMessage(response));return;}
-  const type=(response.headers.get("content-type")||"").toLowerCase();let result;
-  try{result=type.includes("application/json")?await response.json():null;}catch(error){showWorkflowError("The Packing List was not confirmed by the server.");return;}
-  if(!result||!result.packing_no){showWorkflowError("The Packing List was not confirmed by the server.");return;}
-  if(shipmentNo){await window.tpSavedThenRedirect("/shipment/"+encodeURIComponent(shipmentNo));return;}
-  showPackingNextActions(result.packing_no,result.invoice_no||data.invoice_no);
-};
-</script>
+<script src="/static/packing-complete.js?v=20261105"></script>
 """
     return common + behavior
 

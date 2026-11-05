@@ -272,7 +272,7 @@ def test_company_invoice_packing_linkage_and_observed_snapshot_behavior(linkage_
             item_card.locator(".carton").fill("2")
             item_card.locator(".net_weight").fill("40")
             item_card.locator(".gross_weight").fill("44")
-            page.get_by_role("button", name="Save Packing List").click()
+            page.get_by_role("button", name="Complete Packing List").click()
             page.locator("#packing-next-actions").wait_for(state="visible")
             create_si = page.get_by_role("link", name="Create Shipping Instruction")
             create_si_href = create_si.get_attribute("href")

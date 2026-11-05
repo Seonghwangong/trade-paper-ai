@@ -558,5 +558,6 @@
   "Keep the current signature": "현재 서명 유지",
   "Apply my registered company signature": "등록한 회사 서명 적용",
   "Leave unsigned": "서명 없이 저장",
-  "Only apply a signature you are authorized to use. Previously downloaded PDFs stay unchanged.": "사용 권한이 있는 서명만 적용하세요. 이전에 내려받은 PDF는 변경되지 않습니다."
+  "Only apply a signature you are authorized to use. Previously downloaded PDFs stay unchanged.": "사용 권한이 있는 서명만 적용하세요. 이전에 내려받은 PDF는 변경되지 않습니다.",
+  "Complete Packing List": "포장명세서 완성"
 }
