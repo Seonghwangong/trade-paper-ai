@@ -119,7 +119,7 @@ def prepare_form(packing_no: str, request: Request):
         content += f'<a class="action" href="/packing-sync/{quote(packing_no, safe="")}">{_text(request, "Compare with Invoice", "Invoice와 비교")}</a>'
     else:
         content += f'<p>{_text(request, "Prepare two private PDF copies to review together. They are available for one hour. This step does not send an email or create new documents.", "두 PDF 사본을 만들어 함께 확인합니다. 사본은 1시간 동안 이용할 수 있습니다. 이 단계에서는 메일을 보내거나 새 문서를 생성하지 않습니다.")}</p>'
-        content += f'<form method="post" action="{esc(target)}" data-native-submit="true"><button type="submit">{_text(request, "Prepare both PDFs", "두 PDF 준비하기")}</button></form>'
+        content += f'<form id="prepare-pdf-pair" method="post" action="{esc(target)}" data-native-submit="true"><p id="prepare-pdf-status" role="status" aria-live="polite"></p><button type="submit">{_text(request, "Prepare both PDFs", "두 PDF 준비하기")}</button></form><script src="/static/prepare-pdf-pair.js?v=20261105" defer></script>'
     content += f'<p><a href="/send-email/packing/{quote(packing_no, safe="")}">{_text(request, "Back to document email", "문서 이메일로 돌아가기")}</a></p>'
     return _page(request, content)
 

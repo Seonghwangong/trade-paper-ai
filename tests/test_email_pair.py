@@ -43,6 +43,26 @@ def prepare():
     return response.headers["location"].split("/")[-1].split("?")[0]
 
 
+def test_prepare_entry_automatically_continues_but_keeps_manual_fallback(pair):
+    response = email_pair.prepare_form("PL-1", request(lang="ko"))
+    html = response.body.decode()
+    assert 'id="prepare-pdf-pair" method="post" action="/email-pair/prepare/PL-1?lang=ko"' in html
+    assert '/static/prepare-pdf-pair.js?v=20261105' in html
+    assert '두 PDF 준비하기' in html  # JavaScript-disabled fallback
+    assert '/email-pair/send/' not in html
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert not email_pair.REVIEW_DB.exists()  # GET remains read-only
+
+
+def test_mismatch_entry_never_automatically_prepares(pair):
+    pair[1]['items'][0]['quantity'] = 99
+    html = email_pair.prepare_form('PL-1', request(lang='ko')).body.decode()
+    assert '공통 항목이 다릅니다' in html
+    assert '/packing-sync/PL-1' in html
+    assert 'prepare-pdf-pair.js' not in html
+    assert not email_pair.REVIEW_DB.exists()
+
+
 def send(token, **kwargs):
     return email_pair.send_pair(token, request(method="POST"), "buyer@example.com", "Documents", "Please review.", **kwargs)
 
