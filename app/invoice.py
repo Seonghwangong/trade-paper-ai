@@ -1,5 +1,5 @@
 from io import BytesIO
-from datetime import datetime
+from app.document_dates import new_document_date, saved_document_date
 from fastapi import APIRouter, Body, Response, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from reportlab.lib.pagesizes import A4
@@ -100,6 +100,7 @@ def create_invoice(request: Request, payload: dict = Body(...)):
     record = dict(payload)
     record.pop("account_id", None)
     record["account_id"] = _account_id(request)
+    record["invoice_date"] = new_document_date(record.get("invoice_date"), "Invoice date")
     shipment_no = str(record.pop("shipment_no", "") or "").strip()
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
@@ -165,7 +166,7 @@ def create_invoice_pdf(payload, company=None):
 
     currency = str(payload.get("currency") or "USD").strip().upper() or "USD"
     invoice_no = payload.get("invoice_no", "INV-001")
-    today = datetime.now().strftime("%Y-%m-%d")
+    document_date = saved_document_date(payload, "invoice_date")
 
     buyer = payload.get("buyer", "Unknown Buyer")
     buyer_address = payload.get("buyer_address") or ""
@@ -223,7 +224,7 @@ def create_invoice_pdf(payload, company=None):
         pdf.setFillColor(colors.black)
         pdf.setFont(TP_UNICODE_BOLD, 11)
         pdf.drawString(45, height - 125, f"Invoice No: {invoice_no}")
-        pdf.drawString(45, height - 145, f"Date: {today}")
+        pdf.drawString(45, height - 145, f"Date: {document_date}")
 
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
         pdf.setFillColor(colors.HexColor("#F9FAFB"))

@@ -23,6 +23,7 @@ from app.storage import (
     next_identifier,
 )
 from app.validation import DataValidationError, require_existing_reference, require_items, require_text
+from app.document_dates import new_document_date
 from app.documents import DOCUMENT_DEFINITIONS, get_document_definition
 from app.release import (
     APP_NAME, APP_VERSION, EXPECTED_ROUTE_COUNT, RELEASE_STAGE,
@@ -762,6 +763,7 @@ def save_invoice(invoice_data, account_id):
     record = dict(invoice_data)
     record.pop("account_id", None)
     record["account_id"] = account_id
+    record["invoice_date"] = new_document_date(record.get("invoice_date"), "Invoice date")
     record["seller"] = require_text("Seller", record.get("seller", ""))
     record["buyer"] = require_text("Buyer", record.get("buyer", ""))
     require_items(record.get("items", []))

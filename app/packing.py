@@ -1,5 +1,5 @@
 from io import BytesIO
-from datetime import datetime
+from app.document_dates import new_document_date, saved_document_date
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Body, Response, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -109,6 +109,7 @@ def create_packing_list(request: Request, payload: dict = Body(...)):
     record.pop("account_id", None)
     account_id = _account_id(request)
     record["account_id"] = account_id
+    record["packing_date"] = new_document_date(record.get("packing_date"), "Packing date")
     shipment_no = str(record.pop("shipment_no", "") or "").strip()
     invoice_no = require_text("Invoice No", record.get("invoice_no", ""))
     source_invoice = public_packing(_owned_invoice(invoice_no, account_id))
@@ -244,6 +245,7 @@ def save_packing(
         packing = {
         "account_id": account_id,
         "packing_no": next_identifier(packing_lists, "packing_no", "PK"),
+        "packing_date": new_document_date(None),
         "invoice_no": invoice_no,
         "seller": seller,
         "seller_address": seller_address or "",
@@ -482,7 +484,7 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
 
     packing_no = payload.get("packing_no") or "-"
     invoice_no = payload.get("invoice_no", "")
-    today = datetime.now().strftime("%Y-%m-%d")
+    document_date = saved_document_date(payload, "packing_date")
 
     buyer = payload.get("buyer", "")
     buyer_address = payload.get("buyer_address", buyer_master.get("address", ""))
@@ -530,7 +532,7 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
         pdf.setFont(TP_UNICODE_BOLD, 11)
         pdf.drawString(45, height - 125, f"Packing No: {packing_no}")
         pdf.drawString(45, height - 143, f"Invoice No: {invoice_no}")
-        pdf.drawString(45, height - 161, f"Date: {today}")
+        pdf.drawString(45, height - 161, f"Date: {document_date}")
 
         pdf.setStrokeColor(colors.HexColor("#D1D5DB"))
         pdf.setFillColor(colors.HexColor("#F9FAFB"))
