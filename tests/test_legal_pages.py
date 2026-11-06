@@ -32,7 +32,7 @@ def test_privacy_policy_matches_current_beta_data_handling():
 def test_terms_describe_only_current_beta_service_and_user_responsibility():
     body = _body(release_pages.terms_page())
     for text in (
-        "Agreement and Beta Notice",
+        "Agreement and Service Notice",
         "Service Description",
         "Accounts",
         "Your Data and Documents",

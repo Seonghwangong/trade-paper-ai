@@ -1,0 +1,72 @@
+Trade Paper AI 클라우드 개발 후속 기록 — 2026-11-06 09:00 Asia/Seoul 전후
+
+이전 작업과 실행 기준
+- 실제 연결된 클라우드 환경에서 Git/Python/pytest/Node/Chromium/Uvicorn 실행.
+  provider=cloud, observed_phase=running을 공식 도구로 재확인했다.
+- /workspace/.trade-paper-ai/development-runs/latest.txt와 이전 실행 커밋을 읽었다.
+- 최신 원격 main을 시작/종료 시 fetch했고 모두
+  82f656627d0a5e0fd085ab3d39a7dd1b06987a7f였다.
+- 이전 제품 결함 수정 c8fd3c6(XLSX 논리값을 수량·단가로 추정하지 않음)을
+  반복 구현하지 않았다. 그 수정의 반영을 막던 검증 실패 5건을 이번에 해소했다.
+- 작업 경로 /workspace/work/scheduled-dev,
+  branch cloud/2026-11-05-1500. 기존 주 작업공간의 44c6c93은 그대로 보존.
+- tests/README.md와 저장된 격리 지침을 적용했다. 별도 클라우드 설정의
+  시작 지침 원문은 현재 도구에서 제공되지 않아 원문 대조는 여전히 미확인.
+
+변경 내용과 근거
+1. 라우트 등록 메타데이터/스냅샷을 현재 306개로 갱신.
+   cc9b409의 300개 이후 추가된 라우트 6개를 Git 이력과 대조했다:
+   company-signature GET/POST, save-product GET, OAuth start/callback GET,
+   Apple callback POST. 중복/구조 충돌 모두 없음.
+   route digest: 72a53a7f41d1bf8fc6b1a8d0033f4174261c8f88b14e17b2506d029d0c0cdaa9
+   스냅샷 검사를 제거하거나 실제 수에 자동으로 맞추는 검사는 하지 않았다.
+2. Packing 저장 로직은 93d3263에서 packing-complete.js로 분리되었다.
+   존재하지 않는 inline 호출을 찾는 검사 대신 컨트롤러 연결과
+   Shipment 복귀, PDF 쌍 검토, SI 후속 링크를 확인하도록 정비했다.
+   저장 횟수·Shipment 문맥·검토·오류 복구는 기존 JS 실행 테스트로 검증했다.
+3. 공개 출시 약관 제목 Agreement and Service Notice와 실제 랜딩 메타 설명을
+   의도된 현재 문구와 비교하도록 기대값을 갱신했다. 다른 약관 조항,
+   소셜 미리보기 이미지·제목, 별도 Product Hunt 출시 문서 검사는 유지했다.
+- 고객 화면, 로고·색상, 수량·중량·HS·과거 날짜 또는 결제 설정 변경 없음.
+
+검증 결과
+- 전체 비브라우저: 1612 passed, 38 deselected, 9 warnings, 25.24초.
+  이전의 1607 passed/5 failed에서 기존 실패 5건을 해소했다.
+- JS 파일 직접 실행: packing-complete 9, invoice-complete 10,
+  prepare-pdf-pair 4, 총 23 테스트 통과. 중복 저장 방지, 불확실한 저장,
+  PDF만 재시도, Shipment/Invoice 연결, 명시적 서명 선택, PDF 자동준비 포함.
+- 격리 Chromium 실브라우저 검증을 재실행:
+  XLSX TRUE는 원본에 표시되며 수량은 공란·required·aria-invalid,
+  실제 숫자 단가 6 보존, form validity false, Invoice 미생성 확인.
+- 격리 Uvicorn /health 200, status=ok/version=3.6.5.
+  HTTP 가상 Invoice/Packing PDF 생성·pypdf 파싱·워터마크 확인.
+- 기존 데이터 경로/작업공간/worktree data 총 44개 파일의
+  브라우저 검증 전후 SHA-256 동일. 서버와 브라우저 종료 완료.
+- TRADE_PAPER_DATA_DIR를 /workspace/work/validation-recovery/data에 격리.
+  브라우저 테스트 전용 browser-data는 /workspace/work/scheduled-1500에 격리.
+  test 모드, 이메일 disabled, Paddle live scheduler/alerts=0.
+- 고객 자료, 문서, 실결제 활성 설정 변경 없음. 실제 구매·메일·홍보 없음.
+- 브라우저 전체 38개 테스트를 실행한 것은 아님. 지정한 가져오기 검증만 수행.
+- git diff --check 통과.
+
+반영과 제한
+- 이 기록 시점의 원격 main은 여전히 82f6566.
+- Render workspace 선택 확인이 이전 실행부터 미해결이다.
+  도구가 명시적으로 사용자 확인을 요구하므로 임의 선택하거나 같은 질문을
+  반복하지 않았다. 실제 운영 커밋·자동배포 설정·운영 health는 미확인.
+- 따라서 검증된 변경은 검토용 로컬 커밋으로 보존하고 push/배포하지 않았다.
+  force push, 수동 중복 배포, 비용·계약·보안 권한 변경 없음.
+- 기존 로컬 예약을 다시 켜거나 수정하지 않았다.
+- 최초 정시 실행 확인 보고는 이전 실행에서 완료됐다. 이번을 최초 실행으로
+  다시 보고하지 않는다. 예약 상세 run ID/완료 메타데이터를 추정하지 않는다.
+
+다음 우선순위
+- Render My Workspace(tradepaper.ai@gmail.com) 선택 확인 후 실제 운영 커밋과
+  최신 main을 대조하고, c8fd3c6 및 이번 검증 복구 커밋의 안전한 반영을 검토.
+- 그 전에는 같은 XLSX 수정이나 기존에 완성된 PDF 작업을 반복 개발하지 않는다.
+- 이전 게스트 PDF 날짜 수정 44c6c93도 별도 미반영 상태로 보존돼 있다.
+
+로그
+- /workspace/work/validation-recovery/full.log
+- /workspace/work/validation-recovery/browser.log
+- /workspace/work/scheduled-1500/browser-result.json 및 xlsx-review.png

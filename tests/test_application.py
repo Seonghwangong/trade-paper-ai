@@ -10,12 +10,12 @@ from starlette.requests import Request
 from tests.helpers import normalize_html, route_snapshot_digest
 
 
-EXPECTED_ROUTE_DIGEST = "862061b27b75961671320fbb5d0378e818c75949ea83177422b063bbaaeba104"
+EXPECTED_ROUTE_DIGEST = "72a53a7f41d1bf8fc6b1a8d0033f4174261c8f88b14e17b2506d029d0c0cdaa9"
 
 
 def test_application_import_and_route_order():
     assert main.app is not None
-    assert len(main.app.routes) == main.EXPECTED_ROUTE_COUNT == 300
+    assert len(main.app.routes) == main.EXPECTED_ROUTE_COUNT == 306
     assert route_snapshot_digest(main.app) == EXPECTED_ROUTE_DIGEST
 
 
@@ -148,10 +148,10 @@ def test_operations_dashboard_summary_counts_and_recent_order():
 
 def test_packing_success_exposes_shipping_instruction_next_action():
     html = main.packing_page().body.decode()
-    assert "showPackingNextActions(result.packing_no)" in html
+    assert '/static/packing-complete.js?v=20261105' in html
     assert "Create Shipping Instruction" in html
     assert '"/si-form?packing_no="+encodeURIComponent(packingNo)' in html
-    assert 'if(shipmentNo){await window.tpSavedThenRedirect("/shipment/"+encodeURIComponent(shipmentNo));return;}' in html
+    assert '"/email-pair/prepare/"+encodeURIComponent(packingNo)' in html
 
 
 def _cors_test_app(configuration):
