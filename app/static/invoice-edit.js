@@ -72,7 +72,13 @@
         return;
       }
       if (window.tpMarkSaved) window.tpMarkSaved();
-      window.location.href = response.redirected ? response.url : '/invoice-list';
+      // Continue only after the save is confirmed. The review route rechecks
+      // ownership/linkage and requires comparison if invoice fields changed.
+      const next = new URL(form.dataset.continueUrl || response.url, window.location.href);
+      const current = new URL(window.location.href);
+      window.location.href = next.origin === current.origin &&
+        /^\/email-pair\/prepare\/[^/]+$/.test(next.pathname)
+        ? next.href : response.url;
     } catch (_) {
       error.textContent = document.documentElement.lang === 'ko'
         ? '연결을 확인하고 다시 저장해 주세요. 입력한 내용은 유지됩니다.'

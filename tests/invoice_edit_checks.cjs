@@ -15,7 +15,7 @@ async function setup(products, failed=false, result={ok:true,redirected:true,url
     return row;
   });
   const currency = element('USD'), total = element(), form = element(), error = element(), button = element();
-  form.action = '/update-invoice/INV-1'; form.querySelector = () => button;
+  form.action = '/update-invoice/INV-1'; form.dataset = {}; form.querySelector = () => button;
   const window = {location:{href:'http://example.test/edit-invoice/INV-1'},tpMarkSaved(){this.saved=true}};
   const document = {querySelectorAll:()=>rows,querySelector:()=>currency,documentElement:{lang:'ko'},getElementById:id=>({'total':total,'invoice-edit-form':form,'edit-error':error}[id]),createElement:()=>element()};
   vm.runInNewContext(code,{document,window,URL,Event:class{},FormData:class{},fetch:async(url, options)=>{if(failed)throw Error('offline');return options ? result : {ok:true,json:async()=>products}}});
@@ -68,4 +68,25 @@ test('confirmed save clears dirty state and opens invoice list',async()=>{
  const {form,window}=await setup([]);
  await form.listeners.submit({preventDefault(){}});
  assert.equal(window.saved,true);assert.equal(window.location.href,'http://example.test/invoice-list');
+});
+test('confirmed edit continues to linked PDF review without sending mail',async()=>{
+ const {form,window}=await setup([]);
+ form.dataset.continueUrl='/email-pair/prepare/PK-1?lang=ko';
+ await form.listeners.submit({preventDefault(){}});
+ assert.equal(window.saved,true);
+ assert.equal(window.location.href,'http://example.test/email-pair/prepare/PK-1?lang=ko');
+});
+test('failed save never opens linked review',async()=>{
+ const {form,window}=await setup([],false,{ok:false,status:409});
+ form.dataset.continueUrl='/email-pair/prepare/PK-1?lang=ko';
+ await form.listeners.submit({preventDefault(){}});
+ assert.equal(window.saved,undefined);
+ assert.equal(window.location.href,'http://example.test/edit-invoice/INV-1');
+});
+test('untrusted continuation cannot navigate outside the review route',async()=>{
+ for(const next of ['https://external.test/email-pair/prepare/PK-1','/email-pair/send/token']){
+  const {form,window}=await setup([]); form.dataset.continueUrl=next;
+  await form.listeners.submit({preventDefault(){}});
+  assert.equal(window.location.href,'http://example.test/invoice-list');
+ }
 });

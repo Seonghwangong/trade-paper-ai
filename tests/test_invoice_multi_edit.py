@@ -117,6 +117,31 @@ def test_one_item_revision_form_has_no_extra_fields(store):
     assert len(json.loads(store.read_text())[0]['items']) == 1
 
 
+@pytest.mark.parametrize('count', [0, 1, 2])
+def test_edit_continuation_only_uses_one_active_owned_packing(store, monkeypatch, count):
+    from app import packing
+    record = create()
+    packed = store.with_name('packing.json')
+    records = [dict(account_id='account-a', invoice_no=record['invoice_no'], packing_no=f'PK-{i}')
+               for i in range(count)]
+    records.extend([
+        dict(account_id='account-b', invoice_no=record['invoice_no'], packing_no='OTHER'),
+        dict(account_id='account-a', invoice_no=record['invoice_no'], packing_no='ARCHIVED', archived_at='2026-01-01'),
+        dict(account_id='account-a', invoice_no='ANOTHER', packing_no='UNRELATED'),
+    ])
+    packed.write_text(json.dumps(records))
+    monkeypatch.setattr(packing, 'PACKING_FILE', packed)
+    monkeypatch.setattr(packing, 'USERS_FILE', invoice.USERS_FILE)
+    request = _request('account-a')
+    request.scope['query_string'] = b'lang=ko'
+    before = packed.read_bytes(), store.read_bytes()
+    page = invoice.edit_invoice(record['invoice_no'], request).body.decode()
+    expected = '/email-pair/prepare/PK-0?lang=ko' if count == 1 else ''
+    assert f'data-continue-url="{expected}"' in page
+    assert before == (packed.read_bytes(), store.read_bytes())
+    assert '/email-pair/send/' not in page
+
+
 def test_native_repeated_form_fields_and_conflict_over_http(store):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

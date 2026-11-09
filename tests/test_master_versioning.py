@@ -9,7 +9,7 @@ from app.routers import company
 
 def _request(account="A", path="/"):
     return Request({
-        "type": "http", "method": "POST", "path": path, "headers": [],
+        "type": "http", "method": "POST", "path": path, "headers": [], "query_string": b"",
         "trade_paper_user": {"account_id": account, "email": f"{account.lower()}@example.com"},
     })
 

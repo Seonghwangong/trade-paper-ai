@@ -11,7 +11,7 @@ import os
 import math
 import hashlib
 import json
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 from typing import Annotated, Optional
 
 from app.storage import data_path, load_json_strict, locked_json_mutation, next_identifier
@@ -358,6 +358,13 @@ def edit_invoice(invoice_no: str, request: Request):
     account_id = _account_id(request)
     inv = public_invoice(_owned_invoice(invoice_no, account_id))
     company = load_account_company(account_id, ACCOUNT_COMPANIES_FILE)
+    from app.packing import owned_packing_records
+    linked = [record for record in owned_packing_records(account_id)
+              if record.get("invoice_no") == invoice_no and record.get("packing_no")]
+    lang = "ko" if request.query_params.get("lang", request.cookies.get("tp_language", "en")) == "ko" else "en"
+    # Never guess which packing document to review when an invoice has several.
+    continue_url = (f"/email-pair/prepare/{quote(str(linked[0]['packing_no']), safe='')}?lang={lang}"
+                    if len(linked) == 1 else "")
     escape = lambda value: html_lib.escape(str(value if value is not None else ""), quote=True)
     items = inv.get("items") or [{}]
     cards = []
@@ -399,7 +406,7 @@ def edit_invoice(invoice_no: str, request: Request):
 </style></head><body><div class="container">
 {navigation_footer("/invoice-list", "← Invoice List", state="Editing")}
 <h1>Edit Invoice</h1><p class="sub">Review and update every item before saving.</p>
-<form id="invoice-edit-form" data-managed-submit="true" action="/update-invoice/{escape(invoice_no)}" method="post">
+<form id="invoice-edit-form" data-managed-submit="true" data-continue-url="{escape(continue_url)}" action="/update-invoice/{escape(invoice_no)}" method="post">
 <input type="hidden" name="revision" value="{_invoice_revision(inv)}">
 {section_card("Invoice Information", metadata(party_fields))}
 {''.join(cards)}
@@ -408,7 +415,7 @@ def edit_invoice(invoice_no: str, request: Request):
 <p>After saving, review the Packing List and download updated PDFs. Previously downloaded files stay unchanged.</p>
 <p id="edit-error" role="alert" hidden></p>
 {form_footer("/invoice-list", "Update Invoice")}
-</form></div><script src="/static/invoice-edit.js?v=20261103-all-items" defer></script></body></html>
+</form></div><script src="/static/invoice-edit.js?v=20261109-pair-review" defer></script></body></html>
 """
     return HTMLResponse(content)
 

@@ -13,6 +13,7 @@ def _request(account_id):
         "type": "http",
         "method": "GET",
         "path": "/invoice",
+        "query_string": b"",
         "headers": [],
         "trade_paper_user": {
             "account_id": account_id,
