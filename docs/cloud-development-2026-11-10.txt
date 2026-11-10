@@ -1,0 +1,50 @@
+Trade Paper AI 클라우드 개발 — 2026-11-10
+
+기준과 동시 작업 보존
+- 원격 main 및 실제 Render live 모두 f4fed52fd8755a7be7f207bd3a75fb775884a875.
+- 기준 live 배포 dep-dborl80473hc73avec8g. autoDeploy=yes/commit/main 확인.
+- 기존 44c6c93/c8fd3c6/23dbe5b/7c699b6 및 latest.txt, runbook을 확인했다.
+- f4fed52의 송장 수정 후 연결된 PDF 검토 기능은 이미 배포돼 반복 개발하지 않음.
+- 최신 main 기반 새 worktree /workspace/work/import-reference-20261110,
+  branch cloud/2026-11-10-import-reference에서 작업. 이전 작업공간 보존.
+
+이번 제품 결함 한 가지
+- 손상된 XLSX shared string 참조가 음수일 때 Python 리스트의 음수 인덱스로
+  처리돼, 원본이 지정하지 않은 다른 문자열(숫자)을 수량/단가로 가져왔다.
+- 실제 XLSX multipart 추출 endpoint에서 -1/-2 참조, 수량/단가 각각 4건 재현.
+  수정 전 새 검사 결과: 4 failed, 6 passed.
+- 참조 인덱스를 0 이상, 문자열 테이블 길이 미만으로 검증하고 범위를 벗어나면
+  기존 invalid_file 오류(HTTP 422)로 처리한다. 임의 숫자나 기본값으로 대체하지 않음.
+- 정상 참조와 일반 숫자/논리값 처리, 검토·저장 흐름을 보존한다.
+- 기존 고객 화면의 파일 오류 안내를 재사용하고 개발정보/새 화면은 추가하지 않음.
+
+검증
+- XLSX 실제 ZIP + multipart 회귀 검사 10건:
+  수량/단가의 -1/-2/범위 초과/문자 참조 거부, 정상 0 참조 보존.
+  파일 추출로 문서나 임시 자료를 생성하지 않는 것도 검사.
+- 전체 비브라우저: 1625 passed, 38 deselected, 9 warnings (35.08초).
+  기존 FastAPI on_event/escape 경고는 이번 변경과 무관.
+- 실제 시스템 Chromium + Playwright + 격리 Uvicorn:
+  정상 CSV 초안의 수량을 가상 사용자 입력 17로 바꾼 뒤 손상 XLSX로 교체 시도.
+  422와 한국어 오류 안내 확인, 수량 17·단가 6·원본·초안 표시 그대로 보존,
+  Invoice 미생성 확인. 정상 파일에서 숫자를 임의로 확정하지 않는다.
+- 격리 health 200, HTTP 가상 Invoice/Packing PDF 생성·파싱·워터마크 확인.
+- 기존 데이터 경로와 작업공간 data 총 44개 파일 SHA-256 동일.
+- 새 검증 경로 /workspace/work/import-reference-qa. 이전 테스트 계정/문서 미변경.
+  test 모드, 이메일 disabled, Paddle live scheduler/alerts=0.
+- git diff --check 통과. 브라우저 전체 38개를 실행한 것은 아님.
+- 고객 자료/문서/실결제 활성 설정, 로고/색상, HS/중량/통관/과거 날짜 미변경.
+  실제 구매/메일/홍보/새 비용/보안 권한/로컬 예약 변경 없음.
+
+반영과 운영 검증
+- 최신 main을 재확인하고 안전한 fast-forward만 허용한다. force push 금지.
+- Render 자동 배포만 사용한다. 수동 배포는 중복하지 않는다.
+- 이 커밋에 포함되는 기록은 배포 전 검증 결과이며, 실제 원격 반영/배포 ID/
+  live commit/새 인스턴스 health 최종 결과는 아래 지속 기록에 별도 저장한다.
+- /workspace/.trade-paper-ai/development-runs/latest.txt 및 날짜별 기록.
+- 직접 운영 URL 접근은 기존 클라우드 정책 제한이 있어 우회하지 않는다.
+  공식 Render 도구의 배포 상태·운영 커밋·새 인스턴스 /health 200 로그로 확인.
+
+다음 우선순위
+- 이 변경의 운영 반영을 확인한 뒤 최신 main 기반에서 새 실무 불편을 검증.
+- 기존 송장/Packing/PDF 기능이나 이번 XLSX 수정은 반복 구현하지 않는다.

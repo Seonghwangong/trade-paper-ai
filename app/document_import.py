@@ -243,7 +243,10 @@ def spreadsheet_rows(data, filename, sheet_index=0):
                     else:
                         value = cell.findtext('s:v', '', ns)
                         if cell.attrib.get('t') == 's':
-                            value = strings[int(value)]
+                            index = int(value)
+                            if not 0 <= index < len(strings):
+                                raise ValueError('invalid_file')
+                            value = strings[index]
                         elif cell.attrib.get('t') == 'b':
                             # Excel stores booleans as 0/1; these are not order numbers.
                             value = {'1': 'TRUE', '0': 'FALSE', 'true': 'TRUE', 'false': 'FALSE'}.get(value, '')

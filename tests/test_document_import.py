@@ -87,13 +87,44 @@ def test_imported_other_seller_does_not_inherit_account_address(tmp_path,monkeyp
     assert result['seller_email']==''
 
 
-def workbook(sheet='<row r="1"><c r="A1" t="inlineStr"><is><t>Description</t></is></c><c r="B1" t="inlineStr"><is><t>Qty</t></is></c><c r="C1" t="inlineStr"><is><t>Unit Price</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Bolts</t></is></c><c r="B2"><v>100</v></c><c r="C2"><f>1+1</f><v>2</v></c></row>', target='worksheets/sheet1.xml'):
+def workbook(sheet='<row r="1"><c r="A1" t="inlineStr"><is><t>Description</t></is></c><c r="B1" t="inlineStr"><is><t>Qty</t></is></c><c r="C1" t="inlineStr"><is><t>Unit Price</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Bolts</t></is></c><c r="B2"><v>100</v></c><c r="C2"><f>1+1</f><v>2</v></c></row>', target='worksheets/sheet1.xml', shared_strings=None):
     stream=BytesIO()
     with ZipFile(stream,'w',ZIP_DEFLATED) as z:
         z.writestr('xl/workbook.xml','<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Order" sheetId="1" r:id="rId1"/></sheets></workbook>')
         z.writestr('xl/_rels/workbook.xml.rels',f'<Relationships><Relationship Id="rId1" Target="{target}"/></Relationships>')
         z.writestr('xl/worksheets/sheet1.xml',f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{sheet}</sheetData></worksheet>')
+        if shared_strings is not None:
+            z.writestr('xl/sharedStrings.xml', f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">{shared_strings}</sst>')
     return stream.getvalue()
+
+
+@pytest.mark.parametrize('field', ['quantity', 'unit_price'])
+@pytest.mark.parametrize('index', ['-1', '-2', '2', 'not-a-reference', '0'])
+def test_xlsx_shared_string_reference_never_uses_an_unrelated_number(field, index, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    quantity = f'<c r="B2" t="s"><v>{index}</v></c>' if field == 'quantity' else '<c r="B2"><v>12</v></c>'
+    price = f'<c r="C2" t="s"><v>{index}</v></c>' if field == 'unit_price' else '<c r="C2"><v>6</v></c>'
+    sheet = (
+        '<row r="1"><c r="A1" t="inlineStr"><is><t>Description</t></is></c>'
+        '<c r="B1" t="inlineStr"><is><t>Qty</t></is></c>'
+        '<c r="C1" t="inlineStr"><is><t>Unit Price</t></is></c></row>'
+        '<row r="2"><c r="A2" t="inlineStr"><is><t>Fictional Bolts</t></is></c>'
+        + quantity + price + '</row>'
+    )
+    data = workbook(sheet, shared_strings='<si><t>120</t></si><si><t>6</t></si>')
+    body = (b'--boundary\r\nContent-Disposition: form-data; name="file"; filename="order.xlsx"\r\n'
+            b'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n'
+            + data + b'\r\n--boundary--\r\n')
+    incoming = request(body, 'multipart/form-data; boundary=boundary')
+    if index == '0':
+        response = asyncio.run(subject.extract(incoming))
+        assert json.loads(response.body)['items'][0][field] == '120'
+    else:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(subject.extract(incoming))
+        assert error.value.status_code == 422
+        assert error.value.detail == 'invalid_file'
+    assert not list(tmp_path.iterdir())
 
 
 def test_xlsx_formula_is_not_executed_or_replaced_by_stale_cached_value():
