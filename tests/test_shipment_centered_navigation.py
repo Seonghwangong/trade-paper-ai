@@ -57,7 +57,7 @@ def test_packing_browser_save_preserves_shipment_return_and_offers_contextless_n
     source = main._workflow_browser_enhancement('packing')
     # Saving/preview now lives in the external controller, with runtime coverage
     # in test_packing_complete.cjs. The shared shell still supplies navigation.
-    assert '/static/packing-complete.js?v=20261105' in source
+    assert '/static/packing-complete.js?v=20261110' in source
     assert 'link.href="/shipment/"+encodeURIComponent(shipmentNo)' in source
     assert '"/email-pair/prepare/"+encodeURIComponent(packingNo)' in source
     assert '"/si-form?packing_no="+encodeURIComponent(packingNo)' in source

@@ -33,6 +33,7 @@
   window.saveInvoice = async function () {
     if (busy || uncertain) return;
     busy = true; buttonState(); clearWorkflowMessage();
+    const lockedFields = [];
     try {
       if (!savedNumber) {
         const params = new URLSearchParams(window.location.search);
@@ -40,6 +41,10 @@
         data.items = getItems();
         data.include_signature = document.getElementById('include-signature')?.checked === true;
         for (const key of ['pi_no', 'shipment_no']) { const value = (params.get(key) || '').trim(); if (value) data[key] = value; }
+        document.querySelectorAll('.container input, .container select, .container textarea, .container button:not(#complete-invoice):not(.back button)').forEach(field => {
+          lockedFields.push([field, field.disabled]);
+          field.disabled = true;
+        });
         let response;
         try { response = await fetch('/invoice', {method:'POST', headers:{'Content-Type':'application/json', Accept:'application/json'}, body:JSON.stringify(data)}); }
         catch (error) { showUncertain(); return; }
@@ -57,6 +62,9 @@
       }
       try { await showSavedPDF(); }
       catch (error) { showWorkflowError(label('Invoice saved. PDF could not be opened. Press “Show saved PDF” to retry without saving again. ', '송장은 저장됐습니다. PDF를 열지 못했어요. ‘저장된 PDF 보기’를 누르면 중복 저장 없이 다시 엽니다. ') + error.message); }
-    } finally { busy = false; buttonState(); }
+    } finally {
+      if (!savedNumber && !uncertain) lockedFields.forEach(([field, disabled]) => { field.disabled = disabled; });
+      busy = false; buttonState();
+    }
   };
 })();

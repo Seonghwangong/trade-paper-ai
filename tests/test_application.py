@@ -148,7 +148,7 @@ def test_operations_dashboard_summary_counts_and_recent_order():
 
 def test_packing_success_exposes_shipping_instruction_next_action():
     html = main.packing_page().body.decode()
-    assert '/static/packing-complete.js?v=20261105' in html
+    assert '/static/packing-complete.js?v=20261110' in html
     assert "Create Shipping Instruction" in html
     assert '"/si-form?packing_no="+encodeURIComponent(packingNo)' in html
     assert '"/email-pair/prepare/"+encodeURIComponent(packingNo)' in html

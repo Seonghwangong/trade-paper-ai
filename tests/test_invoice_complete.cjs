@@ -16,3 +16,26 @@ test('validation error leaves form editable and permits correction',async()=>{co
 test('HTML login response and empty PDF never become previews',async()=>{for(const response of [{ok:true,headers:{get:()=> 'text/html'}},{ok:true,headers:{get:()=> 'application/pdf'},blob:async()=>({size:0})}]){const c=setup([saved(),response]);await c.window.saveInvoice();assert.equal(c.fields['completed-invoice-pdf'].children,undefined);assert.equal(c.errors.length,1);}});
 
 test('signature inclusion is an explicit unchecked choice',async()=>{for(const checked of [false,true]){const c=setup([saved(),pdf()]);c.fields['include-signature'].checked=checked;await c.window.saveInvoice();assert.equal(JSON.parse(c.calls[0].opts.body).include_signature,checked);}});
+
+test('pending save locks the submitted fields before acknowledgement',async()=>{
+ let resolve;const c=setup([()=>new Promise(r=>resolve=r),pdf()]);
+ const pending=c.window.saveInvoice();
+ assert.equal(c.fields.seller.disabled,true);
+ assert.equal(c.fields.buyer.disabled,true);
+ resolve(saved());await pending;
+ assert.equal(c.fields.seller.disabled,true);
+});
+test('definite validation rejection restores only previously editable fields',async()=>{
+ let resolve;const c=setup([()=>new Promise(r=>resolve=r)]);
+ c.fields.seller.disabled=false;c.fields.buyer.disabled=true;
+ const pending=c.window.saveInvoice();
+ assert.equal(c.fields.seller.disabled,true);
+ resolve({status:422,ok:false});await pending;
+ assert.equal(c.fields.seller.disabled,false);
+ assert.equal(c.fields.buyer.disabled,true);
+});
+test('uncertain save keeps the submitted fields locked for checking the invoice list',async()=>{
+ const c=setup([new Error('offline')]);await c.window.saveInvoice();
+ assert.equal(c.fields.seller.disabled,true);
+ assert.equal(c.fields['complete-invoice'].disabled,true);
+});

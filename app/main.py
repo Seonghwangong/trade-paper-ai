@@ -608,11 +608,11 @@ function showPackingNextActions(packingNo,invoiceNo){
 """
     if kind == "invoice":
         behavior = """
-<script src="/static/invoice-complete.js?v=20261105"></script>
+<script src="/static/invoice-complete.js?v=20261110"></script>
 """
     else:
         behavior = """
-<script src="/static/packing-complete.js?v=20261105"></script>
+<script src="/static/packing-complete.js?v=20261110"></script>
 """
     return common + behavior
 

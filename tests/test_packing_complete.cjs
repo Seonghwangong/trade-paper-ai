@@ -15,3 +15,26 @@ test('PDF retry never creates another packing list',async()=>{const c=setup([sav
 for(const mode of ['network','server','invalid-json','missing-number'])test('uncertain save prevents resubmission: '+mode,async()=>{const r=mode==='network'?new Error('offline'):mode==='server'?{status:500,ok:false}:mode==='invalid-json'?{status:200,ok:true,json:async()=>{throw Error('bad')}}:{status:200,ok:true,json:async()=>({})};const c=setup([r]);await c.window.savePacking();await c.window.savePacking();assert.equal(c.calls.length,1);assert.equal(c.fields['complete-packing'].disabled,true);assert.match(c.errors[0],/저장 결과/);});
 test('missing invoice prevents save; invalid weights remain editable for correction',async()=>{const c=setup([{status:422,ok:false},saved(),pdf()]);c.data.invoice_no='';await c.window.savePacking();assert.equal(c.calls.length,0);c.data.invoice_no='INV-002';await c.window.savePacking();assert.equal(c.fields['complete-packing'].disabled,false);assert.equal(c.fields.quantity.disabled,undefined);await c.window.savePacking();assert.equal(c.next.length,1);});
 test('HTML login and empty PDF are reported without presenting invalid previews',async()=>{for(const r of [{ok:true,headers:{get:()=> 'text/html'}},{ok:true,headers:{get:()=> 'application/pdf'},blob:async()=>({size:0})}]){const c=setup([saved(),r]);await c.window.savePacking();assert.equal(c.fields['completed-packing-pdf'].children,undefined);assert.equal(c.errors.length,1);}});
+
+test('pending save locks quantities and item actions before acknowledgement',async()=>{
+ let resolve;const c=setup([()=>new Promise(r=>resolve=r),pdf()]);
+ const pending=c.window.savePacking();
+ assert.equal(c.fields.quantity.disabled,true);
+ assert.equal(c.fields['add-item'].disabled,true);
+ resolve(saved());await pending;
+ assert.equal(c.fields.quantity.disabled,true);
+});
+test('packing validation rejection restores original input states',async()=>{
+ let resolve;const c=setup([()=>new Promise(r=>resolve=r)]);
+ c.fields.quantity.disabled=false;c.fields['add-item'].disabled=true;
+ const pending=c.window.savePacking();
+ assert.equal(c.fields.quantity.disabled,true);
+ resolve({status:422,ok:false});await pending;
+ assert.equal(c.fields.quantity.disabled,false);
+ assert.equal(c.fields['add-item'].disabled,true);
+});
+test('uncertain packing save keeps submitted inputs locked',async()=>{
+ const c=setup([new Error('offline')]);await c.window.savePacking();
+ assert.equal(c.fields.quantity.disabled,true);
+ assert.equal(c.fields['complete-packing'].disabled,true);
+});
