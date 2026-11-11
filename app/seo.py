@@ -18,6 +18,26 @@ NOINDEX_PAGES = {
     "/analytics/visit", "/founding-beta/thank-you", "/feedback/thank-you",
 }
 
+# Public descriptions summarize visible functionality, never private account data.
+PAGE_COPY = {
+    '/getting-started': {
+        'en': ('Invoice & Packing List Guide | Trade Paper AI', 'Start export documents from a file, a fictional sample or saved company, buyer and item details. Review the Invoice, packing quantities and weights before downloading PDFs.'),
+        'ko': ('인보이스·패킹리스트 작성 안내 | Trade Paper AI', '파일 가져오기, 가입 없는 가상 예시, 직접 입력 중 편한 방법으로 수출 서류 작성을 시작하세요. 송장과 포장 수량·중량을 확인하고 PDF로 내려받으세요.'),
+    },
+    '/try-sample': {
+        'en': ('Try Invoice & Packing List PDFs Free | Trade Paper AI', 'Try fictional invoice and packing details without signup. Change quantities and packing values, then preview separate Commercial Invoice and Packing List PDFs.'),
+        'ko': ('가입 없이 인보이스·패킹리스트 PDF 체험 | Trade Paper AI', '가상 수출 자료로 인보이스와 패킹리스트 작성을 체험하세요. 가입 없이 수량·포장 정보를 바꾸고 각각의 PDF를 확인할 수 있습니다.'),
+    },
+    '/starter': {
+        'en': ('Starter Monthly Plan for Export Documents | Trade Paper AI', 'Review the Starter monthly plan for recurring export document preparation, unlimited documents and first-use guidance. Check subscription, renewal and cancellation terms.'),
+        'ko': ('수출 서류 작성 Starter 월 구독 | Trade Paper AI', '반복적인 수출 서류 작성을 위한 Starter 월 구독을 확인하세요. 문서 무제한과 첫 사용 안내를 제공하며, 결제 전 요금·갱신·해지 조건을 확인할 수 있습니다.'),
+    },
+    '/founding-beta': {
+        'en': ('First-use Help for Export Documents | Trade Paper AI', 'Request first-use help with a fictional Commercial Invoice and Packing List workflow. You can also explore the guide and free sample before creating an account.'),
+        'ko': ('인보이스·패킹리스트 첫 사용 도움 | Trade Paper AI', '가상 송장·포장명세서 작성 흐름으로 첫 사용 도움을 받아보세요. 계정 생성 전에도 작성 안내와 무료 예시를 살펴볼 수 있습니다.'),
+    },
+}
+
 
 def public_head(path, lang="en"):
     if path not in PUBLIC_PAGES:
@@ -33,6 +53,18 @@ def public_head(path, lang="en"):
     if path in LOCALIZED_PAGES:
         for code, url in (("en", english), ("ko", korean), ("x-default", english)):
             tags += f'<link rel="alternate" hreflang="{code}" href="{html.escape(url, quote=True)}">'
+    if path in PAGE_COPY:
+        title, description = PAGE_COPY[path]['ko' if lang == 'ko' else 'en']
+        for attribute, name, value in (
+            ('name', 'description', description),
+            ('property', 'og:type', 'website'), ('property', 'og:title', title),
+            ('property', 'og:description', description), ('property', 'og:url', canonical),
+            ('property', 'og:image', base + '/static/product-hunt/hero.png'),
+            ('name', 'twitter:card', 'summary_large_image'), ('name', 'twitter:title', title),
+            ('name', 'twitter:description', description),
+            ('name', 'twitter:image', base + '/static/product-hunt/hero.png'),
+        ):
+            tags += f'<meta {attribute}="{name}" content="{html.escape(value, quote=True)}">'
     return tags
 
 
@@ -71,6 +103,9 @@ class SearchMetadataMiddleware:
                 body = b"".join(chunks).decode("utf-8")
                 # The home renderer owns its canonical and structured-data URLs.
                 if path != "/":
+                    if path in PAGE_COPY:
+                        title = html.escape(PAGE_COPY[path][lang][0])
+                        body = re.sub(r'<title>.*?</title>', lambda _: '<title>' + title + '</title>', body, count=1, flags=re.I | re.S)
                     body = re.sub(r"</head\s*>", lambda _: public_head(path, lang) + "</head>", body, count=1, flags=re.I)
                 encoded = body.encode("utf-8")
                 headers = [(k, v) for k, v in start["headers"] if k.lower() != b"content-length"]

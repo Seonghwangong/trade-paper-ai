@@ -1,0 +1,58 @@
+Public search discovery — 2026-11-11
+Base main/live: 0f3e6c7. Preserve cloud e4282f0 and prior comparison work.
+
+Changes
+- Add unique EN/KO title, description, OG and Twitter metadata on Getting Started,
+  no-signup sample, Starter and first-use-help pages. Home already has these.
+- Keep visible workflow/facts/pricing and canonical/hreflang/sitemap intact.
+- Stable /#organization and /#software IDs; software publisher references the
+  organization. Organization url stays / in both languages.
+- sameAs only the verified owned YouTube channel @tradepaperai; visible footer
+  link uses the same URL. Ownership evidence: existing user channel-creation
+  authorization and promotion-followup-20261104-0900.txt public/Studio checks.
+  No unverified personal/company profiles or invented reviews.
+- Add exact Bing-issued msvalidate.01 public ownership tag supplied by user via
+  marketing task. Google/Naver verification tags retained. Bing dashboard Verify
+  and sitemap submission remain with marketing task; not claimed completed here.
+- robots: remove only redundant Allow: / so first-match parsers also honor existing
+  Disallow lines. Default public access, existing private disallows and training
+  bot policy retained. No bot-specific group overrides, new allowlisting or WAF changes.
+- Search UA probes are simulated requests from our client, not proof that crawler
+  infrastructure/IPs have crawled or indexed content. Auth protects private routes.
+
+IndexNow
+- No existing key/implementation found in latest repo. Added random public
+  ownership key file, served at exact root path /{key}.txt, noindex text/plain.
+  Only this exact route added to anonymous allowlist; no wildcard .txt access.
+- scripts/submit_indexnow.py defaults to dry-run. Requires explicit --submit and
+  fresh --output receipt. Only requested exact canonical URLs in the sitemap,
+  owned www.tradepaper.ai host, supported paths/language query. Rejects customer
+  URLs, external domains, tracking queries, fragments, redirects and empty sets.
+- Checks deployed key first. Single POST to https://api.indexnow.org/indexnow;
+  no retries, no runtime/startup jobs, no scheduling/configuration changes.
+- 200 means received, 202 means ownership verification pending; neither is indexing.
+- Actual deployment, UA probes, key-file check and one-time submission receipt
+  saved in outputs after release. Submit only changed public URLs (home plus the
+  four metadata pages, EN/KO), not all site URLs.
+
+Official references read
+https://developers.openai.com/api/docs/bots
+https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler
+https://docs.perplexity.ai/docs/resources/perplexity-crawlers
+https://developers.google.com/search/docs/appearance/ai-features
+https://www.indexnow.org/documentation
+https://www.indexnow.org/faq
+Bing guidelines URL returned a JavaScript-only shell via text retrieval; no
+unsupported Bing guideline claims or invented special AI tags were derived.
+
+Validation scope
+New tests cover six search agents, public access and private login guards, EN/KO
+metadata uniqueness, exact public key route, private/external/query submission
+rejection, correct deployed key, no redirects and duplicate receipt prevention.
+Existing canonical/hreflang/sitemap/privacy and customer-data guard tests retained.
+No costs, account signup, customer data, purchases, messages or automation changes.
+No guaranteed immediate listing/rank/AI citation; no hidden keywords or llms.txt.
+
+Completed pre-release validation: 1699 passed, 38 browser deselected,
+9 pre-existing warnings; git diff --check passed. Public YouTube channel fetched
+HTTP200, title Trade Paper AI - YouTube and matching handle verified this run.

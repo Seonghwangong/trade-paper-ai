@@ -22,6 +22,7 @@ from urllib.parse import quote, urlsplit
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.search_submission import INDEXNOW_PATH
 from app.release import APP_NAME
 from app.landing import landing_page
 from app import email_delivery
@@ -49,6 +50,7 @@ PASSWORD_RESET_RATE_WINDOW_SECONDS = 60 * 60
 PASSWORD_RESET_RATE_LIMIT = 5
 PASSWORD_RESET_RATE_MAX_KEYS = 10_000
 PUBLIC_PATHS = frozenset({
+    INDEXNOW_PATH,
     "/about", "/release-notes", "/version-history",
     "/login", "/register", "/logout", "/forgot-password", "/reset-password",
     "/privacy", "/terms", "/refund-policy", "/contact", "/status", "/health", "/healthz",

@@ -30,6 +30,7 @@ from app.release import (
     contact_email, contact_url,
 )
 from app.ui import ReleaseFooterMiddleware, release_footer
+from app.search_submission import INDEXNOW_KEY, INDEXNOW_PATH
 from app.routers.company import router as company_router
 from app.product import router as product_router
 from app.buyer import router as buyer_router
@@ -246,6 +247,11 @@ def seo_public_base_url(request=None, environment=None):
         if deployment in _PRODUCTION_ENVIRONMENTS or request is None:
             raise
         return str(request.base_url).rstrip("/")
+
+
+@app.get(INDEXNOW_PATH, response_class=PlainTextResponse, include_in_schema=False)
+def indexnow_key_file():
+    return PlainTextResponse(INDEXNOW_KEY + "\n", headers={"X-Robots-Tag": "noindex"})
 
 
 @app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)

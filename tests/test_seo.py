@@ -29,6 +29,7 @@ def test_landing_has_canonical_social_manifest_and_valid_structured_data(monkeyp
     for attribute in ('name="description"', 'property="og:description"', 'name="twitter:description"'):
         assert f'<meta {attribute} content="{description}">' in html
     assert 'name="keywords"' not in html
+    assert '<meta name="msvalidate.01" content="7F9E62D2F9F9E5AF24DD2AE279DAE033">' in html
     for key in ('eyebrow', 'intro'):
         assert escape(landing.COPY[lang][key], quote=True) in html.split('<body>', 1)[1]
     assert f'<link rel="canonical" href="{canonical}">' in html
@@ -41,7 +42,11 @@ def test_landing_has_canonical_social_manifest_and_valid_structured_data(monkeyp
     for chunk in html.split(marker)[1:]:
         blocks.append(json.loads(chunk.split("</script>", 1)[0]))
     assert [block["@type"] for block in blocks] == ["Organization", "SoftwareApplication", "FAQPage"]
-    assert blocks[0]["url"] == canonical
+    assert blocks[0]["url"] == "https://trade.example.com/"
+    assert blocks[0]["@id"] == "https://trade.example.com/#organization"
+    assert blocks[1]["publisher"]["@id"] == blocks[0]["@id"]
+    assert blocks[0]["sameAs"] == ["https://www.youtube.com/@tradepaperai"]
+    assert 'href="https://www.youtube.com/@tradepaperai"' in html
     assert blocks[1]["description"] == landing.COPY[lang]["description"]
     assert blocks[1]["softwareVersion"] == APP_VERSION
     visible_questions = [landing.COPY[lang][f"q{i}"] for i in range(1, 5)]
@@ -72,7 +77,7 @@ def test_robots_and_sitemap_use_the_validated_public_base_url(monkeypatch):
     assert {"/robots.txt", "/sitemap.xml"}.issubset(auth.PUBLIC_PATHS)
 
 
-async def _anonymous_get(url):
+async def _anonymous_get(url, user_agent=None):
     from types import SimpleNamespace
     from urllib.parse import urlsplit
     parsed = urlsplit(url)
@@ -83,6 +88,8 @@ async def _anonymous_get(url):
         messages.append(message)
     scope = dict(_request(parsed.path).scope, query_string=parsed.query.encode(),
                  raw_path=parsed.path.encode(), http_version="1.1")
+    if user_agent:
+        scope["headers"] = [(b"user-agent", user_agent.encode())]
     await main.app(scope, receive, send)
     content = b"".join(m.get("body", b"") for m in messages)
     return SimpleNamespace(status_code=messages[0]["status"], content=content,
