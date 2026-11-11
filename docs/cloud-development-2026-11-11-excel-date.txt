@@ -1,0 +1,57 @@
+Trade Paper AI 클라우드 개발 — 2026-11-11 엑셀 원본 날짜 보존
+
+기준/보존
+- 시작 원격 main/실제 Render live=e5292251f8bd92641609715a77ed97f43e3e54b1,
+  dep-dbpb9lnavr4c73egrk00. autoDeploy=yes/commit/main 확인.
+- latest.txt, runbook 및 보존 커밋/후속 배포를 읽었다. 기존 XLSX 오류 처리와
+  저장 중 입력 잠금을 반복 구현하지 않았다.
+- 최신 main 기반 새 worktree /workspace/work/excel-date-20261111,
+  branch cloud/2026-11-11-excel-date. 기존 작업공간·자료 보존.
+
+실무 문제/수정 1건
+- 엑셀에 명확한 날짜 형식으로 저장된 송장 날짜가 일련번호로 추출되어
+  검토 화면에서는 빈칸이 되는 문제를 XLSX 파일로 재현했다.
+  새 회귀 수정 전 12 failed, 9 passed.
+- 파일의 날짜 체계(1900/1904)와 명시적 날짜 셀 형식을 읽어 정수 일련번호를
+  원본의 달력 날짜로 변환한다. 오늘 날짜나 현재 연도를 넣지 않는다.
+- 인식 형식: 기본14/15 및 명확한 사용자 지정 yyyy-mm-dd, yyyy/mm/dd,
+  yyyy.mm.dd. 그 외 형식은 기존처럼 원본을 보며 직접 확인한다.
+- 일반 숫자/숫자 텍스트, 월·연도만 있는 형식, 시간 소수부, 음수/초과 범위,
+  존재하지 않는 1900-02-29(serial60)는 날짜를 추정하지 않고 원값을 보존한다.
+- 수식 셀은 기존처럼 실행하거나 캐시값을 사용하지 않는다.
+- XLSX 자체가 명시한 날짜만 초안에 넣고, 기존 원본 비교/사용자 확인/저장 절차 유지.
+- 고객 화면 문구·길이·차콜/아이보리 로고/색상, HS·중량·통관·결제 설정 미변경.
+
+근거
+- Microsoft 공식 Date systems in Excel의 두 날짜 체계/1462일 차이 확인:
+  https://support.microsoft.com/en-us/excel/date-systems-in-excel
+- Microsoft 공식 날짜 체계/일련번호 범위 및 시간 소수부 설명 확인:
+  https://support.microsoft.com/en-us/excel/change-the-date-system-format-or-two-digit-year-interpretation
+
+검증
+- 새 XLSX 회귀21개 포함 전체 비브라우저1646 passed,
+  38 deselected, 9 warnings (34.14초). git diff --check 통과.
+- 1900/1904 체계, 기본/명시 ISO 날짜, 윤년 경계 및 serial60,
+  소수/NaN/초과값, 일반 숫자·텍스트·부분 날짜의 비추정 처리 확인.
+- 새 격리 Chromium에서 엑셀 serial45292/날짜 형식 원본 업로드:
+  원본 검토와 입력 날짜2024-01-01, 정상 수량12/단가6 보존.
+- 가상 사용자가 필요한 당사자/통화를 확인하고 검토 체크 후 저장:
+  실제 Invoice와 PDF 모두 Date:2024-01-01 유지, Packing 화면 정상 연결.
+  샘플 Invoice/Packing PDF 생성·파싱·워터마크 및 격리 health200 통과.
+- 기존 데이터44개 파일 SHA-256 동일. 새 테스트 경로 /workspace/work/excel-date-qa,
+  가상 계정만 사용. 이전 테스트/고객 계정·문서 미변경.
+- test 모드, 이메일 disabled, Paddle live scheduler/alerts=0.
+  구매/메일/홍보/실결제 활성 상태/보안 권한/로컬 예약 변경 없음.
+- 브라우저 전체38개를 실행한 것은 아니며 위 실제 가져오기→검토→저장→PDF 검사 수행.
+
+반영/운영 검증
+- 최신 main/동시 변경 재확인 후 안전한 fast-forward만 허용. force push 금지.
+- Render 자동 배포만 사용하며 수동 배포 중복 없음.
+- 이 문서는 배포 전 검증 기록. 실제 main/deploy ID/live/새 인스턴스 health 증거는
+  /workspace/.trade-paper-ai/development-runs/latest.txt와 날짜별 기록에 저장.
+- 운영 직접 URL은 기존 클라우드 정책 제한. 우회 없이 공식 Render 운영 로그로 확인.
+
+다음 우선순위
+- 이번 배포의 실제 커밋/live/health 검증을 완료하고 최신 main 기반 새 실무 불편 확인.
+- 이번 날짜 보존과 이미 완료한 XLSX/문서/PDF 기능을 반복 구현하지 않는다.
+- 별도 미반영 44c6c93(게스트 날짜)은 기존 작업공간에 보존, 임의 병합하지 않음.

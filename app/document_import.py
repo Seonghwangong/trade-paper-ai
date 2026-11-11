@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
 import json
@@ -77,6 +77,23 @@ def _date(value):
         except ValueError:
             pass
     return ''
+
+
+def _excel_date(value, date1904):
+    """Decode only whole-day values in explicitly date-formatted numeric cells."""
+    try:
+        serial = Decimal(value)
+        if not serial.is_finite() or not 0 <= serial <= 3_000_000 or serial != serial.to_integral_value():
+            return value
+        days = int(serial)
+        if date1904:
+            return (date(1904, 1, 1) + timedelta(days=days)).isoformat()
+        # Excel's serial 60 denotes the nonexistent 1900-02-29. Do not invent a day.
+        if days == 0 or days == 60:
+            return value
+        return (date(1899, 12, 31) + timedelta(days=days - (days > 60))).isoformat()
+    except (InvalidOperation, ValueError, OverflowError):
+        return value
 
 
 def parse_rows(rows):
@@ -210,6 +227,22 @@ def spreadsheet_rows(data, filename, sheet_index=0):
                     raise ValueError('invalid_file')
                 return ET.fromstring(content)
             workbook = xml('xl/workbook.xml')
+            properties = workbook.find('s:workbookPr', ns)
+            epoch = properties.attrib.get('date1904', '0') if properties is not None else '0'
+            if epoch not in {'0', 'false', '1', 'true'}:
+                raise ValueError('invalid_file')
+            date1904 = epoch in {'1', 'true'}
+            date_styles = set()
+            if 'xl/styles.xml' in archive.namelist():
+                styles = xml('xl/styles.xml')
+                formats = {int(fmt.attrib['numFmtId']): fmt.attrib.get('formatCode', '').lower().split(';')[0]
+                           for fmt in styles.findall('s:numFmts/s:numFmt', ns)}
+                for index, style in enumerate(styles.findall('s:cellXfs/s:xf', ns)):
+                    format_id = int(style.attrib.get('numFmtId', '0'))
+                    if style.attrib.get('applyNumberFormat') in {'0', 'false'}:
+                        continue
+                    if format_id in {14, 15} or formats.get(format_id) in {'yyyy-mm-dd', 'yyyy/mm/dd', 'yyyy.mm.dd'}:
+                        date_styles.add(index)
             sheets = workbook.findall('s:sheets/s:sheet', ns)
             if sheet_index < 0 or sheet_index >= len(sheets):
                 raise ValueError('invalid_sheet')
@@ -250,6 +283,8 @@ def spreadsheet_rows(data, filename, sheet_index=0):
                         elif cell.attrib.get('t') == 'b':
                             # Excel stores booleans as 0/1; these are not order numbers.
                             value = {'1': 'TRUE', '0': 'FALSE', 'true': 'TRUE', 'false': 'FALSE'}.get(value, '')
+                        elif cell.attrib.get('t', 'n') == 'n' and int(cell.attrib.get('s', '0')) in date_styles:
+                            value = _excel_date(value, date1904)
                     values[col - 1] = value
                 rows.append([values.get(i, '') for i in range(max(values, default=-1) + 1)])
                 if len(rows) > 2000 or sum(len(str(c)) for c in rows[-1]) > MAX_TEXT:
