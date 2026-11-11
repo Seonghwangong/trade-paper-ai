@@ -24,6 +24,8 @@ def parse_order_note(text):
     fields, items, unmatched, currencies = {}, [], [], set()
     conflicts = set()
     def remember(key, value):
+        if key == 'currency':
+            value = value.upper()
         if key in fields and fields[key] != value:
             conflicts.add(key)
         fields.setdefault(key, value)

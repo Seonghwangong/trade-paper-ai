@@ -1,0 +1,45 @@
+Trade Paper AI 클라우드 개발 — 2026-11-11 주문 메모 통화 비교
+
+기준/중복 방지
+- 시작 원격 main/실제 Render live=83f4cc09ebf88820d2ab954d1d3070d62367603f,
+  dep-dbps1im0tbcc73fi6v9g. autoDeploy=yes/commit/main 확인.
+- latest.txt, runbook과 보존/후속 커밋을 읽었다. 새 품목 좌우 비교 기능83f4cc0,
+  엑셀 날짜/오류 처리 및 저장 중 잠금을 보존하고 반복 구현하지 않았다.
+- 최신 main 기반 새 worktree /workspace/work/note-currency-20261111,
+  branch cloud/2026-11-11-note-currency. 이전 작업공간은 그대로 보존.
+
+이번 문제/수정1건
+- 주문 메모에 Currency:USD와 Currency:usd가 반복되면 통화가 충돌한다고
+  판단해 통화와 모든 단가를 비우는 문제 재현. 같은 코드라도 직접 다시 입력해야 했다.
+- 통화 메타데이터를 충돌 비교 전에 대문자로 정규화한다. 원본 메모는 변경하지 않음.
+- USD/usd, usd/USD, 혼합대소문자, KRW/krw, EUR/eur에서 명시한 단가와 수량 보존.
+- USD/EUR 등 실제 다른 통화는 기존대로 통화/단가를 비우고 검토를 요구한다.
+- 당사자 이름, 숫자, 날짜·HS·중량·통관 정보의 비교나 값은 변경하지 않는다.
+- 기존 원본 검토/확인 체크/저장 절차, 화면 길이·색상·로고·유료 권한 보존.
+
+검증
+- 새 회귀6건: 수정 전5 failed/1 passed. 같은 통화5건과 실제 충돌1건.
+- 전체 비브라우저1672 passed, 38 deselected, 9 warnings (29.95초).
+  기존 경고만 남음. git diff --check 통과.
+- 새 격리 Chromium에서 원본 주문 메모에 USD/usd 모두 포함해 초안 생성:
+  원본 철자 그대로 표시, 검토 통화USD/수량5/단가3 보존 확인.
+- 가상 사용자가 검토 확인 후 저장한 Invoice와 실제 PDF 생성 확인,
+  Packing 화면 정상 연결. 샘플 Invoice/Packing PDF 파싱/워터마크와 health200 통과.
+- 기존 데이터44개 파일 SHA-256 동일. 새 가상 계정/새 데이터 경로만 사용.
+  기존 고객/테스트 계정·문서/실결제 설정 미변경.
+- 로그·스크린샷·가상PDF: /workspace/work/note-currency-qa.
+  test 모드, 이메일disabled, Paddle live scheduler/alerts=0.
+- 구매/실결제/메일/홍보/새 비용/보안 권한/로컬 예약 변경 없음.
+- 브라우저 전체38개를 실행한 것은 아니며 위 실제 흐름 검증을 수행.
+
+반영과 운영 확인
+- 최신main 재확인 후 안전한 fast-forward만 허용. force push 금지.
+- Render 자동배포만 사용하며 수동 배포 중복 없음.
+- 이 저장소 기록은 배포 전 결과다. 실제 main commit/deploy ID/live/새 인스턴스
+  health 증거는 /workspace/.trade-paper-ai/development-runs/latest.txt와 날짜별 파일에 기록.
+- 직접 운영 URL은 기존 클라우드 정책 제한. 우회 없이 공식 Render 로그로 확인.
+
+다음 우선순위
+- 이번 자동배포 live/운영 커밋/health 검증 후 최신main 기반 새 실무 불편1건 검증.
+- 이번 주문 메모 정규화나 이미 완료한 문서/XLSX/PDF 기능 반복 개발 금지.
+- 별도 미반영44c6c93은 보존하며 임의 병합하지 않는다.

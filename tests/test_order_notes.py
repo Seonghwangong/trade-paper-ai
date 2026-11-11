@@ -33,6 +33,26 @@ def test_korean_date_label_matches_review_form():
     assert not draft['unmatched_lines']
 
 
+@pytest.mark.parametrize('first,second', [('USD', 'usd'), ('usd', 'USD'), ('uSd', 'UsD'), ('KRW', 'krw'), ('EUR', 'eur')])
+def test_repeated_currency_with_different_letter_case_preserves_explicit_prices(first, second):
+    note = f'Currency: {first}\nCurrency: {second}\nFictional mugs 5 PCS at {first} 3'
+    draft = parse_order_note(note)
+    assert draft['fields']['currency'] == first.upper()
+    assert draft['items'][0]['quantity'] == '5'
+    assert draft['items'][0]['unit_price'] == '3'
+    assert 'conflicting_currency' not in draft['warnings']
+    assert 'note_currency' not in draft['warnings']
+    assert draft['source_text'] == note
+
+
+def test_different_repeated_currencies_still_require_review():
+    draft = parse_order_note('Currency: usd\nCurrency: EUR\nFictional mugs 5 PCS at USD 3')
+    assert draft['fields']['currency'] == ''
+    assert draft['items'][0]['unit_price'] == ''
+    assert 'conflicting_currency' in draft['warnings']
+    assert 'note_currency' in draft['warnings']
+
+
 @pytest.mark.parametrize('suffix', ['USD 3; 접시 20개 개당 EUR 2', '3달러', 'USD 3 EUR'])
 def test_mixed_and_ambiguous_currency_never_produces_usable_prices(suffix):
     draft = parse_order_note('머그컵 100개 개당 '+suffix)
