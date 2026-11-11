@@ -58,6 +58,8 @@ def test_mismatch_entry_never_automatically_prepares(pair):
     pair[1]['items'][0]['quantity'] = 99
     html = email_pair.prepare_form('PL-1', request(lang='ko')).body.decode()
     assert '공통 항목이 다릅니다' in html
+    assert '품목별 나란히 비교' in html and '수량 다름' in html
+    assert '-1' in html
     assert '/packing-sync/PL-1' in html
     assert 'prepare-pdf-pair.js' not in html
     assert not email_pair.REVIEW_DB.exists()

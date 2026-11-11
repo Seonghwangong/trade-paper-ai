@@ -11,6 +11,7 @@ from fastapi import Body, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.storage import load_json_strict, locked_json_mutation, path_lock
 from app.ui import page_shell
+from app.packing_item_review import render_item_review
 
 PARTY = ('seller', 'seller_address', 'seller_email', 'seller_phone', 'buyer', 'buyer_address', 'buyer_email')
 IDENTITY = ('name', 'hs_code', 'origin', 'unit')
@@ -134,10 +135,10 @@ def attach_routes(router):
         content += '<h2>Before / After</h2><table><thead><tr><th>Field</th><th>Saved Packing List</th><th>Current Invoice</th></tr></thead><tbody>'
         for key in PARTY:
             content += f'<tr><th>{esc(key.replace("_", " ").title())}</th><td translate="no">{esc(current.get(key))}</td><td translate="no">{esc(source.get(key))}</td></tr>'
-        content += '</tbody></table><h2>Saved items</h2><ul translate="no">'
-        for row in current.get('items', []):
-            content += f'<li>{esc(row.get("name"))}: {esc(row.get("quantity"))} {esc(row.get("unit"))}</li>'
-        content += f'</ul><form method="post" action="/packing-sync/{target}" data-native-submit="true">'
+        content += '</tbody></table>'
+        lang = request.query_params.get('lang', request.cookies.get('tp_language', 'en'))
+        content += render_item_review(source, current, lang)
+        content += f'<form method="post" action="/packing-sync/{target}" data-native-submit="true">'
         content += f'<input type="hidden" name="version" value="{fingerprint([current, source])}"><h2>Items to apply</h2>'
         for row in proposed['items']:
             content += f'<section class="packing-sync-item"><p translate="no">{esc(row.get("name"))} · {esc(row.get("quantity"))} {esc(row.get("unit"))}</p>'

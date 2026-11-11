@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app import document_email as email, email_delivery
 from app.packing_workflow import comparable, fingerprint
+from app.packing_item_review import render_item_review
 from app.storage import data_path, locked_json_mutation
 from app.ui import page_shell
 from app.validation import DataValidationError
@@ -116,6 +117,7 @@ def prepare_form(packing_no: str, request: Request):
     content = f'<p translate="no">Invoice {esc(source["invoice_no"])} + Packing List {esc(packing_no)}</p>'
     if comparable(source) != comparable(packed):
         content += f'<p class="notice">{_text(request, "Shared fields differ. Compare and correct the documents before preparing the pair.", "거래처·품목·수량 등 공통 항목이 다릅니다. 비교 후 수정해 주세요.")}</p>'
+        content += render_item_review(source, packed, _lang(request))
         content += f'<a class="action" href="/packing-sync/{quote(packing_no, safe="")}">{_text(request, "Compare with Invoice", "Invoice와 비교")}</a>'
     else:
         content += f'<p>{_text(request, "Prepare two private PDF copies to review together. They are available for one hour. This step does not send an email or create new documents.", "두 PDF 사본을 만들어 함께 확인합니다. 사본은 1시간 동안 이용할 수 있습니다. 이 단계에서는 메일을 보내거나 새 문서를 생성하지 않습니다.")}</p>'

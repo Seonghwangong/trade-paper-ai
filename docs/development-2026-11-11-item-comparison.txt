@@ -1,0 +1,49 @@
+2026-11-11 — Read-only line comparison for linked Invoice / Packing List
+
+Base main/live: 5bccd188ac16e10e430cb36a106c31daf52f4265.
+Existing cloud development idle on inspection. No schedules/settings changed.
+
+Problem: the comparison screen displayed separate lists, forcing users to find
+corresponding lines and quantity differences manually. The data model currently
+stores specifications in the full item name; no separate specification field or
+external-document matching system is introduced.
+
+Change:
+- Unique complete names are aligned regardless of row order. Only whitespace and
+  letter case are normalized; punctuation, dimensions and model numbers remain.
+- Duplicate/empty/similar names and different specifications remain unpaired.
+  All unmatched Packing lines are still shown, with original row numbers.
+- Shows Invoice and PL quantity/unit, entered HS/origin, and PL line net weight.
+- Calculates PL minus Invoice only for valid positive quantities and identical,
+  nonempty units. Missing/different HS, origin, unit and line net weights are
+  review flags, not inferred corrections.
+- Shown in /packing-sync/{packing_no}, and immediately on the paired-PDF entry
+  when shared fields differ. No extra click to see why preparation is blocked.
+- Table is read-only. No change to proposal(), fingerprint checks, reviewed POST,
+  matching used for weight retention, email/PDF authorization or billing.
+- In particular, the presentation's full-name alignment is NOT used to retain
+  or allocate physical totals or approve customs classification.
+
+Verification:
+- 1666 non-browser tests passed, 38 browser tests deselected, 9 warnings.
+- Focused 54 tests passed (email pair, packing workflow, item review).
+- New cases: reordered/no product code; similar names/different specifications;
+  duplicate names on either side; missing names; decimal quantity delta;
+  incompatible/missing units; invalid quantity; entered HS differences;
+  per-item net weight absent/zero/negative/nonfinite; extra PL lines; HTML
+  escaping; tenant isolation and route GET file-byte preservation.
+- Existing real-data write guard passed; isolated temporary data only. Customer
+  and original test records were not opened or modified.
+- Mac headless Chromium failed at launch (MachPort permission denied). Did not
+  retry. Connected browser rejected local-file preview under URL policy; no
+  workaround attempted. Desktop/mobile visual validation remains outstanding.
+- Synthetic rendered route HTML saved in local outputs for later visual review.
+- Tests initially could not collect social-auth tests due to missing local
+  cryptography; installed repository-pinned cryptography/PyJWT into /tmp only,
+  then complete non-browser suite passed. No production dependencies changed.
+
+Release: use normal main push / existing Render auto-deploy only. Actual commit,
+deploy and health result are recorded separately in local outputs after release.
+Next: independently validate desktop/mobile display; consider distinct structured
+specification input only after checking current data capture, without fuzzy
+assignment or automatic HS/weight allocation. Do not repeat this comparison work.

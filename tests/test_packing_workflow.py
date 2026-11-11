@@ -71,6 +71,17 @@ def test_preview_escape_and_tenant_isolation(records):
     assert error.value.status_code==401
 
 
+def test_preview_shows_quantity_difference_without_writing_documents(records):
+    current, source, other, pp, ip = records
+    before = pp.read_bytes(), ip.read_bytes()
+    preview = endpoint('/packing-sync/{packing_no}', 'GET')('PK-1', request())
+    body = preview.body.decode()
+    assert 'id="item-comparison"' in body
+    assert '-20' in body and 'Quantity differs' in body
+    assert 'Line net weight' in body and '20 kg' in body
+    assert (pp.read_bytes(), ip.read_bytes()) == before
+
+
 def test_apply_guards_stale_preview_and_updates_only_selected_account(records):
     current,source,other,pp,ip=records
     apply=endpoint('/packing-sync/{packing_no}','POST')
