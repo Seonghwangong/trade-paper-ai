@@ -1,0 +1,30 @@
+2026-11-11 — Public homepage search and social copy
+Base main/live e4282f0bc2b0667eca46add108d5b8eb8c748488.
+Cloud development idle; preserved its latest order-note currency fix.
+
+Korean title:
+무역 업무 자동화 · 인보이스·패킹리스트 작성 | Trade Paper AI
+English title:
+Commercial Invoice & Packing List Software | Trade Paper AI
+
+Visible Korean eyebrow: 무역 업무 자동화, 수출 서류 작성부터
+Visible introduction names 인보이스(상업송장), 패킹리스트(포장명세서),
+company/buyer/item reuse, review/save and separate PDF downloads.
+Existing H1, no-signup sample/free signup, pricing, FAQ scope limitations,
+branding, layout, canonical/hreflang, noindex and authentication retained.
+Same localized title is used in title, og:title and twitter:title. Description
+is shared by meta description, OG, Twitter and SoftwareApplication schema.
+No hidden text or meta keywords; no promises of customs filing/HS automation,
+search rankings, immediate indexing or indexing submission.
+
+References read:
+https://developers.google.com/search/docs/appearance/title-link
+https://developers.google.com/search/docs/fundamentals/seo-starter-guide
+
+Validation: 46 passed, 8 browser deselected, 7 pre-existing warnings.
+Existing suites: SEO, landing workflow, Product Hunt assets, public billing,
+PWA, release information, legal pages. Includes anonymous canonical/hreflang,
+login/noindex/private-route guards, bilingual metadata/body/schema consistency.
+No customer data, costs, permissions, automation or payment changes.
+Deployment through existing main auto-deploy; final live and public HTML
+checks recorded in local outputs/Development_release_2026-11-11_search_copy.json.

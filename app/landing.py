@@ -12,7 +12,8 @@ from app.pwa import app_head
 
 COPY = {
 'en': {
-'eyebrow':'EXPORT DOCUMENTS, TOGETHER',
+ 'title':'Commercial Invoice & Packing List Software | Trade Paper AI',
+'eyebrow':'EXPORT DOCUMENT PREPARATION',
 'headline':'Enter once.<br>Prepare both documents.',
 'intro':'Reuse company, buyer and item details to prepare your Commercial Invoice and Packing List. Review, save and download separate PDFs.',
 'sample':'Try without signup','start':'Start Free','signin':'Sign in','pricing':'Plans','guide':'Getting Started','comfort':'Fictional sample · No account or card needed',
@@ -30,10 +31,11 @@ COPY = {
 'q3':'Does this replace customs or compliance checks?','a3':'No. This is document preparation, not customs filing or certification. Check documents against your actual shipment and the requirements for your product and destination.',
 'q4':'Is payment active?','inactive':'Online payment processing is not active yet. You can still use the Free plan and contact us for help.','active':public_billing.NOTICE,
 'feedback':'Send Feedback','about':'About','privacy':'Privacy','terms':'Terms','refund':'Refund Policy','help':'First-use help','install':'Install app',
-'description':'Reuse company, buyer and item details to create Commercial Invoice and Packing List PDFs. Free and monthly Starter plans.'},
+'description':'Commercial Invoice and Packing List software for export document preparation. Reuse company, buyer and item details, review your documents and download separate PDFs.'},
 'ko': {
-'eyebrow':'수출 서류, 한 흐름으로','headline':'한 번 입력하고,<br>두 서류로 이어 쓰세요.',
-'intro':'회사·거래처·품목 정보를 재사용해 Invoice와 Packing List를 작성하세요. 내용을 확인하고 저장한 뒤 각각 PDF로 내려받습니다.',
+ 'title':'무역 업무 자동화 · 인보이스·패킹리스트 작성 | Trade Paper AI',
+'eyebrow':'무역 업무 자동화, 수출 서류 작성부터','headline':'한 번 입력하고,<br>두 서류로 이어 쓰세요.',
+'intro':'회사·바이어·품목 정보를 재사용해 인보이스(상업송장)와 패킹리스트(포장명세서)를 작성하세요. 내용을 확인하고 저장한 뒤 각각 PDF로 내려받습니다.',
 'sample':'가입 없이 체험','start':'무료로 시작','signin':'로그인','pricing':'요금','guide':'사용 안내','comfort':'가상 출하 체험 · 가입·카드 등록 없이',
 'demo':'실제 작업 화면을 살펴보세요','demo_note':'15초 제품 소개. 자세한 작성 순서는 사용 안내에서 확인하세요.',
 'feature1':'반복 입력 줄이기','detail1':'회사·거래처·품목 정보를 저장해 다음 문서에 재사용합니다.',
@@ -49,7 +51,7 @@ COPY = {
 'q3':'통관 신고나 규정 검토도 대신해 주나요?','a3':'아니요. 서류 작성 도구이며 통관 신고·인증을 대신하지 않습니다. 실제 출하 내용과 품목·도착지별 요구사항을 확인하세요.',
 'q4':'유료 구독을 할 수 있나요?','inactive':'현재 온라인 유료 결제는 열려 있지 않습니다. 무료 플랜을 이용하거나 문의해 주세요.','active':'Starter 월 구독은 Paddle에서 결제할 수 있습니다. 결제 전 최종 금액과 매월 갱신 조건을 확인하세요. Professional은 별도 문의가 필요합니다.',
 'feedback':'의견 보내기','about':'서비스 소개','privacy':'개인정보 처리방침','terms':'이용약관','refund':'해지·환불','help':'첫 사용 도움','install':'앱 설치',
-'description':'회사·거래처·품목 정보를 재사용하는 수출 서류 작성 도구. Invoice와 Packing List PDF를 만들고 무료 또는 Starter 월 구독으로 이용하세요.'}}
+'description':'수출 서류 작성부터 시작하는 무역 업무 자동화. 회사·바이어·품목 정보를 재사용해 인보이스(상업송장)와 패킹리스트(포장명세서)를 작성하고 PDF로 내려받으세요.'}}
 
 def _public_base_url():
     try:

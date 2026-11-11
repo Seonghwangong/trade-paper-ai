@@ -15,8 +15,8 @@ MEDIA = ROOT / "app" / "static" / "product-hunt"
 
 def test_product_hunt_copy_and_social_preview_are_launch_ready():
     html = landing_page().body.decode()
-    assert '<meta name="description" content="Reuse company, buyer and item details to create Commercial Invoice and Packing List PDFs. Free and monthly Starter plans.">' in html
-    assert '<meta property="og:title" content="Trade Paper AI">' in html
+    assert '<meta name="description" content="Commercial Invoice and Packing List software for export document preparation. Reuse company, buyer and item details, review your documents and download separate PDFs.">' in html
+    assert '<meta property="og:title" content="Commercial Invoice &amp; Packing List Software | Trade Paper AI">' in html
     assert '<meta property="og:image" content="/static/product-hunt/hero.png">' in html
     launch = (ROOT / "docs" / "product-hunt-launch.md").read_text(encoding="utf-8")
     assert "Create and manage export documents in one connected workflow." in launch

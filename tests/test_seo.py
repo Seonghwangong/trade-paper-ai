@@ -15,12 +15,25 @@ def _request(path):
     return Request({"type": "http", "method": "GET", "path": path, "headers": [], "scheme": "https", "server": ("trade.example.com", 443), "query_string": b""})
 
 
-def test_landing_has_canonical_social_manifest_and_valid_structured_data(monkeypatch):
+@pytest.mark.parametrize("lang", ["en", "ko"])
+def test_landing_has_canonical_social_manifest_and_valid_structured_data(monkeypatch, lang):
     monkeypatch.setenv("TRADE_PAPER_PUBLIC_BASE_URL", "https://trade.example.com")
-    html = landing.landing_page().body.decode()
-    assert '<link rel="canonical" href="https://trade.example.com/">' in html
+    from html import escape
+    html = landing.landing_page(lang).body.decode()
+    canonical = "https://trade.example.com/" + ("?lang=ko" if lang == "ko" else "")
+    title = escape(landing.COPY[lang]['title'], quote=True)
+    description = escape(landing.COPY[lang]['description'], quote=True)
+    assert f'<title>{title}</title>' in html
+    assert f'<meta property="og:title" content="{title}">' in html
+    assert f'<meta name="twitter:title" content="{title}">' in html
+    for attribute in ('name="description"', 'property="og:description"', 'name="twitter:description"'):
+        assert f'<meta {attribute} content="{description}">' in html
+    assert 'name="keywords"' not in html
+    for key in ('eyebrow', 'intro'):
+        assert escape(landing.COPY[lang][key], quote=True) in html.split('<body>', 1)[1]
+    assert f'<link rel="canonical" href="{canonical}">' in html
     assert '<link rel="manifest" href="/static/site.webmanifest">' in html
-    assert '<meta property="og:url" content="https://trade.example.com/">' in html
+    assert f'<meta property="og:url" content="{canonical}">' in html
     assert '<meta property="og:image" content="https://trade.example.com/static/product-hunt/hero.png">' in html
     assert '<meta name="twitter:card" content="summary_large_image">' in html
     blocks = []
@@ -28,9 +41,10 @@ def test_landing_has_canonical_social_manifest_and_valid_structured_data(monkeyp
     for chunk in html.split(marker)[1:]:
         blocks.append(json.loads(chunk.split("</script>", 1)[0]))
     assert [block["@type"] for block in blocks] == ["Organization", "SoftwareApplication", "FAQPage"]
-    assert blocks[0]["url"] == "https://trade.example.com/"
+    assert blocks[0]["url"] == canonical
+    assert blocks[1]["description"] == landing.COPY[lang]["description"]
     assert blocks[1]["softwareVersion"] == APP_VERSION
-    visible_questions = [landing.COPY["en"][f"q{i}"] for i in range(1, 5)]
+    visible_questions = [landing.COPY[lang][f"q{i}"] for i in range(1, 5)]
     assert [entry["name"] for entry in blocks[2]["mainEntity"]] == visible_questions
 
 
