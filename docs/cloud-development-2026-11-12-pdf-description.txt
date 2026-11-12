@@ -1,0 +1,31 @@
+2026-11-12 Cloud development: complete item descriptions in PDFs
+
+Base remote main / Render live: af361779b6473414a8891aa8334df18c6c8d02a6.
+Read standing runbook and previous persistent run records; existing work preserved.
+
+Reproduced eight failures: Invoice/Packing PDF item descriptions were shortened
+with ellipses, silently omitting final specifications, CJK text and long model codes.
+Wrap descriptions using actual embedded font widths. Expand rows and continue
+oversized descriptions across pages, repeating headers and identifying HS/row
+information while printing quantities, prices and weights only once per item.
+Keep source payloads, dates, totals and final signature unchanged.
+
+Validation with fresh fictional data, no production writes:
+- Eight new regression tests failed before the fix, passed after it.
+- Related PDF/date/Unicode tests: 30 passed.
+- Full non-browser Python suite: 1723 passed, 38 deselected.
+- Cloud Chromium: login, Invoice save/PDF, linked Packing save/PDF, full final
+  specification retained, quantities/weights retained, local health 200.
+- Fictional sample Invoice/Packing pair generated and parsed.
+- Actual PDF pages rendered and visually checked for column/footer overlap.
+- Protected data file hashes: all 44 unchanged. No purchases, payments or mail.
+- git diff --check clean. No Mac or local scheduling actions.
+
+QA artifacts: /workspace/work/pdf-description-qa (isolated test account/data).
+Render workspace tea-d9g1qp3tqb8s73f0qhpg / service srv-d9g20smpbkes73d54ds0.
+Auto deploy enabled; do not trigger a duplicate manual deploy.
+Exact commit, deployment and post-live health evidence are recorded in
+/workspace/.trade-paper-ai/development-runs/latest.txt after deployment completes.
+Direct production health HTTP remains cloud-proxy restricted; use official
+Render logs and exact live deployment identity. Existing schedules unchanged.
+Next: assess other source-review-to-PDF usability against fresh evidence.

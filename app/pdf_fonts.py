@@ -41,3 +41,31 @@ def fit_pdf_text(pdf, text, max_width, font_name=TP_UNICODE, font_size=8, suffix
     while value and pdf.stringWidth(value + suffix, font_name, font_size) > max_width:
         value = value[:-1]
     return value + suffix if value else suffix
+
+
+def wrap_pdf_text(pdf, text, max_width, font_name=TP_UNICODE, font_size=8):
+    """Keep every description character, including long tokens and CJK text."""
+    lines = []
+    widths = {}
+    value = str(text or '').replace('\r\n', '\n').replace('\r', '\n').replace('\t', ' ')
+    for paragraph in value.split('\n'):
+        remaining = paragraph.strip()
+        if not remaining:
+            lines.append('')
+        while remaining:
+            width, end = 0, 0
+            for character in remaining:
+                if character not in widths:
+                    widths[character] = pdf.stringWidth(character, font_name, font_size)
+                if width + widths[character] > max_width:
+                    break
+                width += widths[character]
+                end += 1
+            end = max(1, end)
+            if end < len(remaining):
+                boundary = remaining.rfind(' ', 0, end + 1)
+                if boundary > 0:
+                    end = boundary
+            lines.append(remaining[:end].rstrip())
+            remaining = remaining[end:].lstrip()
+    return lines or ['']
