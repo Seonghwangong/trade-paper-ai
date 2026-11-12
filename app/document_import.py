@@ -103,6 +103,8 @@ def parse_rows(rows):
     raw_lines = []
     pending_meta = {}
     def remember(key, value):
+        if key == 'currency':
+            value = value.upper()
         if key in fields and fields[key] != value:
             warnings.append('conflicting_' + key)
         else:
@@ -179,7 +181,7 @@ def parse_rows(rows):
         fields.setdefault(key, '')
     fields['invoice_date'] = _date(fields['invoice_date'])
     currency = fields['currency'].upper()
-    fields['currency'] = currency if re.fullmatch(r'[A-Z]{3}', currency) else ''
+    fields['currency'] = currency if re.fullmatch(r'[A-Z]{3}', currency) and 'conflicting_currency' not in warnings else ''
     return {'fields': fields, 'items': items, 'warnings': sorted(set(warnings)), 'source_text': '\n'.join(raw_lines)[:MAX_TEXT]}
 
 

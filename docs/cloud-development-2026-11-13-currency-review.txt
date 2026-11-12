@@ -1,0 +1,38 @@
+2026-11-13 09:00 Asia/Seoul cloud development
+
+Base main/live: db10b0d2dd1050f5493129fcc85da8cb371756e1.
+Standing runbook and prior tracked development records read. This cloud runtime
+restored an older snapshot: development-runs/latest.txt and prior worktrees were
+absent. Recovered released history from remote main and this cloud conversation.
+44c6c93 is not available in this checkout; its previously documented guest-date
+proposal was not recreated or merged. c8fd3c6/23dbe5b and subsequent fixes read.
+
+Reproduced six failures in spreadsheet/positioned-text import (separate from
+previously fixed order-note parsing): conflicting USD/EUR kept the first currency
+and offered it for all prices; usd/USD incorrectly raised a conflict.
+Normalize currency case before comparison. Any actual currency conflict leaves
+the required currency blank, including USD/EUR/USD, so another repeated value
+cannot restore a guessed currency. Preserve source text and item values; no
+currency conversion. Buyer/seller conflict behavior remains as before.
+
+Validation (fresh fictional data only):
+- Six tests failed before the fix; seven new regression tests now pass.
+- Full non-browser suite: 1729 passed, 38 deselected, 9 warnings.
+- Added XLSX regression subsequently verified with related suite: 43 passed.
+- Cloud Chromium actual CSV upload: mixed currency blank/invalid and source
+  retained; no Invoice saved. Consistent USD/usd: no warning, saved one Invoice,
+  continued to Packing page, parsed saved PDF total USD 27.00.
+- Isolated server health 200; all 44 protected data file hashes unchanged.
+- Initial QA script expected a transient saved panel; corrected the harness to
+  wait for the existing automatic Packing navigation, then passed with fresh data.
+- No customer/existing test accounts or documents changed; no purchases, mail,
+  promotion or payment/schedule/service/security configuration changed.
+
+Worktree /workspace/work/source-review-20261113; QA /workspace/work/source-review-qa.
+Render workspace tea-d9g1qp3tqb8s73f0qhpg, service srv-d9g20smpbkes73d54ds0;
+autoDeploy=yes/commit. Safe fast-forward push only; no manual deployment.
+Final commit/deploy/health proof recorded in development-runs/latest.txt.
+Direct production HTTP restricted by cloud proxy; verify exact Render live commit
+and post-live new instance /health 200 via official tools. No Mac dependency.
+Next: source-review usability based on fresh reproducible evidence. Restore history
+from tracked docs if ephemeral cloud execution records are absent on next startup.
