@@ -233,16 +233,19 @@ def spreadsheet_rows(data, filename, sheet_index=0):
                 raise ValueError('invalid_file')
             date1904 = epoch in {'1', 'true'}
             date_styles = set()
+            zero_pad_styles = {}
             if 'xl/styles.xml' in archive.namelist():
                 styles = xml('xl/styles.xml')
-                formats = {int(fmt.attrib['numFmtId']): fmt.attrib.get('formatCode', '').lower().split(';')[0]
+                formats = {int(fmt.attrib['numFmtId']): fmt.attrib.get('formatCode', '').lower()
                            for fmt in styles.findall('s:numFmts/s:numFmt', ns)}
                 for index, style in enumerate(styles.findall('s:cellXfs/s:xf', ns)):
                     format_id = int(style.attrib.get('numFmtId', '0'))
                     if style.attrib.get('applyNumberFormat') in {'0', 'false'}:
                         continue
-                    if format_id in {14, 15} or formats.get(format_id) in {'yyyy-mm-dd', 'yyyy/mm/dd', 'yyyy.mm.dd'}:
+                    if format_id in {14, 15} or formats.get(format_id, '').split(';')[0] in {'yyyy-mm-dd', 'yyyy/mm/dd', 'yyyy.mm.dd'}:
                         date_styles.add(index)
+                    if re.fullmatch(r'0{2,20}', formats.get(format_id, '')):
+                        zero_pad_styles[index] = len(formats[format_id])
             sheets = workbook.findall('s:sheets/s:sheet', ns)
             if sheet_index < 0 or sheet_index >= len(sheets):
                 raise ValueError('invalid_sheet')
@@ -283,8 +286,12 @@ def spreadsheet_rows(data, filename, sheet_index=0):
                         elif cell.attrib.get('t') == 'b':
                             # Excel stores booleans as 0/1; these are not order numbers.
                             value = {'1': 'TRUE', '0': 'FALSE', 'true': 'TRUE', 'false': 'FALSE'}.get(value, '')
-                        elif cell.attrib.get('t', 'n') == 'n' and int(cell.attrib.get('s', '0')) in date_styles:
-                            value = _excel_date(value, date1904)
+                        elif cell.attrib.get('t', 'n') == 'n':
+                            style_index = int(cell.attrib.get('s', '0'))
+                            if style_index in date_styles:
+                                value = _excel_date(value, date1904)
+                            elif style_index in zero_pad_styles and re.fullmatch(r'[0-9]{1,20}', value):
+                                value = str(int(value)).zfill(zero_pad_styles[style_index])
                     values[col - 1] = value
                 rows.append([values.get(i, '') for i in range(max(values, default=-1) + 1)])
                 if len(rows) > 2000 or sum(len(str(c)) for c in rows[-1]) > MAX_TEXT:

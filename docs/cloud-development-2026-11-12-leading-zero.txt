@@ -1,0 +1,53 @@
+Trade Paper AI 클라우드 개발 — 2026-11-12 엑셀 코드 앞자리0 보존
+
+기준/보존
+- 시작 원격 main/실제 Render live=7cd1156754f2fa6b1170c065c12b0cbf4479c53e,
+  dep-dbq2rsqjnfac739oh2tg. autoDeploy=yes/commit/main.
+- latest.txt, runbook 및 보존/후속 커밋을 읽었다. 검색 메타데이터·IndexNow 개선은
+  그대로 보존하며 검색 알림 스크립트/외부 제출/홍보는 실행하지 않았다.
+- 최신 main 기반 새 worktree /workspace/work/leading-zero-20261112,
+  branch cloud/2026-11-12-leading-zero. 이전 작업공간·기록·커밋 보존.
+
+실무 문제/수정1건
+- 엑셀에서 숫자10121에 사용자 지정000000 형식을 적용하면 원본에는010121로
+  표시되지만, 가져오기에서10121로 읽어 앞자리0을 잃는 문제 재현.
+- 파일에 명시된 순수0 표시 형식(2~20자리)에 한해 양의 정수/0의 표시를 보존.
+  코드가 형식보다 길어도 잘라내지 않고 실제 숫자를 보존한다.
+- 형식이 없거나 숫자 텍스트인 경우에는 0을 붙이지 않는다. 소수·음수·지수,
+  하이픈/복잡한 구간/여러 구간 형식은 임의 해석하지 않고 기존 값을 유지한다.
+- 수식/캐시값은 기존처럼 사용하지 않으며 엑셀 날짜 처리도 보존한다.
+- HS 분류를 추천·추정·검증 완료 처리하는 기능이 아니다. 사용자가 원본에
+  명시한 코드 표시만 충실히 읽고 기존 검토 확인 절차를 유지한다.
+- 고객 화면/문구/색상/로고·수량/중량/통관/과거 날짜·유료 권한 변경 없음.
+
+근거
+- Microsoft 공식 사용자 지정0 형식으로 앞자리0을 표시하는 설명 확인:
+  https://support.microsoft.com/en-us/excel/keeping-leading-zeros-and-large-numbers
+  https://support.microsoft.com/en-us/excel/review-guidelines-for-customizing-a-number-format
+
+검증
+- 새 XLSX 회귀16개: 명시0 형식, 초과자리 미절삭, 형식 없음, 숫자텍스트,
+  소수/음수/지수/복잡·다중구간 비추정, 수식 캐시 미사용 및 수량/단가 보존.
+- 최초 재현14개 중5 failed/9 passed, 다중구간 검사2개 보완 후 최종 전체
+  비브라우저1715 passed, 38 deselected, 9 warnings (31.13초).
+- 실제 새 가상 계정 Chromium에서 원본 검토와 HS입력010121 확인,
+  수량12/단가3 보존, 명시적 검토 확인 후 저장한 Invoice와 실제 PDF에010121 유지.
+  가상사용자가 당사자/통화/일자를 직접 입력했다. 실제 고객 날짜/코드는 변경하지 않음.
+- Packing 화면 정상 연결, 샘플 Invoice/Packing PDF 파싱·워터마크·격리 health200 통과.
+- 기존 데이터44개 파일 SHA-256 동일. 이전 고객/테스트 계정·문서 미변경.
+- 새 경로 /workspace/work/leading-zero-qa. test모드, 이메일disabled,
+  Paddle live scheduler/alerts=0. git diff --check 통과.
+- 구매/실결제/메일/홍보/검색엔진 제출/새 비용/보안 권한/로컬 예약 변경 없음.
+- 브라우저 전체38개를 실행한 것은 아니며 위 실제 흐름 검증 수행.
+
+반영/운영 기록
+- 최신main 재확인 후 안전한 fast-forward만 허용. force push 금지.
+- Render 자동 배포만 사용, 수동 배포 중복 금지.
+- 이 저장소 문서는 배포 전 검증 결과. 실제 main/deploy ID/live/새 인스턴스health는
+  /workspace/.trade-paper-ai/development-runs/latest.txt와 날짜별 기록에 저장.
+- 직접 운영URL은 기존 클라우드정책 제한. 우회 없이 공식Render 로그로 확인.
+
+다음 우선순위
+- 이번 배포의 실제 운영커밋/live/health 확인 후 최신main 기반 새 실무불편1건 검증.
+- 이번 앞자리0 보존과 이미 완료된 XLSX/문서/PDF 기능 반복 개발 금지.
+- 별도 미반영44c6c93은 보존하고 임의 병합하지 않는다.
