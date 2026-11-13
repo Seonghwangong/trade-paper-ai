@@ -197,7 +197,15 @@ def text_rows(text):
 def spreadsheet_rows(data, filename, sheet_index=0):
     if filename.lower().endswith('.csv'):
         try:
-            text = data.decode('utf-8-sig')
+            # Excel Unicode exports identify their byte order explicitly.
+            # Never guess UTF-16 for unmarked input or fall back from a bad BOM.
+            if data.startswith((b'\xff\xfe', b'\xfe\xff')):
+                try:
+                    text = data.decode('utf-16')
+                except UnicodeDecodeError as exc:
+                    raise ValueError('encoding') from exc
+            else:
+                text = data.decode('utf-8-sig')
         except UnicodeDecodeError:
             try:
                 text = data.decode('cp949')
@@ -208,8 +216,22 @@ def spreadsheet_rows(data, filename, sheet_index=0):
         try:
             dialect = csv.Sniffer().sniff(text[:8192], delimiters=',;\t')
         except csv.Error:
+            # Metadata rows can have fewer columns than the item table, which
+            # defeats Sniffer for Excel's tab-separated Unicode exports.
             dialect = csv.excel
-        rows = list(csv.reader(StringIO(text), dialect))
+            candidates = []
+            for delimiter in ',;\t':
+                for row in csv.reader(StringIO(text[:8192]), delimiter=delimiter):
+                    headers = {HEADER_MAP.get(normalized(cell)) for cell in row}
+                    if {'name', 'quantity'} <= headers:
+                        candidates.append(delimiter)
+                        break
+            if len(candidates) == 1:
+                rows = list(csv.reader(StringIO(text), delimiter=candidates[0]))
+            else:
+                rows = list(csv.reader(StringIO(text), dialect))
+        else:
+            rows = list(csv.reader(StringIO(text), dialect))
         if len(rows) > 2000 or any(len(r) > 100 for r in rows):
             raise ValueError('too_large')
         return rows, ['CSV'], []

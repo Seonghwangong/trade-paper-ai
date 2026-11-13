@@ -1,0 +1,33 @@
+2026-11-13 15:00 Asia/Seoul cloud development
+Base latest main/live a9aff7800044422ee892f597cbea1c208584a5f9.
+Read latest persistent record, runbook and intervening main changes (18caef4,
+a9aff78). Preserved Packing/admin changes and previous cloud fixes; original
+44c6c93 remains unavailable/unmerged as recorded previously.
+
+Reproduction: four tests failed for BOM-marked UTF-16 LE/BE Korean CSV and
+Excel Unicode tab exports. Existing UTF-8/CP949 decoder rejected these files.
+Fix: decode only explicitly BOM-marked UTF-16, reject broken encoding rather
+than fall back to a guessed charset. Retain UTF-8 and CP949 behavior.
+Tab exports with metadata rows of differing widths also defeat csv.Sniffer.
+On sniff failure only, choose delimiter when exactly one candidate has recognized
+Description/Qty headers. Otherwise retain prior comma fallback. No numeric,
+HS, date or currency inference or conversion added.
+
+Validation:
+- New nine tests cover endian variants, comma/tab, quoted Korean description,
+  metadata/date/quantity/prices, existing encodings and corrupted UTF-16 rejection.
+- Initial reproduction 4 failed/5 passed. After decoding, 2 tab cases still failed;
+  header-based fallback fixed these as well.
+- Final full non-browser suite: 1746 passed, 38 deselected, 9 existing warnings.
+- Two actual cloud Chromium runs with fresh fictional accounts/data, comma then
+  tab UTF-16 uploads: Korean fields/source review, saved Invoice, Packing next
+  screen and PDF extraction retained Korean name and USD 12.00 total.
+- Both isolated server health checks 200; 44 protected files unchanged by hashes.
+- git diff --check clean. No customer/test account writes, purchases/payment,
+  mail/promotion, security/service/scheduling changes. No Mac/local browser use.
+QA /workspace/work/utf16-qa; worktree /workspace/work/import-lines-20261113.
+Render confirmed workspace tea-d9g1qp3tqb8s73f0qhpg and service
+srv-d9g20smpbkes73d54ds0, autoDeploy=yes/commit. No duplicate manual deploy.
+Final commit/live/health evidence in /workspace/.trade-paper-ai/development-runs/latest.txt.
+Limit: production direct HTTP proxy restricted; verify via official live deploy
+identity and post-live health logs. Next: evidence-led import source review usability.
