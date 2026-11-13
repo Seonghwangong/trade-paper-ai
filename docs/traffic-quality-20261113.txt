@@ -1,0 +1,40 @@
+2026-11-13 traffic quality and account evidence
+
+Base: origin/main 0bd17a477193267cc7b6b05efbabd2ef8b0845ba (verified current live).
+User authorized implementing separation of internal QA and verifiable usage.
+New admin-only /admin/growth linked from /admin/dashboard.
+
+Anonymous events add one categorical audience: Unclassified, Internal,
+Automation hint, Legacy unknown. No IP, user agent, cookie, referrer URL or
+anonymous identifier is stored. Existing rows are preserved and read as Legacy
+unknown; they are never reclassified as customers. Known crawler user-agent
+markers are hints, not verified bots. Internal QA uses explicit traffic=internal
+links and propagates the marker through generation, download clicks and language
+switches. Signed-in operator sample rendering also marks the emitted requests.
+The client cannot report successful pair generation; only the PDF endpoint can.
+Fixed sample source classification for LinkedIn, YouTube, Instagram, Facebook and
+Naver, with exact campaign names and hostname boundaries.
+
+Password and OAuth signups/logins associate analytics with the saved account ID.
+No authentication or account-linking permission is granted by analytics metadata.
+Historical anonymous signup events are not retrospectively linked.
+Account table counts workspaces once, and separates administrator/manual internal
+accounts, intake review signals and other unverified accounts. Invoice/pair
+evidence is matched within the same account. Current active paid access is read
+from the existing signed Paddle ledger projection; unavailable billing is unknown,
+not zero. This is not lifetime revenue, a first-customer claim or an anonymous
+practice-to-signup conversion rate.
+
+Manual internal classification requires platform admin, a same-origin POST and
+an existing account. Changes only analytics_internal_accounts.json; original
+users, documents, billing, permissions and automation schedules remain intact.
+
+Validation: 121 focused Python tests passed, 4 browser tests deselected, 7 existing
+warnings. Six JS unit scenarios passed (source attribution, spoofed hostname,
+internal marker propagation, creation/downloads and stale-output invalidation).
+Native Chrome inspected the empty-data local preview before release. Live QA
+must use the internal test links; no QA is counted as external customer evidence.
+
+References: https://render.com/docs/deploys.md and
+https://render.com/docs/health-checks.md read for the existing auto-deploy workflow.
+No infrastructure, paid plan, environment secrets or automation changes.

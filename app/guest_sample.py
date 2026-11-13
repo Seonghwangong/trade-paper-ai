@@ -86,7 +86,7 @@ def practice_documents(shipment: PracticeShipment, request: Request):
         source = request.query_params.get("source", "Other")
         if source not in analytics.VISITOR_SOURCES:
             source = "Other"
-        analytics.record_visit("Practice Pair Generated", source)
+        analytics.record_visit("Practice Pair Generated", source, audience=analytics.request_audience(request))
     except Exception:
         logger.exception("Practice generation counter could not be recorded")
     return JSONResponse({name: b64encode(content).decode("ascii") for name, content in documents.items()},
@@ -147,9 +147,10 @@ COPY = {
 
 
 @router.get("/try-sample", response_class=HTMLResponse)
-def practice_page(lang: str = "en"):
+def practice_page(lang: str = "en", request: Request = None):
     language = "ko" if lang == "ko" else "en"
     content = (Path(__file__).parent / "templates" / "guest_sample.html").read_text(encoding="utf-8")
-    for key, value in {**COPY[language], "lang": language}.items():
+    traffic = "internal" if request is not None and analytics.request_audience(request) == "Internal" else ""
+    for key, value in {**COPY[language], "lang": language, "traffic": traffic}.items():
         content = content.replace("__" + key + "__", value)
     return HTMLResponse(content, headers={"Cache-Control": "no-store"})

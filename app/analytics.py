@@ -21,7 +21,8 @@ EVENTS = (
     "Feedback Submitted",
 )
 ALLOWED_FIELDS = ("time", "event", "account_id")
-VISITOR_FIELDS = ("time", "page", "source")
+VISITOR_FIELDS = ("time", "page", "source", "audience")
+AUDIENCES = ("Unclassified", "Internal", "Automation hint", "Legacy unknown")
 VISITOR_PATHS = {
     "/": "Landing", "/register": "Signup", "/getting-started": "Getting Started",
     "/founding-beta": "Founding Beta",
@@ -124,30 +125,52 @@ def classify_source(referer="", query_string=""):
     return "Other" if host else "Direct"
 
 
-def record_visit(page, source="Direct", now=None, path=None):
+def request_audience(request):
+    # No new identifier or tracking cookie. Explicit QA links are intentionally
+    # self-declared, and never grant access or identify a person.
+    from app.traffic_quality import internal_account_ids
+    identity = request.scope.get("trade_paper_user") or {}
+    if (identity.get("is_admin") or request.query_params.get("traffic") == "internal"
+            or identity.get("account_id") in internal_account_ids()):
+        return "Internal"
+    agent = request.headers.get("user-agent", "").casefold()
+    if any(marker in agent for marker in ("googlebot", "bingbot", "oai-searchbot", "gptbot", "claudebot", "perplexitybot", "headlesschrome", "python-requests", "curl/", "tradepaper-release-verification")):
+        return "Automation hint"
+    return "Unclassified"
+
+
+def record_visit(page, source="Direct", now=None, path=None, audience="Unclassified"):
     if page not in VISITOR_PAGES + PRACTICE_EVENTS:
         raise ValueError("Unsupported visitor page")
     if source not in VISITOR_SOURCES:
         raise ValueError("Unsupported visitor source")
+    if audience not in AUDIENCES:
+        raise ValueError("Unsupported traffic audience")
     entry = {
         "time": (now or datetime.now(timezone.utc)).isoformat(),
         "page": page,
         "source": source,
+        "audience": audience,
     }
     entry = {field: entry[field] for field in VISITOR_FIELDS}
     locked_json_mutation(path or VISITOR_ANALYTICS_FILE, [], lambda rows: rows.append(entry), list)
     return entry
 
 
-def visitor_metrics(now=None, path=None):
+def visitor_metrics(now=None, path=None, audience=None):
     current = now or datetime.now(timezone.utc)
     rows = [
-        {field: str(row.get(field, "") or "") for field in VISITOR_FIELDS}
+        {**{field: str(row.get(field, "") or "") for field in VISITOR_FIELDS},
+         "audience": row.get("audience") if row.get("audience") in AUDIENCES else "Legacy unknown"}
         for row in load_json_strict(path or VISITOR_ANALYTICS_FILE, [], list)
         if isinstance(row, dict)
         and row.get("page") in VISITOR_PAGES + PRACTICE_EVENTS
         and row.get("source") in VISITOR_SOURCES
     ]
+    if audience is not None:
+        if audience not in AUDIENCES:
+            raise ValueError("Unsupported traffic audience")
+        rows = [row for row in rows if row["audience"] == audience]
     practice_counts = {event: sum(row["page"] == event for row in rows) for event in PRACTICE_EVENTS}
     rows = [row for row in rows if row["page"] in VISITOR_PAGES]
     page_counts = {page: sum(row["page"] == page for row in rows) for page in VISITOR_PAGES}

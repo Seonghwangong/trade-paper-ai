@@ -193,8 +193,15 @@ class ProductAnalyticsMiddleware:
         identity = scope.get("trade_paper_user") or {}
         account_id = str(identity.get("account_id", "") or "")
         event_specs = []
-        if method == "POST" and path == "/register": event_specs.append(("Signup", "", False))
-        if method == "POST" and path == "/login": event_specs.append(("Login", "", False))
+        analytics_owner = scope.get("trade_paper_analytics_account", "")
+        if method == "POST" and path == "/register" and analytics_owner:
+            event_specs.append(("Signup", analytics_owner, True))
+        if method == "POST" and path == "/login" and analytics_owner:
+            event_specs.append(("Login", analytics_owner, False))
+        if path.startswith("/auth/") and path.endswith("/callback") and analytics_owner:
+            event_specs.append(("Login", analytics_owner, False))
+            if scope.get("trade_paper_analytics_signup"):
+                event_specs.append(("Signup", analytics_owner, True))
         if method == "GET" and path == "/onboarding": event_specs.append(("Onboarding Started", account_id, True))
         if method == "GET" and path == "/export-wizard": event_specs.append(("Export Wizard Started", account_id, False))
         if method == "POST" and path == "/export-wizard":
@@ -219,7 +226,7 @@ class ProductAnalyticsMiddleware:
             page = analytics_module.VISITOR_PATHS[path]
             source = analytics_module.classify_source(headers.get("referer", ""), bytes(scope.get("query_string", b"")).decode("latin-1"))
             try:
-                analytics_module.record_visit(page, source)
+                analytics_module.record_visit(page, source, audience=analytics_module.request_audience(Request(scope)))
             except Exception:
                 logger.exception("Visitor analytics could not be recorded: %s", page)
 
@@ -228,9 +235,11 @@ app.add_middleware(ProductAnalyticsMiddleware)
 
 
 @app.post("/analytics/visit", status_code=204, include_in_schema=False)
-def analytics_visit(page: str = Query(""), source: str = Query("Direct")):
+def analytics_visit(request: Request, page: str = Query(""), source: str = Query("Direct")):
     try:
-        analytics_module.record_visit(page, source)
+        if page == "Practice Pair Generated":
+            raise ValueError("Pair generation is a server-only event")
+        analytics_module.record_visit(page, source, audience=analytics_module.request_audience(request))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Invalid visitor analytics value") from exc
     return FastAPIResponse(status_code=204)
@@ -725,6 +734,8 @@ app.include_router(paddle_sandbox_router)
 app.include_router(paddle_checkout_router)
 app.include_router(paddle_test_payment_router)
 app.include_router(admin_dashboard_router)
+from app.traffic_quality import router as traffic_quality_router
+app.include_router(traffic_quality_router)
 app.include_router(audit_log_router)
 app.include_router(backup_restore_router)
 app.include_router(archive_router)

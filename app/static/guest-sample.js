@@ -8,10 +8,22 @@
   const links = ['invoice', 'packing'].map(name => document.getElementById(name + '-download'));
   let urls = [], started = false;
   const campaign = new URLSearchParams(location.search);
-  const referral = (campaign.get('utm_source') || campaign.get('ref') || document.referrer).toLowerCase();
-  const source = referral.includes('reddit') ? 'Reddit' : referral.includes('producthunt') ? 'Product Hunt' : referral.includes('disquiet') ? 'Disquiet' : referral.includes('google') ? 'Google' : referral ? 'Other' : 'Direct';
+  const traffic = form.dataset.traffic === 'internal' ? 'internal' : '';
+  const campaignSource = (campaign.get('utm_source') || campaign.get('ref') || '').toLowerCase().trim();
+  const knownSources = {producthunt: 'Product Hunt', 'product hunt': 'Product Hunt', reddit: 'Reddit', disquiet: 'Disquiet', google: 'Google', youtube: 'YouTube', instagram: 'Instagram', facebook: 'Facebook', linkedin: 'LinkedIn', naver: 'Naver'};
+  let referralHost = '';
+  try { referralHost = new URL(document.referrer).hostname.toLowerCase(); } catch (_) {}
+  const domains = {'producthunt.com': 'Product Hunt', 'reddit.com': 'Reddit', 'disquiet.io': 'Disquiet', 'google.com': 'Google', 'google.co.kr': 'Google', 'youtube.com': 'YouTube', 'youtu.be': 'YouTube', 'instagram.com': 'Instagram', 'facebook.com': 'Facebook', 'fb.com': 'Facebook', 'linkedin.com': 'LinkedIn', 'lnkd.in': 'LinkedIn', 'naver.com': 'Naver'};
+  const matched = Object.entries(domains).find(([domain]) => referralHost === domain || referralHost.endsWith('.' + domain));
+  const source = campaignSource ? (knownSources[campaignSource] || 'Other') : matched ? matched[1] : referralHost ? 'Other' : 'Direct';
+  document.querySelectorAll('nav a[lang]').forEach(link => {
+    const url = new URL(link.href, location.href);
+    if (traffic) url.searchParams.set('traffic', traffic);
+    if (campaignSource) url.searchParams.set('utm_source', campaignSource);
+    link.href = url.href;
+  });
   function record(page) {
-    fetch('/analytics/visit?' + new URLSearchParams({page, source}), {method: 'POST', credentials: 'omit', keepalive: true}).catch(() => {});
+    fetch('/analytics/visit?' + new URLSearchParams({page, source, traffic}), {method: 'POST', credentials: 'omit', keepalive: true}).catch(() => {});
   }
   function clearDownloads() {
     results.hidden = true;
@@ -45,7 +57,7 @@
     if (!started) {started = true; record('Practice Started');}
     fields.disabled = true; status.className = ''; status.textContent = status.dataset.busy;
     try {
-      const query = new URLSearchParams({source});
+      const query = new URLSearchParams({source, traffic});
       const response = await fetch('/try-sample/documents?' + query, {
         method: 'POST', credentials: 'omit', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
       });

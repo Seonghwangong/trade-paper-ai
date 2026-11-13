@@ -569,6 +569,8 @@ def login(email: str = Form(""), password: str = Form(""), next_path: str = Form
     if not _password_is_pbkdf2(user.get("password", "")):
         _upgrade_legacy_password(normalized_email, password)
     _clear_login_failures(rate_key)
+    if request is not None:
+        request.scope["trade_paper_analytics_account"] = user.get("account_id", "")
     destination = safe_next_path(next_path)
     from app.onboarding import mark, should_auto_show
     onboarding_file = USERS_FILE.with_name("onboarding.json")
@@ -817,12 +819,13 @@ def register(
         )
 
     duplicate = {"found": False}
+    new_account_id = str(uuid.uuid4())
     def add_user(users):
         if any(isinstance(record, dict) and _normalized_email(record.get("email")) == normalized_email for record in users):
             duplicate["found"] = True
             return
         users.append({
-            "account_id": str(uuid.uuid4()),
+            "account_id": new_account_id,
             "company": company,
             "email": normalized_email,
             "password": _password_hash(password),
@@ -837,5 +840,9 @@ def register(
     if duplicate["found"]:
         return _auth_page("register", lang=lang, error="An account with this email already exists.", company=company, email=email, next_path=next_path, status_code=409)
     load_users()
+    if request is not None:
+        # Analytics ownership only: registration must not create a login session
+        # or populate trade_paper_user before authentication succeeds.
+        request.scope["trade_paper_analytics_account"] = new_account_id
     destination = "/login?registered=1" + ("&lang=ko" if lang == "ko" else "") + (f"&next={quote(next_path, safe='')}" if next_path else "")
     return RedirectResponse(url=destination, status_code=303)

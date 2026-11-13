@@ -200,7 +200,7 @@ def exchange_identity(provider, code, state, record, settings):
     return str(account.get('id','')), str(account.get('email',''))
 
 
-def account_for(provider, subject, email):
+def account_for(provider, subject, email, created=None):
     from app import auth
     if not subject or len(subject)>256:
         raise ValueError('Missing subject')
@@ -218,6 +218,8 @@ def account_for(provider, subject, email):
             raise ValueError('Use existing sign-in method')
         user={'account_id':str(uuid.uuid4()), 'company':'', 'email':email, 'password':'', 'session_version':0, 'plan':'Free', 'subscription_status':'Trial', 'registered_at':datetime.now(timezone.utc).isoformat(), 'role':'Owner', 'social_only':True, 'social_provider':provider, 'social_subject':subject}
         users.append(user); selected.append(user)
+        if created is not None:
+            created['value'] = True
     locked_json_mutation(auth.USERS_FILE,[],find_or_create,list)
     auth.load_users()  # Provision the same isolated company record used by password signup.
     return selected[0]
@@ -273,12 +275,15 @@ def complete(provider, request, code, state, error=''):
         if error or not code or len(code)>8192: raise ValueError('Cancelled or invalid code')
         if record['client_id']!=settings['client_id'] or record['redirect_uri']!=settings['redirect_uri']: raise ValueError('Configuration changed')
         subject,email=exchange_identity(provider,code,state,record,settings)
-        user=account_for(provider,subject,email)
+        created = {}
+        user=account_for(provider,subject,email,created)
         auth._clear_login_failures('oauth:' + str(request.client.host if request.client else 'unknown'))
         response=RedirectResponse(record['next'],status_code=303)
         response.set_cookie(auth.SESSION_COOKIE,auth._session_token(user['email'],user.get('session_version',0)),max_age=auth.SESSION_MAX_AGE,httponly=True,secure=True,samesite='lax',path='/')
         from app.audit_log import record_audit
         record_audit(user['account_id'],user['email'],'Login','Account','',path=auth.USERS_FILE.with_name('audit_log.json'))
+        request.scope['trade_paper_analytics_account'] = user['account_id']
+        request.scope['trade_paper_analytics_signup'] = bool(created.get('value'))
     except Exception:
         # Never render provider responses, codes, tokens or client secrets in errors/logs.
         response=failure(lang)

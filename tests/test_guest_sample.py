@@ -83,7 +83,7 @@ def test_generated_pair_matches_input_and_only_activity_is_stored(monkeypatch):
     assert "All weights in kg" in texts["packing"]
     records = json.loads(analytics.VISITOR_ANALYTICS_FILE.read_text())
     assert [row["page"] for row in records] == ["Practice Pair Generated"]
-    assert all(set(row) == {"time", "page", "source"} for row in records)
+    assert all(set(row) == {"time", "page", "source", "audience"} for row in records)
 
 
 @pytest.mark.parametrize("changes", [
