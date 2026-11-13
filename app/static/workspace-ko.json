@@ -128,6 +128,7 @@
   "Update packing list information": "포장명세서 내용을 수정합니다",
   "Manage all packing documents": "저장한 포장명세서를 관리합니다",
   "+ New Packing": "+ 새 포장명세서",
+  "Items, specifications and quantities are copied from your Invoice. Complete and check the cartons and actual weights.": "송장의 품목·규격·수량을 그대로 불러옵니다. 박스 수와 실제 중량을 입력하고 확인해 주세요.",
   "Create packing list from invoice and product data": "송장과 품목 정보를 불러와 포장명세서를 만듭니다",
   "Review against the Invoice": "송장과 대조하기",
   "Compare and update from Invoice": "송장 변경 비교·반영",

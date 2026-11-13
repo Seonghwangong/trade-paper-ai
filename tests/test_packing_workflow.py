@@ -110,3 +110,30 @@ def test_defaults_are_private_and_overwrite_only_matching_profile(records):
     save(request(),dict(settings,net_per_unit='.3'))
     assert len(get(request()))==1 and get(request())[0]['net_per_unit']=='.3'
     with pytest.raises(HTTPException): save(request(''),settings)
+
+
+def test_matching_documents_skip_comparison_and_preserve_packing(records, monkeypatch):
+    current, source, other, pp, ip = records
+    source = deepcopy(current)
+    source['invoice_no'] = 'INV-1'
+    source['items'][0]['quantity'] = '100.00'
+    ip.write_text(json.dumps([source]))
+    monkeypatch.setattr(packing, 'load_account_company', lambda *args: {})
+    monkeypatch.setattr(packing, '_buyer_master', lambda *args: {})
+    before = pp.read_bytes(), ip.read_bytes()
+    preview = endpoint('/packing-sync/{packing_no}', 'GET')('PK-1', request())
+    assert preview.status_code == 303
+    assert preview.headers['location'] == '/edit-packing/PK-1?lang=en'
+    for body in (packing.edit_packing('PK-1', request()).body.decode(), packing.packing_list(request()).body.decode()):
+        assert '/packing-sync/PK-1' not in body
+    assert (pp.read_bytes(), ip.read_bytes()) == before
+
+
+def test_changed_documents_still_offer_review_without_changing_weights(records, monkeypatch):
+    current, source, other, pp, ip = records
+    monkeypatch.setattr(packing, 'load_account_company', lambda *args: {})
+    monkeypatch.setattr(packing, '_buyer_master', lambda *args: {})
+    before = pp.read_bytes(), ip.read_bytes()
+    for body in (packing.edit_packing('PK-1', request()).body.decode(), packing.packing_list(request()).body.decode()):
+        assert '/packing-sync/PK-1' in body
+    assert (pp.read_bytes(), ip.read_bytes()) == before

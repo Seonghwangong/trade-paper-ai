@@ -1,0 +1,33 @@
+Invoice-first packing flow — 2026-11-13
+Base remote main/live: 18caef4892ee3f7c95e128e2b31e6e4a564cb1e2.
+
+User expectation: enter product/specification/quantity in Invoice once, carry
+those fields into Packing List; only physical packing information remains to
+complete. Ask for review when documents actually differ.
+
+Existing full-name (including specification), quantity and party prefill retained.
+Removed product-master fallback for blank Invoice HS/origin/unit: source blanks
+now stay blank rather than silently differing from the Invoice.
+Short bilingual creation guidance focuses on cartons and actual weights.
+Matching documents no longer show compare/update prompts on edit/list pages.
+Direct comparison GET for matching documents returns to edit without mutations.
+Changed documents retain preview, explicit confirmation, stale-version guards,
+and conservative physical-weight handling. No silent updates to saved documents.
+
+Verification: Node VM executes actual page prefill with multiple specifications,
+decimal quantities and conflicting master defaults. Matching/different route
+checks assert no record writes; existing reviewed-apply tests protect totals,
+account isolation and stale-preview rejection. No customer data or emails used.
+13 focused Node tests and 41 focused Python tests passed. Full non-browser suite
+result and live deployment recorded in outputs release receipt.
+Browser visual checks not claimed; no repeated attempt to bypass the previously
+reported local browser restriction. Existing cloud schedule untouched.
+
+Full-suite baseline audit: 8 failures reproduced on unmodified 18caef4. The
+previous traffic-quality release added 2 admin routes and the audience category
+but left the route snapshot/count and visitor-field assertion stale. Updated
+those expectations (including exact Unclassified category) without weakening
+privacy/auth tests or changing traffic behavior.
+
+Final validation: 1737 Python tests passed, 38 browser tests deselected, 9
+existing warnings; 13 Node tests passed. git diff --check clean.

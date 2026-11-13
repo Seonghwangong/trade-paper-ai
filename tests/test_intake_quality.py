@@ -117,5 +117,6 @@ def test_public_page_metrics_exclude_internal_failed_and_cached_requests(tmp_pat
     assert len(rows) == count
     if rows:
         assert rows[0]['page'] == page and rows[0]['source'] == 'Disquiet'
-        assert set(rows[0]) == {'time', 'page', 'source'}
+        assert set(rows[0]) == {'time', 'page', 'source', 'audience'}
+        assert rows[0]['audience'] == 'Unclassified'
         assert 'secret' not in file.read_text()

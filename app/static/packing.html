@@ -100,8 +100,7 @@ button{
 </a>
 
 <h1>Packing List</h1>
-<p class="sub">After saving, use Compare and update from Invoice on the edit page to review and apply Invoice changes. Verify cartons and weights before sending.</p>
-<p class="sub">Create packing list from invoice and product data</p>
+<p class="sub">Items, specifications and quantities are copied from your Invoice. Complete and check the cartons and actual weights.</p>
 
 <div class="card">
 <h2>Packing Information</h2>
@@ -340,9 +339,9 @@ async function loadInvoiceData(){
 
             card.querySelector(".item").value = item.name || "";
             card.querySelector(".quantity").value = item.quantity !== undefined ? item.quantity : "";
-            card.querySelector(".hs_code").value = item.hs_code || (index >= 0 ? products[index].hs_code || "" : "");
-            card.querySelector(".origin").value = item.origin || (index >= 0 ? products[index].origin || "" : "");
-            card.querySelector(".unit").value = item.unit || (index >= 0 ? products[index].unit || "" : "");
+            card.querySelector(".hs_code").value = item.hs_code || "";
+            card.querySelector(".origin").value = item.origin || "";
+            card.querySelector(".unit").value = item.unit || "";
 
             if(index >= 0){
                 card.querySelector(".productSelect").value = index;

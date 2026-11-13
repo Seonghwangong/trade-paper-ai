@@ -186,7 +186,8 @@ def packing_list(request: Request, search: str = ""):
             button("Download PDF", f"/packing-list-pdf/{packing_no}", "secondary"),
             button("Send Email", f"/send-email/packing/{packing_no}", "secondary"),
             button("Edit", f"/edit-packing/{packing_no}", "secondary"),
-            button("Review Invoice changes" if comparable(packing) != comparable(sources.get(packing.get("invoice_no"), {})) else "Compare with Invoice", f"/packing-sync/{packing_no}", "secondary"),
+            (button("Review Invoice changes", f"/packing-sync/{packing_no}", "secondary")
+             if packing.get("invoice_no") in sources and comparable(packing) != comparable(sources[packing["invoice_no"]]) else ""),
             button("Delete", f"/packing-delete/{packing_no}", "danger"),
         ])
     content = search_toolbar(button("+ New Packing", "/packing-page"), button("← Dashboard", "/", "secondary"), action="/packing-list", value=search, placeholder="Search packing, invoice, buyer, seller or item", reset_url="/packing-list", count_label=f"Total Packing Lists : {len(packing_lists)}")
@@ -298,9 +299,9 @@ def edit_packing(packing_no: str, request: Request):
                 source_invoice = None
             changed = source_invoice is not None and comparable(packing) != comparable(source_invoice)
             review_note = section_card("Review against the Invoice",
-                ('<p role="alert">Invoice details differ from this Packing List. Review and apply the changes before sending.</p>' if changed else '<p>Shared Invoice details match this Packing List.</p>')
+                '<p role="alert">Invoice details differ from this Packing List. Review and apply the changes before sending.</p>'
                 + '<p>Compare changes and apply them together. Changed items or quantities require fresh packing totals. Download fresh PDFs after saving.</p>'
-                + f'<a class="tp-btn" href="/packing-sync/{quote(packing_no, safe="")}">Compare and update from Invoice</a>')
+                + f'<a class="tp-btn" href="/packing-sync/{quote(packing_no, safe="")}">Compare and update from Invoice</a>') if changed else ""
             if source_invoice is None:
                 review_note = section_card("Review against the Invoice", '<p>The linked Invoice is unavailable. You can still edit this saved Packing List.</p>')
             html = review_note + f'<form action="/update-packing/{packing_no}" method="post">' + section_card("Packing Information", info)

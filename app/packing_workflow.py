@@ -128,6 +128,9 @@ def attach_routes(router):
         account = pack._account_id(request)
         current = pack._owned_packing(packing_no, account)
         source = pack._owned_invoice(current['invoice_no'], account)
+        if comparable(current) == comparable(source):
+            lang = 'ko' if request.query_params.get('lang', request.cookies.get('tp_language')) == 'ko' else 'en'
+            return RedirectResponse('/edit-packing/' + quote(packing_no, safe='') + '?lang=' + lang, status_code=303)
         proposed = proposal(current, source)
         esc = lambda x: html.escape(str(x or ''), quote=True)
         target = quote(packing_no, safe='')
