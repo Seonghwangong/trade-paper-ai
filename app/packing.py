@@ -621,6 +621,9 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
             pass
 
         lines = wrap_pdf_text(pdf, item.get("name", ""), 135, TP_UNICODE, 8)
+        unit = str(item.get("unit") or "").strip()
+        if unit:
+            lines.extend(wrap_pdf_text(pdf, "Unit: " + unit, 135, TP_UNICODE, 8))
         description_h = row_h + (len(lines) - 1) * line_gap
         reserve = summary_h + summary_gap + row_h if index == item_count else 0
         if description_h + reserve > page_top - row_min_bottom:

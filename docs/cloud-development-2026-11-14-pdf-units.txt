@@ -1,0 +1,28 @@
+2026-11-14 15:00 Asia/Seoul cloud development
+Base main/live 094ca4e9b5b6b942d23e8264dd57ac951ec2b5c4.
+Read persistent latest record and standing runbook; preserve previous released
+and preserved fixes. 44c6c93 unavailable as previously recorded; not recreated.
+
+Reproduced four failures: explicit item quantity units were stored and carried
+into linked Packing but omitted by both PDF renderers. A quantity of 2 PAIR
+therefore exported only the number 2, losing the user's measurement unit.
+Append explicit Unit text below each item description in Invoice/Packing PDF.
+Use existing measured wrapping and pagination; long Unicode units stay intact.
+No guessed unit for missing values; no quantity, price, weight, HS or date changes.
+
+Validation with fresh fictional data:
+- Four new unit tests failed before fix; six new tests now pass, including long
+  Korean unit text, absent units, original payload preservation and totals.
+- Full suite: 1757 passed, 38 browser deselected, 9 existing warnings.
+- Actual cloud Chromium: Invoice unit PAIR saved, prefilled into linked Packing,
+  saved and extracted from both real PDF downloads. USD 12.00 and packing totals
+  unchanged. Both PDFs rendered to images and visually checked for overlap.
+- Isolated health 200; all 44 protected file hashes unchanged.
+- git diff --check clean. No existing account/document, customer, payment, mail,
+  promotion, schedule, service or security setting changed. No Mac dependency.
+Worktree /workspace/work/pdf-unit-20261114; QA /workspace/work/pdf-unit-qa.
+Confirmed Render workspace tea-d9g1qp3tqb8s73f0qhpg, service
+srv-d9g20smpbkes73d54ds0; autoDeploy=yes/commit. No manual duplicate deployment.
+Final commit/live/post-live health evidence in development-runs/latest.txt.
+Direct production HTTP remains cloud-proxy restricted; official Render logs
+provide deployment health evidence. Next: evidence-led saved-document usability.

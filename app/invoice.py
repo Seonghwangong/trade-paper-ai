@@ -302,6 +302,9 @@ def create_invoice_pdf(payload, company=None):
         line_total = quantity * unit_price
 
         lines = wrap_pdf_text(pdf, item["name"], 170, TP_UNICODE, 10)
+        unit = str(item.get("unit") or "").strip()
+        if unit:
+            lines.extend(wrap_pdf_text(pdf, "Unit: " + unit, 170, TP_UNICODE, 10))
         description_h = row_h + (len(lines) - 1) * line_gap
         reserve = total_h + total_gap + row_h if index == item_count else 0
         if description_h + reserve > page_top - row_min_bottom:
