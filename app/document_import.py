@@ -156,9 +156,8 @@ def parse_rows(rows):
         if not item.get('name'):
             skipped += 1
             continue
-        if not item.get('quantity') and not item.get('unit_price'):
-            skipped += 1
-            continue
+        # A named source item still needs review when both numeric values are
+        # blank (for example after skipping formulas). Do not silently lose it.
         if len(items) >= MAX_ITEMS:
             raise ValueError('too_many_items')
         for key in ('quantity', 'unit_price', 'amount'):

@@ -1,0 +1,34 @@
+2026-11-14 09:00 Asia/Seoul cloud development
+Base remote main and Render live 3e7a4a5e8bedc4b099125904dd58b835ef1a86ed.
+Read latest persistent record and standing runbook; previous preserved/released
+work (c8fd3c6/23dbe5b and successors) retained. 44c6c93 remains unavailable in
+this checkout as recorded earlier; no recreation or merge of that proposal.
+
+Reproduced four failures: named source items disappeared if quantity and unit
+price were both blank, including when both Excel cells contain intentionally
+skipped formulas. A valid item elsewhere could hide this loss in review.
+Retain named rows under recognized item headers even without both numbers.
+Existing required numeric inputs remain blank/invalid until explicitly supplied.
+Do not execute formulas, trust stale caches, infer quantities/prices or create
+zero values. Empty/unnamed rows still excluded; explicit Total terminates table.
+Additional text-only named rows may appear for review rather than being silently
+omitted; they cannot save without required values and can be explicitly removed.
+
+Validation with fresh fictional data:
+- Four new regression cases failed before fix; five new tests pass after fix.
+- Full suite: 1751 passed, 38 browser deselected, 9 existing warnings.
+- Actual cloud Chromium XLSX upload: named formula item visible, both numbers
+  blank and aria-invalid; save blocked even after confirming other metadata.
+- Explicit isolated fake values 2 and 6 then saved one Invoice; navigated to
+  Packing page; parsed PDF includes correct item and USD 12.00 total, never
+  stale formula caches 999/888. No real formulas or customer values assigned.
+- Isolated server health 200, 44 protected data file hashes unchanged.
+- git diff --check clean. No purchases, payment, mail/promotion, customer or
+  existing test document/account writes. No Mac/local browser/schedule changes.
+Worktree /workspace/work/formula-review-20261114; QA /workspace/work/formula-qa.
+Render workspace tea-d9g1qp3tqb8s73f0qhpg, service srv-d9g20smpbkes73d54ds0;
+autoDeploy yes/commit. Safe fast-forward only, no duplicate manual deployment.
+Final exact commit/live/health stored in development-runs/latest.txt.
+Direct production HTTP remains cloud-proxy restricted; use official Render logs
+for post-live new-instance health. Next: source-review completeness/usability
+based on fresh evidence; do not repeat already released import/PDF improvements.
