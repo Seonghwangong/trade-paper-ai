@@ -1,0 +1,31 @@
+2026-11-15 15:00 Asia/Seoul cloud development
+Base remote main / Render live 99e9035e058fb1637e68791e909086956a586c12.
+Cloud connection recovered after earlier execution-server transport failure.
+Read latest persistent record, standing runbook and subsequent tracked history.
+Existing fixes and root checkout preserved. 44c6c93 remains unavailable as noted
+previously; do not recreate or merge that guest-date proposal.
+
+Reproduced five failures: source item names beginning with Total/Subtotal or
+Korean summary words terminated the table, losing that item and following items.
+Concrete example: Total station (surveying instrument) followed by an accessory.
+Match the complete summary-label cell, optionally containing currency/amount,
+instead of a word prefix. Real TOTAL, Grand total, Subtotal, 합계/총계 and
+TOTAL: USD 27.00 still terminate the table. Preserve item data without guessing
+quantities, prices, HS, customs information or dates.
+
+Validation in fresh fictional data:
+- Five regressions failed before fix; 12 new cases pass after fix.
+- Full non-browser suite: 1769 passed, 38 deselected, 9 existing warnings.
+- Actual cloud Chromium CSV upload: Total station and following accessory
+  retained, real Total excluded, two items saved, continued to Packing screen,
+  parsed saved Invoice PDF USD 27.00. Isolated health 200.
+- All 44 protected data hashes unchanged. git diff --check clean.
+- No customer/existing account or document writes, purchases/payment, mail or
+  promotion. No Mac dependency, local/cloud schedule or security/service changes.
+Worktree /workspace/work/repeat-20261115; QA /workspace/work/total-label-qa.
+Confirmed Render workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0; autoDeploy yes/commit. No manual duplicate deploy.
+Final exact commit/live/health proof saved in development-runs/latest.txt.
+Remaining limitation: direct production HTTP restricted by cloud proxy; official
+Render post-live logs verify health. Next: evidence-led source completeness and
+saved-document usability; retain original review rather than guessing labels.

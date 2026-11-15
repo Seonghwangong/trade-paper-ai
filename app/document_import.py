@@ -144,7 +144,9 @@ def parse_rows(rows):
                 meta_found = True
         if meta_found or not headers:
             continue
-        if re.match(r'^(?:grand\s*total|sub\s*total|total|합계|총계)\b|^(?:합계|총계)', cells[0], re.I):
+        # A product such as "Total station" is not a summary row. Require the
+        # whole cell to be a total label, optionally followed by its amount.
+        if re.fullmatch(r'(?:grand\s*total|sub\s*total|total|합계|총계)\s*(?::\s*)?(?:(?:[A-Z]{3}|[$€£₩])?\s*[\d,.]+(?:\s*[A-Z]{3})?)?', cells[0], re.I):
             headers = None
             continue
         item = {key: cells[i] if i < len(cells) else '' for i, key in headers.items()}
