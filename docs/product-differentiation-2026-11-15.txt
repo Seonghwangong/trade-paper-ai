@@ -1,0 +1,54 @@
+Trade Paper AI differentiation — verified competitor review, 2026-11-15
+
+Decision: strengthen the Korean/English small-team workflow from existing source
+files to a reviewed Invoice and matching Packing PDF. Prioritize fewer repeated
+entries, source fidelity and exception-only review. Automatic fill alone is not
+unique. Do not claim market-leading speed or exclusive AI capabilities without
+comparative task evidence. No new integrations, services, pricing or compliance
+claims were introduced.
+
+Primary sources inspected today:
+https://help.incodocs.com/en/articles/4178720-using-autofill-to-copy-information-from-existing-documents
+IncoDocs documents autofill from existing documents, repeat orders, Xero and
+QuickBooks. Thus record reuse and copying between forms are baseline capabilities.
+https://help.incodocs.com/en/articles/4417655-importing-line-items-from-a-csv-or-excel-file
+IncoDocs documents Excel/CSV import, field mapping, product-code matching and
+review. It says matching works best with stored product codes; this is NOT proof
+that it requires codes or lacks other source handling.
+https://shippingsolutionssoftware.com/export-documentation-software-features?hsLang=en
+Shipping Solutions documents shared shipment entry, 20+ forms, US AES filing,
+and ERP/compliance features in specified editions. Do not promise those here.
+
+Our current strengths to deepen (not exclusive feature claims):
+1. Familiar Korean/English input and clear Invoice -> packing -> two-PDF flow.
+2. Existing spreadsheets without mandatory master/product-code setup; original
+   values remain inspectable and uncertain numeric/customs/weight data is reviewed.
+3. Saved-company/buyer/product reuse, unfinished draft recovery and repeated
+   orders, with no silent update of old PDFs or physical packing measurements.
+Measure using maintained fictional source fixtures: preserved item/spec/quantity
+count, no false numeric assumptions, required corrections and action count.
+Customer willingness to pay is separate and remains a marketing validation task.
+Do not ask the user to repeatedly test; run internal regressions before releases.
+
+Concrete improvement delivered in this change:
+A file with Description, Specification, Qty, Unit Price previously discarded
+Specification. Reproduced on eee24b1 with Korean/English headers and XLSX/CSV/text.
+Recognize only explicit specification headers (Specification(s), Spec(s), 규격,
+제품 규격). Include their literal values in the shared description, separated by
+' / ', with bilingual review notice. Same-name/different-spec rows stay distinct.
+Do not infer specifications from Box Size; duplicate specification columns remain
+ambiguous rather than selecting one. Blank names are not invented. No schema or
+stored-data migration. Existing Invoice/Packing description rendering is reused.
+Original source text remains available. Existing bounded cell extraction remains.
+
+Tests: 10 regressions failed before fix. 56 focused Python tests then passed,
+including real PDF text extraction for CSV/XLSX/positioned-text -> Invoice/Packing.
+Node draft recovery and Invoice-prefill scripts passed. Full suite and deployment
+proof recorded separately in the outputs release receipt.
+No customer records, purchases, email/outreach or automation changes. No claim of
+visual browser QA in this run. Existing Render automatic deploy only.
+
+Final non-browser suite: 1781 passed, 38 deselected, 9 existing warnings.
+Initial full-suite environment failures (2) were due to the old temporary httpx
+package path being incomplete. Installed httpx 0.28.1 in a new /tmp-only test
+dependency folder; the full suite passed. No runtime requirements/venv changes.

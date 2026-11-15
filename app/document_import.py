@@ -25,6 +25,7 @@ MAX_TEXT = 200_000
 MAX_ITEMS = 100
 ALIASES = {
     'name': ('description', 'description of goods', 'item description', 'product', 'product name', 'item', 'item name', '품명', '품목', '제품명'),
+    'specification': ('specification', 'specifications', 'spec', 'specs', '규격', '제품 규격'),
     'quantity': ('quantity', 'qty', '수량'),
     'unit_price': ('unit price', 'unitprice', 'price', 'price per unit', '단가'),
     'unit': ('unit', 'uom', '단위'),
@@ -158,6 +159,12 @@ def parse_rows(rows):
         if not item.get('name'):
             skipped += 1
             continue
+        # Keep explicit product specifications in the shared description used by
+        # both PDFs. Never infer them from packaging dimensions or master data.
+        specification = item.pop('specification', '')
+        if specification:
+            item['name'] += ' / ' + specification
+            warnings.append('specification_joined')
         # A named source item still needs review when both numeric values are
         # blank (for example after skipping formulas). Do not silently lose it.
         if len(items) >= MAX_ITEMS:
