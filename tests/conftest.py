@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -19,6 +20,62 @@ def real_data_write_guard():
     assert file_hashes(storage.DATA_DIR) == before
     assert sorted(path.name for path in storage.DATA_DIR.glob("*.bak")) == before_backups
     assert sorted(path.name for path in storage.DATA_DIR.glob(".*.tmp")) == before_temporaries
+
+
+@pytest.fixture(autouse=True)
+def isolate_real_data_reads(monkeypatch, tmp_path_factory):
+    """Keep every test independent from the repository's mutable JSON data.
+
+    Most application modules resolve their storage paths at import time, so
+    changing ``storage.DATA_DIR`` alone does not isolate modules that pytest
+    imported during collection.  Redirect those already-resolved constants as
+    well.  Individual tests can still replace any path with a purpose-built
+    fixture after this guard runs.
+    """
+    real_data_dir = storage.DATA_DIR
+    isolated_data_dir = tmp_path_factory.mktemp("isolated-data")
+
+    def empty_storage(path):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            value = []
+        return {} if isinstance(value, dict) else []
+
+    for source in real_data_dir.glob("*.json"):
+        target = isolated_data_dir / source.name
+        target.write_text(json.dumps(empty_storage(source)), encoding="utf-8")
+
+    monkeypatch.setattr(storage, "DATA_DIR", isolated_data_dir)
+
+    def isolated_path(path):
+        target = isolated_data_dir / path.name
+        if not target.exists():
+            target.write_text("{}" if path.name == "company.json" else "[]", encoding="utf-8")
+        return target
+
+    for name, module in list(sys.modules.items()):
+        if not name.startswith("app.") and name != "app":
+            continue
+        for attribute, value in list(vars(module).items()):
+            if not attribute.endswith("_FILE") or not isinstance(value, Path):
+                continue
+            try:
+                value.resolve().relative_to(real_data_dir.resolve())
+            except ValueError:
+                continue
+            monkeypatch.setattr(module, attribute, isolated_path(value), raising=False)
+
+    # Shipment descriptors also cache paths at import time in mutable mappings.
+    import app.shipment as shipment
+    for descriptor in (*shipment.DOCUMENTS, *shipment.OPERATIONAL_RECORDS):
+        path = descriptor.get("file")
+        if isinstance(path, Path):
+            try:
+                path.resolve().relative_to(real_data_dir.resolve())
+            except ValueError:
+                continue
+            monkeypatch.setitem(descriptor, "file", isolated_path(path))
 
 
 @pytest.fixture
