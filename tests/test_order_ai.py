@@ -135,6 +135,34 @@ def test_recomputed_mismatch_incomplete_and_mixed_currency_require_review():
     assert result['items'][0]['unit_price'] == ''
 
 
+@pytest.mark.parametrize('price_label', ['$8.00', '8.00'])
+def test_price_without_explicit_currency_requires_review_and_preserves_source(price_label):
+    # Live pilot returned a correctly blank currency for "$", but previously
+    # left the price editable without the currency warning.
+    source = SOURCE.replace('USD 8.00', price_label).replace('USD 4,000.00', '4,100.00')
+    data = response_data()
+    data['fields']['currency'] = {'value': '', 'evidence': ''}
+    data['items'][0]['unit_price']['evidence'] = 'Unit Price: ' + price_label
+    data['items'][0]['amount'] = {'value': '4,100.00', 'evidence': 'Total: 4,100.00'}
+    result = ai.validate_result(data, source)
+    assert result['fields']['currency'] == ''
+    assert result['items'][0]['unit_price'] == ''
+    assert 'note_currency' in result['warnings']
+    assert result['items'][0]['amount'] == '4100.00'
+    assert result['items'][0]['check_amount'] is True
+    assert result['item_evidence'][0]['unit_price'] == 'Unit Price: ' + price_label
+    assert result['source_text'] == source
+
+
+def test_missing_currency_without_any_prices_does_not_request_price_reentry():
+    data = response_data()
+    for key in ('unit_price', 'amount'):
+        data['items'][0][key] = {'value': '', 'evidence': ''}
+    data['fields']['currency'] = {'value': '', 'evidence': ''}
+    result = ai.validate_result(data, SOURCE)
+    assert 'note_currency' not in result['warnings']
+
+
 @pytest.mark.parametrize('change', ['unknown', 'too_many', 'non_object', 'bad_atom', 'bad_flag'])
 def test_malformed_or_extra_model_fields_rejected(change):
     data = response_data()

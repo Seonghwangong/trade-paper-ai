@@ -1,6 +1,6 @@
 Order-source AI pilot — 2026-11-16
 
-Status: implementation and offline regression validation complete; external activation NOT approved and NOT enabled. No actual AI API calls, live extraction accuracy claims, customer emails, payments, or customer data access.
+Status: user approved the limited pilot and free-credit/key setup on 2026-11-16. Enabled for the existing GLP Test account only. Three fictional real-provider requests completed via the deployed route handler. No customer orders, document saves, emails or purchases were used. General availability is not enabled.
 
 User flow
 - Existing /import-document reads PDF/photo text locally with bundled PDF.js/OCR. Standard spreadsheet reading remains available.
@@ -16,7 +16,10 @@ Operator activation — requires separate user approval for a new external servi
 - Set TRADE_PAPER_ORDER_AI_ACCOUNTS to explicitly approved test account IDs (no wildcard); set TRADE_PAPER_ORDER_AI_ENABLED=1 only after permission. Empty/missing settings fail closed.
 - Limits: 20,000 UTF-8 bytes of source, 20 items, existing 5-page/8MB PDF limits, bounded provider response, timeout, durable SQLite reservation before each call. Requests, including failed/uncertain calls, capped at 3/account/day, 5 globally/day, 20 globally/UTC calendar month. Counts are serialized across processes in the shared data directory. Ledger contains account hash/day, not source or output.
 - Current official price: $2 per million input tokens, $12 per million output tokens. Twenty modest orders should cost less than $5 in this limited pilot, but this is an estimate at current rates and request caps, not a provider-wide dollar billing guarantee. Other project usage, taxes and exchange rates excluded. No new plan, free-document allowance or customer pricing change.
-- After activation, agent must run a small set of fictional English/Korean order PDFs, compare extracted values/omissions/quotes with ground truth and record actual provider token usage/cost. API account/model availability and live model accuracy remain unverified. User need not perform repeated tests.
+- Actual evaluation used one generated English PDF's extracted text, a Korean two-item order text, and an ambiguous-currency/inconsistent-total text with an embedded hostile instruction. The deployed handler returned 200 for all three. This tests the real provider and handler, not browser authentication or local PDF.js/OCR.
+- Returned explicit English/Korean buyer, product, specification, quantity and price values matched these fictional cases. Missing packing measurements, HS codes and invoice dates stayed blank. The third case flagged the inconsistent total and left currency blank, but exposed a missing currency-warning guard; the follow-up fix clears unit prices and requests currency/price review while preserving source evidence and the mismatch flag.
+- These three requests used 2,624 input and 1,039 output tokens, with no cached/cache-write tokens: USD0.017716 at the documented rates, covered by claimed free credit. This is token-based cost calculation, not a reconciled invoice or a representative accuracy/cost guarantee. Account's three/day quota is exhausted; do not reset or bypass it for further testing.
+- Restricted Responses Write key expires after 30 days. Data-sharing settings were inspected and left disabled. Pro credits were linked to the user's Personal API organization without payment method, paid top-up or auto-recharge; that organization cannot use Codex through API keys while the benefit is active.
 - To disable this optional pilot, set TRADE_PAPER_ORDER_AI_ENABLED=0; standard import stays available. Do not disable live subscription payments.
 
 Privacy
@@ -27,7 +30,8 @@ Validation
 - 4 Node tests execute actual PDF reading controller with fake transport: consented text-only request, unavailable/unchecked no AI request, and error preserves prior draft. Existing draft-recovery Node checks pass. JavaScript syntax and git diff checks pass.
 - Test PDF generated from fictional ABC Trading USA / Cotton T-shirts / 500 pcs / USD 8.00 / USD 4,000.00. PDF text through extraction controller verified with a mocked provider; resulting invoice PDF and Packing shared fields verified without inventing packing weights.
 - Prior release added a fifth home security FAQ; stale SEO expectation updated from four to five, with schema-to-visible-content comparison retained.
-- No actual browser visual QA or real model extraction accuracy has been verified in this run.
+- Follow-up currency fix: 96 focused Python tests passed, including three new missing-currency regression cases; one existing warning. Original broad-suite results above predate this small follow-up.
+- Actual browser visual QA and the complete authenticated file-to-review interaction remain unverified. Three live examples do not establish a general accuracy rate.
 
 Official references read on 2026-11-16
 https://developers.openai.com/api/docs/guides/structured-outputs

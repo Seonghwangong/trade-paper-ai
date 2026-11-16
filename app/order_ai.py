@@ -202,7 +202,10 @@ def validate_result(result, source):
         item_evidence.append(evidence)
     currency = next(iter(currencies)) if len(currencies) == 1 else ''
     fields['currency'] = currency if re.fullmatch('[A-Z]{3}', currency) else ''
-    if currencies and not fields['currency']:
+    # A correctly blank model currency (for example "$" alone) is also
+    # ambiguous. Keep quoted amounts as evidence, but require price review.
+    has_prices = any(item['unit_price'] or item['amount'] for item in items)
+    if not fields['currency'] and (currencies or has_prices):
         warnings.add('note_currency')
         for item in items:
             item['unit_price'] = ''
