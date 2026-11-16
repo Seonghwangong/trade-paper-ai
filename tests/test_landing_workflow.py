@@ -48,7 +48,7 @@ def test_home_plan_and_faq_schema_match_visible_content():
     assert starter['price'] == '29000'
     assert starter['priceCurrency'] == 'KRW'
     faq = next(item for item in payloads if item.get('@type') == 'FAQPage')
-    assert len(faq['mainEntity']) == 4
+    assert len(faq['mainEntity']) == 5
     for entry in faq['mainEntity']:
         assert f"<summary>{entry['name']}</summary>" in html
         assert entry['acceptedAnswer']['text'] in html

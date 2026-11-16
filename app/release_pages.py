@@ -238,6 +238,11 @@ def privacy_page():
             "</ul>",
         )
         + section_card(
+            "Business Records and Access",
+            "<p>Account-based access checks cover company contact details, buyer and customer records, product information and prices, saved trade documents, and company signature or stamp images. Document search and protected PDF routes also use the signed-in account to select records.</p>"
+            "<p>Import processing, saved account records, browser drafts, document delivery, and payment processing have different storage and sharing rules, described below. Account-based access does not mean end-to-end encryption or that hosting and service operations cannot process your records.</p>",
+        )
+        + section_card(
             "File Imports",
             "<p>For document import, PDFs and photos are read on your device and the extracted text is sent to this service to prepare a draft. Spreadsheets are sent to this service for parsing. Original upload files are not retained by the service after processing. Only the document fields you choose to save become account records. Draft text (including extracted source text) is stored in your browser and can be recovered within 7 days of its last update. Expired drafts are removed when the import screen next checks browser storage. You can remove this browser copy in the import screen; this does not delete saved documents. This import feature does not send your files to an external AI/OCR service or send email.</p>",
         )
@@ -258,6 +263,10 @@ def privacy_page():
             "<p>Authentication uses a signed session cookie with a limited lifetime. Production cookies are configured with HttpOnly, SameSite, and Secure protections.</p>"
             "<p>Optional Google, Kakao, NAVER and Apple sign-in uses a short-lived browser-binding cookie and a one-use authorization state. Provider tokens are discarded after sign-in. Social-only accounts sign in through their provider and do not use email password-reset links. Matching email addresses do not automatically link accounts.</p>"
             "<p>For password-based accounts, your login email is used for account access and password recovery. If email delivery is enabled, the configured email delivery provider receives the recipient address and reset message needed to send the email. Password reset tokens are stored by Trade Paper AI only as hashes and expire after 30 minutes.</p>",
+        )
+        + section_card(
+            "Document Delivery",
+            "<p>When you choose to send documents, the configured delivery provider processes the recipient, message and PDF attachments for delivery. Paired Invoice and Packing List previews require the account that prepared them and expire after one hour. Sending requires recipient details and confirmation. Downloaded files and copies received by recipients are outside these in-app access controls.</p>",
         )
         + section_card(
             "Payment Information",

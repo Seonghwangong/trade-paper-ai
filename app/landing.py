@@ -29,6 +29,7 @@ COPY = {
 'q1':'Can I try it without signing up?','a1':'Yes. The no-signup sample uses fictional company, buyer and item details. Change the numbers and download both PDFs. Create a free account to save your own documents.',
 'q2':'What happens when an Invoice changes?','a2':'A saved Packing List does not update automatically. Compare it with the Invoice and review changes before applying them. Verify cartons and weights and download fresh PDFs; previous downloads stay unchanged.',
 'q3':'Does this replace customs or compliance checks?','a3':'No. This is document preparation, not customs filing or certification. Check documents against your actual shipment and the requirements for your product and destination.',
+'q5':'How is my company information protected?','a5':'Company details, buyers, products, signatures and saved trade documents use account-based access checks. Imported source files are not retained by the service; draft text can be kept in your browser for recovery. Checkout card details are handled by the payment provider. See Privacy for storage, sharing and deletion details.',
 'q4':'Is payment active?','inactive':'Online payment processing is not active yet. You can still use the Free plan and contact us for help.','active':public_billing.NOTICE,
 'feedback':'Send Feedback','about':'About','privacy':'Privacy','terms':'Terms','refund':'Refund Policy','help':'First-use help','install':'Install app',
 'description':'Commercial Invoice and Packing List software for export document preparation. Reuse company, buyer and item details, review your documents and download separate PDFs.'},
@@ -49,6 +50,7 @@ COPY = {
 'q1':'가입 없이 체험할 수 있나요?','a1':'네. 가상 회사·거래처·품목으로 숫자를 바꾸고 두 PDF를 만들어 볼 수 있습니다. 내 정보를 저장하고 문서를 작성하려면 무료 계정이 필요합니다.',
 'q2':'Invoice를 수정하면 어떻게 되나요?','a2':'저장된 Packing List는 자동으로 바뀌지 않습니다. Invoice와 비교하고 변경 내용을 확인한 뒤 반영하세요. 박스·중량을 검토하고 PDF를 다시 받아야 하며, 이전에 내려받은 파일은 그대로입니다.',
 'q3':'통관 신고나 규정 검토도 대신해 주나요?','a3':'아니요. 서류 작성 도구이며 통관 신고·인증을 대신하지 않습니다. 실제 출하 내용과 품목·도착지별 요구사항을 확인하세요.',
+'q5':'회사 업무정보는 어떻게 보호하나요?','a5':'회사정보·거래처·품목·서명·저장된 무역서류에 계정별 접근 권한을 적용합니다. 가져온 원본 파일은 서비스에서 보관하지 않으며, 초안 글자는 복구를 위해 브라우저에 보관될 수 있습니다. 결제 카드정보는 결제업체가 처리합니다. 보관·전달·삭제 방식은 개인정보 처리방침에서 확인할 수 있습니다.',
 'q4':'유료 구독을 할 수 있나요?','inactive':'현재 온라인 유료 결제는 열려 있지 않습니다. 무료 플랜을 이용하거나 문의해 주세요.','active':'Starter 월 구독은 Paddle에서 결제할 수 있습니다. 결제 전 최종 금액과 매월 갱신 조건을 확인하세요. Professional은 별도 문의가 필요합니다.',
 'feedback':'의견 보내기','about':'서비스 소개','privacy':'개인정보 처리방침','terms':'이용약관','refund':'해지·환불','help':'첫 사용 도움','install':'앱 설치',
 'description':'수출 서류 작성부터 시작하는 무역 업무 자동화. 회사·바이어·품목 정보를 재사용해 인보이스(상업송장)와 패킹리스트(포장명세서)를 작성하고 PDF로 내려받으세요.'}}
@@ -68,6 +70,7 @@ def landing_page(lang='en'):
     active = public_billing.enabled()
     entries = [(copy[f'q{i}'], copy[f'a{i}']) for i in range(1, 4)]
     entries.append((copy['q4'], copy['active' if active else 'inactive']))
+    entries.append((copy['q5'], copy['a5']))
     base_url = _public_base_url()
     canonical_url = (f'{base_url}/' if base_url else '/') + ('?lang=ko' if lang == 'ko' else '')
     hero_url = f'{base_url}/static/product-hunt/hero.png' if base_url else '/static/product-hunt/hero.png'

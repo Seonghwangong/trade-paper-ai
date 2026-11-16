@@ -5,7 +5,7 @@ const config=JSON.parse(document.getElementById('import-config').textContent);
 const ko=config.lang==='ko', $=id=>document.getElementById(id);
 const words={
  dataProtectionTitle:['Know how your trade data is handled','거래자료, 어떻게 보호하고 보관하나요?'],
- dataProtectionSummary:['Saved Invoices and Packing Lists have account-based access checks. Original import files are not retained; extracted text and spreadsheets are processed by this site.','저장된 송장·포장명세서는 계정별 접근 권한을 확인합니다. 가져온 원본 파일은 보관하지 않으며, 추출한 글자와 엑셀 자료는 이 사이트에서 처리합니다.'],
+ dataProtectionSummary:['Company details, buyers, products, signatures and saved trade documents have account-based access checks. Original import files are not retained; extracted text and spreadsheets are processed by this site.','회사정보·거래처·품목·서명·저장된 무역서류는 계정별 접근 권한을 확인합니다. 가져온 원본 파일은 보관하지 않으며, 추출한 글자와 엑셀 자료는 이 사이트에서 처리합니다.'],
  dataProtectionLink:['Data handling and privacy','자료 처리·보관 자세히 보기'],
  eyebrow:['YOUR NEXT SHIPMENT, ONE STEP AT A TIME','다음 출하를, 차근차근'],
  stepFile:['Add your source','자료 입력'],stepReview:['Review the draft','초안 확인'],stepSaved:['Invoice saved','Invoice 저장'],

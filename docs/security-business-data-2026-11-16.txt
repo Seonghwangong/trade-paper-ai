@@ -1,0 +1,20 @@
+Business-data protection scope — 2026-11-16
+
+User correction: security applies to the whole product, not only Invoice and Packing List.
+
+Changed English/Korean registration and import notices to cover company details, buyers, products, signatures and saved trade documents. Added a bilingual home FAQ with matching structured data. Privacy information now explains business-record access and document delivery, including provider processing and the boundary after a file is downloaded or delivered. Existing import/browser retention and payment-provider disclosures remain. No extra data collection or permissions.
+
+Evidence reviewed:
+- app/account_company.py and app/routers/company.py: company reads/updates derive account from signed-in request.
+- app/buyer.py, app/customer.py, app/product.py and document scope modules: account filtering of records including prices; foreign record IDs rejected by route checks tested below.
+- app/company_signature.py: owner-bound signature access and bounded decoded-image normalization.
+- app/email_pair.py: account-bound preview, one-hour expiry, explicit recipient/confirmation; configured provider receives message and attachments on send.
+- app/document_import.py and static/import_draft.js: originals not retained by service after processing; browser recovery text and expiry-on-access explained separately.
+- Paddle live manage/webhook: account-bound management and signed webhook validation; checkout credentials handled by provider.
+- storage/backup tests: malformed writes rejected and local recovery mechanics, NOT proof of production offsite backup/recovery.
+
+Validation: 184 existing Python scope/company/signature/import/billing/storage/auth/privacy tests passed. Another 43 email-pair/landing/public-billing tests passed, 4 browser tests deselected after browser launch failed in the restricted environment. The existing FAQ count expectation changed from 4 to 5; schema/content consistency test now passes. 12 Node landing-source checks and JavaScript syntax passed. Actual browser visual QA remains unverified. No production customer data inspected or mutated; no actual email/payment performed.
+
+Scope limit: this is focused source review and regression verification, not an independent penetration test or complete security certification. Open items from security-review-2026-11-16.txt remain, including legacy credentials inventory, common response headers, dependency scan and production recovery verification. No blanket encryption or guaranteed-security claims added.
+
+Baseline 8e3fce5 was verified live on Render at 2026-11-16T06:47:07.9507Z before this change. Its ancestor 1b772d8 packing HTML fix is therefore included in live code. This release uses existing auto-deploy only.
