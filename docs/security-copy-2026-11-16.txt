@@ -1,0 +1,11 @@
+Customer security and data-handling notices — 2026-11-16
+
+Registration now explains account-based access checks on saved Invoices and Packing Lists, with a privacy link. Import has a visible English/Korean data-handling card before source entry, describing account access, no retained original import files, and processing of extracted text/spreadsheets. Existing browser-draft, detailed file-processing and browser voice-service disclosures remain visible/available.
+
+Claims are grounded in auth.py, invoice/packing account scope checks, document_import.extract and import_draft.js. No certification, independent audit, end-to-end encryption, zero-risk, training or exclusive-access claims were added.
+
+Privacy text now distinguishes server records from browser recovery text; recovery is valid for 7 days after the last update, with expired-copy cleanup on the next storage check, not a background guaranteed deletion timer. The obsolete payment-inactive sentence is replaced by a factual provider-handled checkout description. Payment configuration is unchanged.
+
+Validation: 73 existing Python tests passed (auth/language/import/Invoice and Packing scope/privacy information). Node draft recovery checks passed, JavaScript syntax and git diff checks passed. No customer records, email, purchases, credentials, or infrastructure settings were changed. No actual-browser visual test was performed.
+
+Baseline: 1b772d8, whose security fix remained in Render build_in_progress when this change was prepared. Follow Render auto-deploy status before calling either change live.

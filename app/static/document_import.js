@@ -4,6 +4,9 @@
 const config=JSON.parse(document.getElementById('import-config').textContent);
 const ko=config.lang==='ko', $=id=>document.getElementById(id);
 const words={
+ dataProtectionTitle:['Know how your trade data is handled','거래자료, 어떻게 보호하고 보관하나요?'],
+ dataProtectionSummary:['Saved Invoices and Packing Lists have account-based access checks. Original import files are not retained; extracted text and spreadsheets are processed by this site.','저장된 송장·포장명세서는 계정별 접근 권한을 확인합니다. 가져온 원본 파일은 보관하지 않으며, 추출한 글자와 엑셀 자료는 이 사이트에서 처리합니다.'],
+ dataProtectionLink:['Data handling and privacy','자료 처리·보관 자세히 보기'],
  eyebrow:['YOUR NEXT SHIPMENT, ONE STEP AT A TIME','다음 출하를, 차근차근'],
  stepFile:['Add your source','자료 입력'],stepReview:['Review the draft','초안 확인'],stepSaved:['Invoice saved','Invoice 저장'],
  dropHint:['Drop a file here, or choose one from your device.','파일을 끌어 놓거나 기기에서 선택하세요.'],browse:['Choose file','파일 선택'],sample:['Try a fictional sample','가상 예시로 먼저 보기'],shortLimits:['Excel · CSV · PDF · document photos / up to 8 MB','엑셀 · CSV · PDF · 서류 사진 / 최대 8MB'],fileDetails:['Supported files & how your data is handled','지원 파일과 자료 처리 안내'],

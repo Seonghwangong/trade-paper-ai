@@ -239,7 +239,7 @@ def privacy_page():
         )
         + section_card(
             "File Imports",
-            "<p>For document import, PDFs and photos are read on your device and the extracted text is sent to this service to prepare a draft. Spreadsheets are sent to this service for parsing. Original upload files and extracted source text are not retained after processing. Only the document fields you choose to save become account records. This import feature does not send your files to an external AI/OCR service or send email.</p>",
+            "<p>For document import, PDFs and photos are read on your device and the extracted text is sent to this service to prepare a draft. Spreadsheets are sent to this service for parsing. Original upload files are not retained by the service after processing. Only the document fields you choose to save become account records. Draft text (including extracted source text) is stored in your browser and can be recovered within 7 days of its last update. Expired drafts are removed when the import screen next checks browser storage. You can remove this browser copy in the import screen; this does not delete saved documents. This import feature does not send your files to an external AI/OCR service or send email.</p>",
         )
         + section_card(
             "How We Use Information",
@@ -261,7 +261,7 @@ def privacy_page():
         )
         + section_card(
             "Payment Information",
-            "<p>Online payment processing is not active yet. If it is activated, payment method credentials such as full card details or bank authentication information will be handled by the payment provider and will not be entered into or stored by the Trade Paper AI application.</p>"
+            "<p>When you use online checkout, payment method credentials such as full card details or bank authentication information are handled by the payment provider, rather than entered into or stored by the Trade Paper AI application.</p>"
             "<p>Trade Paper AI may retain limited billing records needed to provide and support a subscription, such as an order reference, plan, price, currency, billing cycle, payment status, provider transaction reference, and relevant timestamps.</p>",
         )
         + section_card(
@@ -283,7 +283,7 @@ def privacy_page():
             "<p>You may review and update supported information in the service. To request access assistance, correction, or deletion of your account and associated data, use the <a href=\"/contact\">Contact page</a>. We may need to verify that the request comes from the account owner before acting on it.</p>",
         )
     )
-    return information_page("Privacy Policy", "Trade Paper AI · Effective August 10, 2026 · Updated November 2, 2026", content)
+    return information_page("Privacy Policy", "Trade Paper AI · Effective August 10, 2026 · Updated November 16, 2026", content)
 
 
 @router.get("/terms")

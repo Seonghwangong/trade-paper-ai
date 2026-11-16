@@ -39,3 +39,5 @@ input:focus-visible,button:focus-visible,a:focus-visible,summary:focus-visible,s
 .source-modes{display:flex;gap:8px;margin:0 0 18px}.source-modes button{background:#e9edef;color:#36474a;flex:1}.source-modes [aria-pressed=true]{background:#252725;color:#f6f4ee}.order-note{margin-top:0}
 
 .draft-recovery{padding:20px;margin:0 0 18px;border:1px solid #bfcfc4;border-radius:14px;background:#f0f6f2}.draft-recovery .actions{margin-top:12px}.draft-storage{margin:0 0 14px}.draft-storage p{margin:4px 0}.draft-storage #draft-storage-status:empty{display:none}
+
+.data-protection{margin:16px 0;padding:14px 18px;border:1px solid #ddd7cd;border-radius:12px;background:#f8f6f1;color:#303633;font-size:14px;line-height:1.6}.data-protection p{margin:5px 0 7px}.data-protection a{color:inherit;text-decoration:underline;text-underline-offset:3px}
