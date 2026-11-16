@@ -355,7 +355,7 @@ def import_page(request: Request):
     draft_scope = hashlib.sha256((account + '\0' + str(user.get('email', '')).strip().casefold()).encode()).hexdigest()
     repeat_no = request.query_params.get('repeat_invoice', '').strip()
     repeat_draft = repeat_invoice_draft(account, repeat_no) if repeat_no else None
-    bootstrap = json.dumps({'lang': lang, 'ai_enabled': order_ai.available(account), 'draft_scope': draft_scope, 'repeat_draft': repeat_draft, 'company': {k: company.get(k, '') for k in ('name', 'address')}}, ensure_ascii=False).replace('<', '\\u003c')
+    bootstrap = json.dumps({'lang': lang, 'ai_enabled': order_ai.available(account), 'ai_usage': order_ai.usage(account), 'draft_scope': draft_scope, 'repeat_draft': repeat_draft, 'company': {k: company.get(k, '') for k in ('name', 'address')}}, ensure_ascii=False).replace('<', '\\u003c')
     template = Path(__file__).with_name('templates').joinpath('document_import.html').read_text()
     return HTMLResponse(template.replace('__LANG__', lang).replace('__BOOTSTRAP__', bootstrap), headers={'Cache-Control': 'no-store'})
 

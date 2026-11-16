@@ -17,6 +17,7 @@ class AccessDecision:
     provider_status: str
     access_until: datetime | None
     cancellation_pending: bool
+    period_start: datetime | None = None
 
 
 def _instant(value):
@@ -74,7 +75,7 @@ def evaluate_snapshot(data, *, subscription_id, customer_id, price_id, now):
         if action in {"cancel", "pause"}:
             end = min(end, effective)
         allowed = start <= now < end
-        return AccessDecision(allowed, status, end, action == "cancel")
+        return AccessDecision(allowed, status, end, action == "cancel", start)
     except (KeyError, TypeError, IndexError, AttributeError):
         raise ValueError("Incomplete subscription snapshot") from None
 

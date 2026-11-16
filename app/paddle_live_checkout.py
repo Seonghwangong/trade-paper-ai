@@ -113,7 +113,10 @@ def checkout_page(request: Request):
         config = json.dumps({'token': token, 'path': PATH, 'state': state,
             'csrf': manage.csrf_token(account, purpose(offer))}).replace('<', '\\u003c')
         tax = 'Tax included.' if offer.tax_mode == 'internal' else 'Applicable tax is added at checkout.'
-        return HTMLResponse(PAGE.replace('__CONFIG__', config).replace('__TAX__', tax), headers=manage.HEADERS)
+        from app.order_ai import public_notice
+        page = PAGE.replace('__CONFIG__', config).replace('__TAX__', tax)
+        page = page.replace('<nav><a href="/terms">', public_notice() + '<nav><a href="/terms">')
+        return HTMLResponse(page, headers=manage.HEADERS)
     except manage.FAILURES as error:
         return manage.error_response(error)
 

@@ -141,7 +141,8 @@ def pricing(request: Request):
         f'''<article class="card{' current' if name == current['plan'] else ''}"><h2>{_text(name)}</h2><p><strong>{_text(plan_price_label(name))}</strong></p><p>{_text(config['summary'])}</p>{action(name)}</article>'''
         for name, config in PLANS.items()
     )
-    return _page("Pricing", f'<h1>Pricing</h1><p>{_text(PAID_PLAN_NOTICE)}</p><section class="grid">{cards}</section>')
+    from app.order_ai import public_notice
+    return _page("Pricing", f'<h1>Pricing</h1><p>{_text(PAID_PLAN_NOTICE)}</p><section class="grid">{cards}</section>' + public_notice())
 
 
 @router.get("/subscription")

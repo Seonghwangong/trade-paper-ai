@@ -66,7 +66,15 @@ def _json_ld(value):
 
 def landing_page(lang='en'):
     lang = 'ko' if lang == 'ko' else 'en'
-    copy = COPY[lang]
+    copy = dict(COPY[lang])
+    from app.order_ai import public_enabled
+    ai_public = public_enabled()
+    if ai_public:
+        copy['feature1'] = 'AI로 주문서 초안 채우기' if lang == 'ko' else 'Start with your order'
+        copy['detail1'] = ('주문서의 글자에서 거래처·품목·수량·단가를 읽고 원문과 대조해 확인하세요. AI 읽기 공개 베타.' if lang == 'ko' else
+                           'AI reads buyer, item, quantity and price details from order text. Review them against the source. Public beta.')
+        copy['free_detail'] += ' ' + ('AI 읽기 최초 1회 포함.' if lang == 'ko' else 'Includes one AI reading trial.')
+        copy['starter_detail'] += ' ' + ('결제가 확인된 구독은 결제주기당 AI 읽기 20회 포함.' if lang == 'ko' else 'Verified paid subscriptions include 20 AI readings per billing period.')
     active = public_billing.enabled()
     entries = [(copy[f'q{i}'], copy[f'a{i}']) for i in range(1, 4)]
     entries.append((copy['q4'], copy['active' if active else 'inactive']))
@@ -85,6 +93,7 @@ def landing_page(lang='en'):
         'headline':copy['headline'], 'lang':lang, 'query':'?lang=ko' if lang == 'ko' else '',
         'canonical':html.escape(canonical_url,quote=True),'hero_url':html.escape(hero_url,quote=True),
         'phone':html.escape(BUSINESS_PHONE),
+        'ai_notice': ('<p class="payment-notice">' + ('AI 읽기는 선택 기능인 공개 베타입니다. 전체 월 20회·하루 5회, 계정당 하루 최대 3회로 한도 도달 시 일시 중단될 수 있습니다. 초과 자동 과금 없이 기본 읽기를 계속 쓸 수 있습니다. 선택한 자료의 글자는 OpenAI로 전달됩니다. ' if lang == 'ko' else 'AI reading is an optional public beta: service-wide 20 requests/month, 5/day and up to 3/day per account. Availability may pause at these limits; standard reading remains available with no automatic overage charge. Selected source text is sent to OpenAI. ') + '<a href="/import-document?lang=' + lang + '">' + ('AI 읽기 시작' if lang == 'ko' else 'Try AI reading') + '</a> · <a href="/privacy#optional-ai">' + copy['privacy'] + '</a></p>') if ai_public else '',
         'starter_price':f'월 {PLANS["Starter"]["price"]:,}원' if lang == 'ko' else html.escape(plan_price_label('Starter')),
         'free_price':'무료' if lang == 'ko' else 'Free',
         'payment_notice':html.escape(copy['active' if active else 'inactive']),

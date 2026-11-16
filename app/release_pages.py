@@ -248,9 +248,9 @@ def privacy_page():
         )
         + section_card(
             "Optional AI Order Reading",
-            '<div id="optional-ai"><p>This feature is disabled by default and available only to explicitly enabled pilot accounts. If you select AI reading after reviewing its notice, source text from the selected document, worksheet or pasted order is sent to OpenAI to prepare a draft. This can include names, addresses, prices and other trade information in that text. PDF/image files themselves, saved account records and mailbox access are not sent by this feature.</p>'
+            '<div id="optional-ai"><p>Optional AI reading is offered as a public beta when enabled. It is never selected automatically. If you select AI reading after reviewing its notice, source text from the selected document, worksheet or pasted order is sent to OpenAI to prepare a draft. This can include names, addresses, prices and other trade information in that text. PDF/image files themselves, saved account records and mailbox access are not sent by this feature.</p>'
             '<p>We request no stored Responses API application state (store=false). This does not mean zero retention: OpenAI may retain abuse-monitoring logs, including content, for up to 30 days by default, with policy exceptions. Its published API policy says data is not used for model training unless the API customer opts in; this is not a claim that this service has Zero Data Retention approval. See <a href="https://developers.openai.com/api/docs/guides/your-data">OpenAI data controls</a>.</p>'
-            '<p>The service records an account hash and request date to enforce pilot usage caps, not the source text or AI output in this usage log. AI drafts use the same disclosed browser recovery storage. AI can make errors and omit items; review the source and every field. AI analysis does not save a document, charge a customer, or send an email.</p></div>',
+            '<p>The usage log retains account/request hashes, request time, allowance period and outcome to enforce limits and prevent duplicate calls; it does not retain source text or AI output. Successful-use counters are retained to enforce the one-time trial and billing-period allowance. AI drafts use the same disclosed browser recovery storage. AI can make errors and omit items; review the source and every field. AI analysis does not save a document, charge a customer, or send an email.</p></div>',
         )
         + section_card(
             "How We Use Information",
@@ -360,7 +360,9 @@ def terms_page():
             "<p>Questions about these Terms should be submitted through the Contact page.</p>",
         )
     )
-    return information_page("Terms of Service", "Trade Paper AI · Effective August 10, 2026 · Updated October 25, 2026", content)
+    from app.order_ai import public_notice
+    content += public_notice()
+    return information_page("Terms of Service", "Trade Paper AI · Effective August 10, 2026 · Updated November 16, 2026", content)
 
 
 # Legal and Toss Payments review is required before online payment activation.

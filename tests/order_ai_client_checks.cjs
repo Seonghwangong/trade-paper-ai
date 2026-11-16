@@ -7,7 +7,7 @@ function environment(enabled,checked,fail=false){
  const nodes={};
  const $=id=>nodes[id]||(nodes[id]={checked,disabled:false,hidden:false,src:'old-preview',options:[],getAttribute(){return this.src;},removeAttribute(){this.src='';},replaceChildren(){this.options=[];}});
  const calls=[],statuses=[],rendered=[];
- const context={config:{ai_enabled:enabled},$,file:{name:'order.pdf',size:128},busy:false,saving:false,draftReady:true,
+ const context={crypto:{randomUUID:()=> '00000000-0000-4000-8000-000000000000'},showAIUsage(){},config:{ai_enabled:enabled},$,file:{name:'order.pdf',size:128},busy:false,saving:false,draftReady:true,
   worker:null,selectedSheet:0,previewURL:null,URL:{revokeObjectURL(){}},
   setBusy(v){context.busy=v;},setStatus(...x){statuses.push(x);},
   async pdfText(){return {text:'Buyer: ABC\nQuantity: 500\nUnit Price: USD 8.00',extra:['partial']};},
@@ -21,7 +21,7 @@ function environment(enabled,checked,fail=false){
 test('consented PDF text calls the AI mode without uploading PDF or account records',async()=>{
  const e=environment(true,true);assert.equal(await e.context.readFile(),true);
  assert.equal(e.calls.length,1);const body=JSON.parse(e.calls[0].options.body);
- assert.deepEqual(Object.keys(body).sort(),['ai_consent','mode','text']);
+ assert.deepEqual(Object.keys(body).sort(),['ai_consent','mode','request_id','text']);
  assert.equal(body.mode,'ai_order');assert.equal(body.ai_consent,'openai-order-text-v1');
  assert.equal(e.rendered[0].items[0].quantity,'500');assert.equal(e.context.busy,false);
 });

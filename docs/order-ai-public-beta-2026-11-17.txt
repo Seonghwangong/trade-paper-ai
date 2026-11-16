@@ -1,0 +1,42 @@
+Order AI public beta — user authorization: 공개해 (2026-11-16/17)
+
+Release: opt-in for all authenticated editing accounts when ORDER_AI_PUBLIC=1,
+ORDER_AI_ENABLED=1 and existing API key configured. Public switch defaults off.
+Free: 1 successful draft per account lifetime. Verified Paddle-paid Starter:
+20 successful drafts per trusted billing-period start. No rollover or overage billing.
+Cancelled/past-due/expired paid access falls back to any unused lifetime trial.
+No entitlement from browser or stale local plan names. Period-start metadata is
+added to the existing paid-access decision without changing its access rules.
+
+Original global/provider caps are unchanged: 20 attempts/UTC month, 5/day,
+3/account/day. The service-wide beta can pause before an account's allowance
+is exhausted. This is disclosed on home, import, pricing and purchase pages.
+No new paid credit, automatic recharge, model/API permission or provider.
+
+Reservations and quota checks use one SQLite transaction. One in-flight request
+per account; account-scoped request hash blocks duplicate submissions. Successful
+validated nonempty drafts consume customer allowance. Failed responses release
+that allowance while still consuming the provider attempt budget. Unknown/crashed
+reservations remain counted for manual review; they are never replayed silently.
+No source text or provider output is stored in the quota ledger. Lifetime counters
+are retained; monthly provider-attempt rows retain the existing pruning policy.
+
+Validation:
+- 1,831 non-browser Python tests passed, 40 browser tests deselected; 9 existing warnings.
+- Four actual JavaScript controller tests passed with mocked transport.
+- Local Chromium/WebKit headless binaries could not launch in this host environment;
+  the two new browser automation tests were not completed here.
+- In-app browser manual QA completed using isolated local data and an in-process
+  fake AI provider: register, login, company save, consent unchecked initially,
+  PDF.js reads a generated fictional PDF, authenticated AI route returns draft,
+  remaining trial 1 -> 0, explicit date/review confirmation, Invoice save and
+  automatic Packing List navigation. Item 500 pcs at USD8 retained; packing
+  cartons/weights left empty. No production account/order/email/payment writes.
+- Three real provider calls were already verified in the earlier pilot; no further
+  real calls were needed for this public-availability change.
+- An 8-hour local login expired during a long computer interruption; signing in
+  again completed the flow. No session protections were changed.
+
+Rollback: set TRADE_PAPER_ORDER_AI_PUBLIC=0 to restore original explicit pilot
+allowlist. Set ORDER_AI_ENABLED=0 only to disable optional AI globally if needed.
+Never change live customer payment switches as part of AI rollback.

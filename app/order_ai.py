@@ -64,9 +64,37 @@ Return only the required JSON structure. Saving and sending are not your task.''
 
 def available(account):
     allowed = {v.strip() for v in os.environ.get('TRADE_PAPER_ORDER_AI_ACCOUNTS', '').split(',') if v.strip()}
-    return bool(account and account in allowed
+    return bool(account and (account in allowed or public_enabled())
                 and os.environ.get('TRADE_PAPER_ORDER_AI_ENABLED') == '1'
                 and os.environ.get('TRADE_PAPER_ORDER_AI_API_KEY', '').strip())
+
+
+def public_enabled():
+    return (os.environ.get('TRADE_PAPER_ORDER_AI_PUBLIC') == '1'
+            and os.environ.get('TRADE_PAPER_ORDER_AI_ENABLED') == '1'
+            and bool(os.environ.get('TRADE_PAPER_ORDER_AI_API_KEY', '').strip()))
+
+
+def usage(account):
+    if not available(account) or not public_enabled():
+        return None
+    from app.order_ai_usage import summary
+    try:
+        return summary(USAGE_FILE, account)
+    except (HTTPException, OSError, sqlite3.Error, ValueError):
+        return {'unavailable': True}
+
+
+def public_notice():
+    if not public_enabled():
+        return ''
+    return ('<p class="notice">Optional AI reading public beta: Free includes one lifetime trial; '
+            'verified paid Starter includes 20 readings per billing period. No rollover or automatic overage charge. '
+            'Service-wide beta limits are 20 requests/month, 5/day and up to 3/day per account; '
+            'AI availability may pause at these limits. Failed readings do not use the included allowance. '
+            'Standard document creation remains available. '
+            '<a href="/import-document">Open AI reading</a> · '
+            '<a href="/privacy#optional-ai">Data sharing and privacy</a></p>')
 
 
 def _reserve(account):
@@ -227,8 +255,26 @@ async def extract(request, account, body):
     text = body.get('text')
     if not isinstance(text, str) or not text.strip() or len(text.encode('utf-8')) > MAX_SOURCE_BYTES:
         raise HTTPException(422, 'ai_size')
+    reservation = None
     try:
-        _reserve(account)
+        if public_enabled():
+            from app.order_ai_usage import reserve
+            reservation = reserve(USAGE_FILE, account, body.get('request_id'))
+        else:
+            _reserve(account)
     except sqlite3.Error:
         raise HTTPException(503, 'ai_unavailable') from None
-    return validate_result(await _generate(text), text)
+    try:
+        result = validate_result(await _generate(text), text)
+        if reservation and not result['items']:
+            raise HTTPException(502, 'ai_invalid')
+    except BaseException:
+        if reservation:
+            from app.order_ai_usage import finish
+            finish(USAGE_FILE, reservation, success=False)
+        raise
+    if reservation:
+        from app.order_ai_usage import finish
+        finish(USAGE_FILE, reservation, success=True)
+        result['ai_usage'] = usage(account)
+    return result

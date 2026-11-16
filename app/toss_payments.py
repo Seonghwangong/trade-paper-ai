@@ -126,6 +126,8 @@ def starter_product_page():
     body = f'''<section><p>Trade Paper AI Subscription</p><h1>{_text(spec['plan'])}</h1><p class="price">{_text(subscription.plan_price_label(spec['plan']))}</p><p><strong>Monthly subscription</strong> with unlimited document usage and direct onboarding.</p><ul><li>Unlimited documents</li><li>Connected export document workflow</li><li>Direct onboarding</li></ul><p class="notice">Online payment processing is not active yet. Viewing or applying for Starter does not create a paid subscription or collect payment.</p><div class="actions"><a href="/founding-beta">Request first-use help</a><a class="secondary" href="/login?next=%2Fsubscription%2Fcheckout%3Fplan%3DStarter">Sign in for purchase details</a></div></section><section><h2>Purchase, cancellation, and refunds</h2><p>No online payment is collected while checkout is inactive. Review how future Starter cancellation and refund requests will be handled before applying.</p><div class="actions"><a class="secondary" href="/refund-policy">Cancellation and Refund Policy</a><a class="secondary" href="/terms">Terms</a><a class="secondary" href="/privacy">Privacy</a><a class="secondary" href="/contact">Contact Trade Paper AI</a></div></section>'''
     if public_billing.enabled():
         body = body.replace('<a href="/founding-beta">Request first-use help</a>', '<a href="/subscription/paddle-buy">Subscribe to Starter</a>')
+    from app.order_ai import public_notice
+    body = body.replace('</ul>', '</ul>' + public_notice(), 1)
     return _page("Starter Plan", body)
 
 

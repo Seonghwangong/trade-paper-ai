@@ -14,7 +14,13 @@ const words={
  ai_disabled:['AI reading is not enabled for this account. You can use standard file reading.','이 계정에는 AI 읽기가 열려 있지 않습니다. 기본 파일 읽기를 사용할 수 있습니다.'],
  ai_consent:['Choose AI reading after reviewing the data-sharing notice.','자료 전달 안내를 확인한 뒤 AI 읽기를 선택해 주세요.'],
  ai_size:['AI reading supports up to 20,000 bytes of source text. Use a shorter order or standard file reading.','AI 읽기는 원문 글자 데이터 20,000바이트까지 지원합니다. 짧은 주문서나 기본 파일 읽기를 사용하세요.'],
- ai_limit:['The AI pilot limit has been reached. Standard file reading remains available.','AI 시험 운영 한도에 도달했습니다. 기본 파일 읽기는 계속 사용할 수 있습니다.'],
+ ai_limit:['The public beta daily or service-wide limit has been reached. Your draft is kept. Uncheck AI reading to continue with standard reading.','공개 베타의 일일 또는 서비스 전체 한도에 도달했습니다. 초안은 유지됩니다. AI 읽기 선택을 해제하면 기본 읽기로 계속할 수 있습니다.'],
+ ai_allowance:['Your included AI readings are used up. Uncheck AI reading to continue with standard reading.','포함된 AI 읽기 횟수를 모두 사용했습니다. AI 읽기를 해제하면 기본 읽기로 계속할 수 있습니다.'],
+ ai_busy:['An AI reading is already in progress for your account. Check the other tab before trying again.','다른 탭에서 AI 읽기가 진행 중입니다. 먼저 진행 중인 탭을 확인하세요.'],
+ ai_duplicate:['This reading was already submitted. Check your draft before starting a new reading; it was not submitted again.','이미 요청한 AI 읽기입니다. 다시 호출하지 않았습니다. 현재 초안을 먼저 확인하세요.'],
+ ai_request_id:['Reload this page before starting AI reading. Your saved browser draft is kept.','AI 읽기를 시작하기 전에 페이지를 새로고침하세요. 브라우저에 보관한 초안은 유지됩니다.'],
+ aiBeta:['AI reading · Public beta','AI 읽기 · 공개 베타'],
+ aiBetaLimits:['Service-wide beta limits: 20 requests/month, 5/day, up to 3/day per account. Availability can pause when these limits are reached; no automatic overage charge. Failed readings do not use your included allowance.','베타 전체 월 20회·하루 5회, 계정당 하루 최대 3회로 운영합니다. 전체 한도에 닿으면 일시 중단되며 초과 자동 과금은 없습니다. 실패한 읽기는 포함 횟수에서 차감하지 않습니다.'],
  ai_unavailable:['AI reading did not finish. Your previous draft is kept; retry explicitly or use standard file reading.','AI 읽기를 마치지 못했습니다. 기존 초안은 유지됩니다. 직접 다시 시도하거나 기본 파일 읽기를 사용하세요.'],
  ai_invalid:['The AI result could not be verified. Your previous draft is kept. Use standard file reading or try again.','AI 결과를 검증하지 못했습니다. 기존 초안은 유지됩니다. 기본 파일 읽기나 다시 시도를 이용하세요.'],
  dataProtectionTitle:['Know how your trade data is handled','거래자료, 어떻게 보호하고 보관하나요?'],
@@ -81,6 +87,14 @@ Object.assign(words,{
 const t=key=>(words[key]||words.invalid_file)[ko?1:0];
 document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));
 $('ai-option').hidden=!config.ai_enabled;$('ai-consent').disabled=!config.ai_enabled;
+function showAIUsage(usage){
+ const node=$('ai-usage');if(!node)return;
+ if(!usage){node.textContent='';return;}
+ if(usage.unavailable){node.textContent=t('ai_unavailable');return;}
+ const plan=usage.kind==='starter'?(ko?'이번 결제주기':'This billing period'):(ko?'최초 무료 체험':'One-time free trial');
+ node.textContent=t('aiBeta')+' · '+plan+': '+usage.remaining+' / '+usage.limit+(ko?'회 남음':' readings left')+'. '+t('aiBetaLimits');
+}
+showAIUsage(config.ai_usage);
 document.title=t('title')+' · Trade Paper AI';$('original').alt=t('source');
 let file=null, busy=false, previewURL=null, draftReady=false, saved=false, saveUncertain=false, worker=null, saving=false, selectedSheet=0, voiceActive=false, noteOpening=false, recovering=false, pendingRecovery=false;
 let activeWarnings=[], activeUnmatched=[], sourceLabel='', autoSaveTimer=null;
@@ -174,7 +188,7 @@ async function pdfText(blob){
  }finally{if(pdf)await pdf.destroy();else await task.destroy();}
 }
 function useAI(){return Boolean(config.ai_enabled&&$('ai-consent').checked);}
-async function readAI(text){setStatus('aiReading');return parseResponse(await fetch('/import-document/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'ai_order',ai_consent:'openai-order-text-v1',text})}));}
+async function readAI(text){setStatus('aiReading');const result=await parseResponse(await fetch('/import-document/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'ai_order',ai_consent:'openai-order-text-v1',request_id:crypto.randomUUID(),text})}));if(result.ai_usage){config.ai_usage=result.ai_usage;showAIUsage(result.ai_usage);}return result;}
 async function readFile(sheet=0){
  if(!file||busy||saving)return false;const previous={src:$('original').getAttribute('src'),hidden:$('original').hidden,sheets:[...$('sheet').options].map(o=>({value:o.value,text:o.textContent})),sheetHidden:$('sheet-box').hidden};setBusy(true);$('workspace').hidden=true;setStatus('reading');
  try{if(file.size>8*1024*1024)throw new Error('too_large');let result,extra=[];const ext=file.name.split('.').pop().toLowerCase();
