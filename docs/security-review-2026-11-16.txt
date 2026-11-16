@@ -1,0 +1,45 @@
+Scoped security review — 2026-11-16
+Base remote main and Render live: 155fe60870623091f4cbb38b1431c1f12fb41d57.
+Read-only public HTTPS checks: /login 200 and /invoices 303 to login with no
+customer response body read. No account guessing, exploit traffic or data writes.
+
+Verified in code and relevant isolated tests:
+- Per-account Invoice/Packing ownership guards, account-scoped signature access.
+- New passwords use salted PBKDF2-SHA256; signed expiring sessions, HttpOnly,
+  SameSite=Lax and production/HTTPS Secure cookie policy. Password resets revoke
+  previous session versions. Login and reset rate limiting exists in process.
+- Signed Paddle webhook validation precedes billing-state access; management
+  endpoints have purpose/account-bound CSRF and origin checks.
+- Bounded document extraction, skipped spreadsheet formulas, signature-image
+  validation and locked/validated JSON backup writes.
+These are specific controls, not an independent security certification.
+
+Confirmed defect and immediate repair:
+Packing edit page interpolated several saved/master text fields into HTML value
+attributes without encoding. A harmless quote/tag marker produced extra parsed
+attributes/elements in isolated route output (regression failed before repair).
+Encoded all previously unencoded value attributes and percent-encoded the form
+submit path. Original source records and parsed input values remain unchanged.
+Regression covers seller/buyer fields, address fallback, item fields and form
+path. No JavaScript payload was executed, and no live records were touched.
+This is a scoped output-encoding repair, not a claim that every template/DOM sink
+has been audited. Existing non-browser security/workflow tests remain required.
+
+Open assessment items (not proof of exploitation):
+- Live /login response lacked CSP, X-Frame-Options and X-Content-Type-Options.
+  Plan compatible defense-in-depth headers; do not turn on a blanket CSP that
+  breaks current inline forms, payment screens or PDF embedding.
+- Legacy plaintext-password compatibility remains in code and upgrades on login.
+  Whether any production legacy records remain was NOT inspected. A count-only
+  restricted audit and safe transition plan are needed before removing support.
+- Independent penetration testing, current dependency advisory scanning, complete
+  cross-site-request review, and offsite backup/restore guarantees were not
+  established in this pass. Do not advertise them as verified.
+
+Primary guidance consulted:
+https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html
+
+Focused checks: 121 passed. Full suite and exact deploy receipt in outputs.
+No new services, permission grants, purchases, customer changes or schedules.
+Existing Render auto deploy only. Browser execution not claimed.

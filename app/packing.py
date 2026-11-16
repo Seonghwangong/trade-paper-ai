@@ -278,16 +278,17 @@ def edit_packing(packing_no: str, request: Request):
             if not items:
                 items = [{}]
 
+            attr = lambda value: html_lib.escape(str(value) if value is not None else "", quote=True)
             info = metadata([
-                ("Packing No", f'<input type="text" value="{packing.get("packing_no", "")}" readonly>'),
-                ("Invoice No", f'<input type="text" name="invoice_no" value="{packing.get("invoice_no", "")}">'),
-                ("Seller", f'<input type="text" name="seller" value="{packing.get("seller", "")}">'),
-                ("Seller Address", f'<input type="text" name="seller_address" value="{packing.get("seller_address") or company.get("address", "")}">'),
-                ("Seller Email", f'<input type="text" name="seller_email" value="{packing.get("seller_email") or company.get("email", "")}">'),
-                ("Seller Phone", f'<input type="text" name="seller_phone" value="{packing.get("seller_phone") or company.get("phone", "")}">'),
-                ("Buyer", f'<input type="text" name="buyer" value="{packing.get("buyer", "")}">'),
-                ("Buyer Address", f'<input type="text" name="buyer_address" value="{packing.get("buyer_address") or buyer.get("address", "")}">'),
-                ("Buyer Email", f'<input type="text" name="buyer_email" value="{packing.get("buyer_email") or buyer.get("email", "")}">'),
+                ("Packing No", f'<input type="text" value="{attr(packing.get("packing_no", ""))}" readonly>'),
+                ("Invoice No", f'<input type="text" name="invoice_no" value="{attr(packing.get("invoice_no", ""))}">'),
+                ("Seller", f'<input type="text" name="seller" value="{attr(packing.get("seller", ""))}">'),
+                ("Seller Address", f'<input type="text" name="seller_address" value="{attr(packing.get("seller_address") or company.get("address", ""))}">'),
+                ("Seller Email", f'<input type="text" name="seller_email" value="{attr(packing.get("seller_email") or company.get("email", ""))}">'),
+                ("Seller Phone", f'<input type="text" name="seller_phone" value="{attr(packing.get("seller_phone") or company.get("phone", ""))}">'),
+                ("Buyer", f'<input type="text" name="buyer" value="{attr(packing.get("buyer", ""))}">'),
+                ("Buyer Address", f'<input type="text" name="buyer_address" value="{attr(packing.get("buyer_address") or buyer.get("address", ""))}">'),
+                ("Buyer Email", f'<input type="text" name="buyer_email" value="{attr(packing.get("buyer_email") or buyer.get("email", ""))}">'),
             ])
             from app.packing_workflow import comparable
             from urllib.parse import quote
@@ -304,7 +305,7 @@ def edit_packing(packing_no: str, request: Request):
                 + f'<a class="tp-btn" href="/packing-sync/{quote(packing_no, safe="")}">Compare and update from Invoice</a>') if changed else ""
             if source_invoice is None:
                 review_note = section_card("Review against the Invoice", '<p>The linked Invoice is unavailable. You can still edit this saved Packing List.</p>')
-            html = review_note + f'<form action="/update-packing/{packing_no}" method="post">' + section_card("Packing Information", info)
+            html = review_note + f'<form action="/update-packing/{quote(packing_no, safe="")}" method="post">' + section_card("Packing Information", info)
 
             for item in items:
                 html += f"""
@@ -312,13 +313,13 @@ def edit_packing(packing_no: str, request: Request):
 <input type="hidden" name="item_id" value="{html_lib.escape(str(item.get('item_id','') or ''), quote=True)}">
 
 <p>Item Name</p>
-<input type="text" name="item_name" value="{item.get('name','')}">
+<input type="text" name="item_name" value="{attr(item.get('name',''))}">
 
 <p>Quantity</p>
-<input type="number" step="any" name="quantity" value="{item.get('quantity','')}">
+<input type="number" step="any" name="quantity" value="{attr(item.get('quantity',''))}">
 
 <p>HS Code</p>
-<input type="text" name="hs_code" value="{item.get('hs_code','')}">
+<input type="text" name="hs_code" value="{attr(item.get('hs_code',''))}">
 
 <p>Country of Origin</p>
 <input type="text" name="origin" value="{html_lib.escape(str(item.get('origin','') or ''), quote=True)}">
@@ -327,13 +328,13 @@ def edit_packing(packing_no: str, request: Request):
 <input type="text" name="unit" value="{html_lib.escape(str(item.get('unit','') or ''), quote=True)}">
 
 <p>Carton</p>
-<input type="text" name="carton" value="{item.get('carton','')}">
+<input type="text" name="carton" value="{attr(item.get('carton',''))}">
 
 <p>Net Weight</p>
-<input type="text" name="net_weight" value="{item.get('net_weight','')}">
+<input type="text" name="net_weight" value="{attr(item.get('net_weight',''))}">
 
 <p>Gross Weight</p>
-<input type="text" name="gross_weight" value="{item.get('gross_weight','')}">
+<input type="text" name="gross_weight" value="{attr(item.get('gross_weight',''))}">
 
 </div>
 """
