@@ -123,7 +123,7 @@ async function loadProducts(){
     products.forEach((product, index) => {
         const option = document.createElement("option");
         option.value = index;
-        option.textContent = product.name;
+        option.textContent = [product.name, product.hs_code && 'HS ' + product.hs_code, product.origin, product.unit].filter(Boolean).join(' · ');
         select.appendChild(option);
     });
     const list = document.getElementById("product-name-options");
@@ -148,7 +148,7 @@ async function suggestProducts(){
     const response = await fetch('/product-suggestions?q=' + encodeURIComponent(query));
     const matches = await response.json();
     matches.forEach(product => { const button=document.createElement('button'); button.type='button';
-        button.textContent=(product.name||'') + (product.name.toLowerCase()===query.toLowerCase()?'':' — suggestion');
+        button.textContent=[product.name, product.hs_code && 'HS ' + product.hs_code, product.origin, product.unit].filter(Boolean).join(' · ') + (product.name.toLowerCase()===query.toLowerCase()?'':' — suggestion');
         button.addEventListener('click',()=>applyProduct(product)); area.appendChild(button); });
 }
 document.getElementById("item1").addEventListener("input",()=>{clearTimeout(productSuggestTimer);productSuggestTimer=setTimeout(suggestProducts,180);});

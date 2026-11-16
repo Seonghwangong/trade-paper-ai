@@ -1,0 +1,35 @@
+2026-11-16 15:00 Asia/Seoul cloud development
+Base main/live 20beb2bf3f33d36cd5e1d2f1f633326f8b736f3d.
+Read latest persistent record and standing runbook; preserve prior fixes.
+Morning pending deployment resolved: dep-dbt4fem417fc7386mpqg LIVE exact20beb2b
+at 00:11:16.806966Z, new instance bq2x5 official /health 200 at06:03:06/11Z.
+No manual deployment needed. Original 44c6c93 still unavailable/unmerged as before.
+
+Reproduced real browser failure: two same-name catalog products both displayed
+only Fictional gloves in the Invoice selection list; users could not distinguish
+different saved HS/origin/unit before choosing. Earlier server fix correctly
+avoids arbitrary enrichment, so explicit selection needs useful identifying text.
+Show name plus existing HS/origin/unit in Invoice create dropdown/suggestions,
+Invoice edit dropdown and Packing dropdown, including newly added Packing rows.
+Preserve option indexes and explicit selection behavior; never guess new values.
+Build Packing product options with textContent, so catalog text remains literal.
+Refresh Invoice edit script cache version. No layout/color/branding changes.
+
+Validation (new fictional accounts and data):
+- Before: browser asserted labels differed by stored HS/origin/unit and failed;
+  both choices were identical names. Preserved before log.
+- After: actual cloud Chromium distinguishes both products on create/edit/Packing,
+  explicitly chooses second product, saves Invoice and linked Packing, parses
+  both PDFs with selected 222222/BB/BOX values and unchanged numerical totals.
+- Full Python suite 1786 passed,38 browser deselected,9 existing warnings.
+- Two Node test scripts passed (invoice edit and Packing prefill checks).
+- Isolated health200; all44 protected file hashes unchanged; diff check clean.
+- No customer/existing test account/catalog/document writes, payment/purchase,
+  mail/promotion, new cost/service/security/schedule changes or Mac dependence.
+QA /workspace/work/product-choice-qa; worktree /workspace/work/selection-20261116.
+Confirmed Render workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0, autoDeploy=yes/commit. No duplicate manual deployment.
+Final commit/live/post-live health evidence in development-runs/latest.txt.
+Limit: choices with identical identifying stored fields remain identical; no
+invented product code. Direct production HTTP proxy restricted, official logs
+verify health. Next: fresh evidence-led source review/document usability.

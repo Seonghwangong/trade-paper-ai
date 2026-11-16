@@ -27,7 +27,7 @@
         products.forEach((product, index) => {
           const option = document.createElement('option');
           option.value = String(index);
-          option.textContent = product.name || '';
+          option.textContent = [product.name, product.hs_code && 'HS ' + product.hs_code, product.origin, product.unit].filter(Boolean).join(' · ');
           select.appendChild(option);
         });
         // Loading saved products never replaces the document's snapshot.

@@ -194,7 +194,10 @@ async function loadProducts(){
 function fillProductSelect(select){
     select.innerHTML = '<option value="">Select Product Master</option>';
     products.forEach((product, index)=>{
-        select.innerHTML += `<option value="${index}">${product.name}</option>`;
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = [product.name, product.hs_code && 'HS ' + product.hs_code, product.origin, product.unit].filter(Boolean).join(' · ');
+        select.appendChild(option);
     });
 }
 
