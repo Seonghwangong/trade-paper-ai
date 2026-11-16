@@ -49,7 +49,7 @@ def test_landing_has_canonical_social_manifest_and_valid_structured_data(monkeyp
     assert 'href="https://www.youtube.com/@tradepaperai"' in html
     assert blocks[1]["description"] == landing.COPY[lang]["description"]
     assert blocks[1]["softwareVersion"] == APP_VERSION
-    visible_questions = [landing.COPY[lang][f"q{i}"] for i in range(1, 5)]
+    visible_questions = [landing.COPY[lang][f"q{i}"] for i in range(1, 6)]
     assert [entry["name"] for entry in blocks[2]["mainEntity"]] == visible_questions
 
 

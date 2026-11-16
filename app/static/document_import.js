@@ -4,6 +4,19 @@
 const config=JSON.parse(document.getElementById('import-config').textContent);
 const ko=config.lang==='ko', $=id=>document.getElementById(id);
 const words={
+ aiChoose:['Use AI to read this order','AI로 주문서 읽기'],
+ aiDisclosure:['Optional: sends the selected source text to OpenAI, including business details it contains. No PDF/image file, saved company records or mailbox access is sent. OpenAI may retain abuse-monitoring logs for up to 30 days (exceptions apply). Review the draft before saving; nothing is sent to your buyer.','선택 기능입니다. 선택한 자료에서 읽은 글자와 그 안의 거래정보를 OpenAI로 보냅니다. PDF·사진 파일 자체, 저장된 회사자료, 메일함 접근 권한은 보내지 않습니다. OpenAI는 보안 모니터링 기록을 최대 30일 보관할 수 있으며 예외가 있습니다. 초안을 확인한 뒤 저장하며 바이어에게 자동 발송하지 않습니다.'],
+ aiReading:['AI is preparing your order draft…','AI가 주문서 초안을 채우고 있습니다…'],
+ ai_review:['AI draft: check every value against the source. Missing packing weights, carton counts and shipment details were not guessed.','AI 초안입니다. 원문과 모든 값을 확인하세요. 원문에 없는 포장 중량·박스 수·선적정보는 추측하지 않았습니다.'],
+ ai_incomplete:['The AI could not cover the whole order confidently. Check for missing items and conflicting details.','주문서 전체를 확실히 읽지 못했습니다. 누락된 품목과 서로 다른 내용을 확인하세요.'],
+ ai_unsupported:['Values without matching source evidence were left blank. Check the source and complete them.','원문 근거를 확인하지 못한 값은 비웠습니다. 원문을 확인해 채워 주세요.'],
+ aiEvidence:['Source when extracted','추출 당시 원문'],
+ ai_disabled:['AI reading is not enabled for this account. You can use standard file reading.','이 계정에는 AI 읽기가 열려 있지 않습니다. 기본 파일 읽기를 사용할 수 있습니다.'],
+ ai_consent:['Choose AI reading after reviewing the data-sharing notice.','자료 전달 안내를 확인한 뒤 AI 읽기를 선택해 주세요.'],
+ ai_size:['AI reading supports up to 20,000 bytes of source text. Use a shorter order or standard file reading.','AI 읽기는 원문 글자 데이터 20,000바이트까지 지원합니다. 짧은 주문서나 기본 파일 읽기를 사용하세요.'],
+ ai_limit:['The AI pilot limit has been reached. Standard file reading remains available.','AI 시험 운영 한도에 도달했습니다. 기본 파일 읽기는 계속 사용할 수 있습니다.'],
+ ai_unavailable:['AI reading did not finish. Your previous draft is kept; retry explicitly or use standard file reading.','AI 읽기를 마치지 못했습니다. 기존 초안은 유지됩니다. 직접 다시 시도하거나 기본 파일 읽기를 사용하세요.'],
+ ai_invalid:['The AI result could not be verified. Your previous draft is kept. Use standard file reading or try again.','AI 결과를 검증하지 못했습니다. 기존 초안은 유지됩니다. 기본 파일 읽기나 다시 시도를 이용하세요.'],
  dataProtectionTitle:['Know how your trade data is handled','거래자료, 어떻게 보호하고 보관하나요?'],
  dataProtectionSummary:['Company details, buyers, products, signatures and saved trade documents have account-based access checks. Original import files are not retained; extracted text and spreadsheets are processed by this site.','회사정보·거래처·품목·서명·저장된 무역서류는 계정별 접근 권한을 확인합니다. 가져온 원본 파일은 보관하지 않으며, 추출한 글자와 엑셀 자료는 이 사이트에서 처리합니다.'],
  dataProtectionLink:['Data handling and privacy','자료 처리·보관 자세히 보기'],
@@ -67,6 +80,7 @@ Object.assign(words,{
 });
 const t=key=>(words[key]||words.invalid_file)[ko?1:0];
 document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));
+$('ai-option').hidden=!config.ai_enabled;$('ai-consent').disabled=!config.ai_enabled;
 document.title=t('title')+' · Trade Paper AI';$('original').alt=t('source');
 let file=null, busy=false, previewURL=null, draftReady=false, saved=false, saveUncertain=false, worker=null, saving=false, selectedSheet=0, voiceActive=false, noteOpening=false, recovering=false, pendingRecovery=false;
 let activeWarnings=[], activeUnmatched=[], sourceLabel='', autoSaveTimer=null;
@@ -76,23 +90,23 @@ const recoveredDraft=draftStore.load();
 
 function setStep(step){document.querySelectorAll('[data-step]').forEach(el=>{const n=Number(el.dataset.step);el.classList.toggle('complete',n<step);if(n===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');});}
 function setStatus(key,error=false){$('status').textContent=t(key);$('status').dataset.kind=error?'error':'info';}
-function setBusy(value){value=value||pendingRecovery||saveUncertain;busy=value;$('file').disabled=value;$('sheet').disabled=value;$('sample').disabled=value;$('drop-zone').setAttribute('aria-busy',String(value));$('draft-clear').disabled=value||saving||saveUncertain;for(const id of ['note-build','note-sample','order-note','voice-language','source-file','source-note'])$(id).disabled=value;$('note-mic').disabled=value&&!voiceActive;}
+function setBusy(value){value=value||pendingRecovery||saveUncertain;busy=value;$('ai-consent').disabled=value||!config.ai_enabled;$('file').disabled=value;$('sheet').disabled=value;$('sample').disabled=value;$('drop-zone').setAttribute('aria-busy',String(value));$('draft-clear').disabled=value||saving||saveUncertain;for(const id of ['note-build','note-sample','order-note','voice-language','source-file','source-note'])$(id).disabled=value;$('note-mic').disabled=value&&!voiceActive;}
 
 const fields=['seller','seller_address','buyer','buyer_address','buyer_email','invoice_date','currency','trade_term','payment_term','source_reference'];
 const itemFields=['name','quantity','unit','unit_price','hs_code','origin'];
 const required=new Set(['seller','buyer','invoice_date','currency','name','quantity','unit_price']);
-function makeInput(key,value=''){
+function makeInput(key,value='',evidence=''){
  const label=document.createElement('label');label.textContent=t(key);const input=document.createElement('input');input.dataset.field=key;input.value=String(value??'');input.maxLength=key.includes('address')?1000:200;
  if(required.has(key))input.required=true;
  if(key==='invoice_date')input.type='date';
  if(key==='buyer_email')input.type='email';
  if(key==='currency'){input.pattern='[A-Z]{3}';input.maxLength=3;input.addEventListener('input',()=>input.value=input.value.toUpperCase());}
  if(['quantity','unit_price'].includes(key)){input.type='number';input.min='0';input.max='1000000000000';input.step='any';}
- input.addEventListener('input',()=>{$('confirmed').checked=false;updateTotal();});label.append(input);return label;
+ input.addEventListener('input',()=>{$('confirmed').checked=false;updateTotal();});label.append(input);if(evidence){const detail=document.createElement('details'),summary=document.createElement('summary'),quote=document.createElement('p');detail.className='source-evidence';summary.textContent=t('aiEvidence');quote.textContent=evidence;detail.append(summary,quote);label.append(detail);}return label;
 }
-function addItem(values={}){
+function addItem(values={},evidence={}){
  if($('items').children.length>=100)return;
- const article=document.createElement('article');article.className='item';const top=document.createElement('div');top.className='item-top';const title=document.createElement('b');title.textContent=t('items')+' '+($('items').children.length+1);const remove=document.createElement('button');remove.type='button';remove.textContent=t('remove');remove.addEventListener('click',()=>{article.remove();$('confirmed').checked=false;updateTotal();});top.append(title,remove);article.append(top,makeInput('name',values.name));const grid=document.createElement('div');grid.className='grid';for(const key of itemFields.slice(1))grid.append(makeInput(key,values[key]));article.append(grid);
+ const article=document.createElement('article');article.className='item';const top=document.createElement('div');top.className='item-top';const title=document.createElement('b');title.textContent=t('items')+' '+($('items').children.length+1);const remove=document.createElement('button');remove.type='button';remove.textContent=t('remove');remove.addEventListener('click',()=>{article.remove();$('confirmed').checked=false;updateTotal();});top.append(title,remove);article.append(top,makeInput('name',values.name,evidence.name));const grid=document.createElement('div');grid.className='grid';for(const key of itemFields.slice(1))grid.append(makeInput(key,values[key],evidence[key]));article.append(grid);
  if(values.check_amount){const p=document.createElement('p');p.textContent=t('amount');p.style.color='#875a13';article.append(p);} $('items').append(article);updateTotal();
 }
 function updateTotal(){let total=0;for(const row of $('items').children){const q=Number(row.querySelector('[data-field=quantity]').value),p=Number(row.querySelector('[data-field=unit_price]').value);if(Number.isFinite(q*p))total+=q*p;}const currency=$('fields').querySelector('[data-field=currency]');$('total').textContent=t('total')+': '+(currency?.value||'')+' '+total.toLocaleString(ko?'ko-KR':'en-US',{maximumFractionDigits:6});$('item-count').textContent=$('items').children.length+(ko?'개 품목':($('items').children.length===1?' item':' items'));[...$('items').children].forEach((row,i)=>row.querySelector('b').textContent=t('items')+' '+(i+1));updateReviewIssues();}
@@ -135,7 +149,7 @@ $('review-next').addEventListener('click',()=>{const issue=reviewIssues()[0];if(
 function renderDraft(result,extra=[]){
  activeWarnings=[...(result.warnings||[]),...extra];activeUnmatched=result.unmatched_lines||[];if(result.items.some(item=>item.check_amount))activeWarnings.push('amount');sourceLabel=result.source_label||file?.name||t('noteSource');
  const values=result.fields||{};if(!result.restored&&!values.seller&&!(result.warnings||[]).includes('conflicting_seller')){values.seller=config.company.name||'';values.seller_address=values.seller_address||config.company.address||'';}
- $('fields').replaceChildren();fields.forEach(key=>$('fields').append(makeInput(key,values[key])));$('items').replaceChildren();(result.items.length?result.items:[{}]).forEach(addItem);
+ $('fields').replaceChildren();fields.forEach(key=>$('fields').append(makeInput(key,values[key],result.field_evidence?.[key])));$('items').replaceChildren();(result.items.length?result.items:[{}]).forEach((item,i)=>addItem(item,result.item_evidence?.[i]||{}));
  $('source-text').textContent=result.source_text||'';$('warnings').textContent=[...new Set([...(result.warnings||[]),...extra])].map(key=>t(key.startsWith('conflicting_')?'conflict':key)).join('\n');
  $('workspace').hidden=false;$('review-hint').hidden=false;$('review-heading').textContent=t('review');$('review-form').hidden=false;$('saved').hidden=true;$('confirmed').checked=false;$('save').disabled=false;draftReady=true;saved=false;saveUncertain=false;updateTotal();setStatus('ready');setStep(2);$('file-name').textContent=sourceLabel;$('file-name').hidden=false;$('review-heading').focus({preventScroll:true});scheduleDraft();
 }
@@ -159,11 +173,13 @@ async function pdfText(blob){
  extra.push('partial');return {text,extra};
  }finally{if(pdf)await pdf.destroy();else await task.destroy();}
 }
+function useAI(){return Boolean(config.ai_enabled&&$('ai-consent').checked);}
+async function readAI(text){setStatus('aiReading');return parseResponse(await fetch('/import-document/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'ai_order',ai_consent:'openai-order-text-v1',text})}));}
 async function readFile(sheet=0){
  if(!file||busy||saving)return false;const previous={src:$('original').getAttribute('src'),hidden:$('original').hidden,sheets:[...$('sheet').options].map(o=>({value:o.value,text:o.textContent})),sheetHidden:$('sheet-box').hidden};setBusy(true);$('workspace').hidden=true;setStatus('reading');
  try{if(file.size>8*1024*1024)throw new Error('too_large');let result,extra=[];const ext=file.name.split('.').pop().toLowerCase();
- if(['csv','xlsx'].includes(ext)){const form=new FormData();form.append('file',file);form.append('sheet',String(sheet));result=await parseResponse(await fetch('/import-document/extract',{method:'POST',body:form}));$('sheet-box').hidden=(result.sheets||[]).length<2;if(sheet===0){$('sheet').replaceChildren();(result.sheets||[]).forEach((name,i)=>{const o=document.createElement('option');o.value=i;o.textContent=name;$('sheet').append(o);});}$('original').hidden=true;}
- else{let text;$('sheet-box').hidden=true;if(ext==='pdf'){const data=await pdfText(file);text=data.text;extra=data.extra;}else if(['jpg','jpeg','png','webp'].includes(ext)){const canvas=await imageCanvas(file);previewURL=URL.createObjectURL(file);$('original').src=previewURL;$('original').hidden=false;text=await readImage(canvas);canvas.width=canvas.height=0;}else throw new Error('unsupported');result=await parseResponse(await fetch('/import-document/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}));}
+ if(['csv','xlsx'].includes(ext)){const form=new FormData();form.append('file',file);form.append('sheet',String(sheet));result=await parseResponse(await fetch('/import-document/extract',{method:'POST',body:form}));$('sheet-box').hidden=(result.sheets||[]).length<2;if(sheet===0){$('sheet').replaceChildren();(result.sheets||[]).forEach((name,i)=>{const o=document.createElement('option');o.value=i;o.textContent=name;$('sheet').append(o);});}$('original').hidden=true;if(useAI()){const sheets=result.sheets;result=await readAI(result.source_text);result.sheets=sheets;}}
+ else{let text;$('sheet-box').hidden=true;if(ext==='pdf'){const data=await pdfText(file);text=data.text;extra=data.extra;}else if(['jpg','jpeg','png','webp'].includes(ext)){const canvas=await imageCanvas(file);previewURL=URL.createObjectURL(file);$('original').src=previewURL;$('original').hidden=false;text=await readImage(canvas);canvas.width=canvas.height=0;}else throw new Error('unsupported');result=useAI()?await readAI(text):await parseResponse(await fetch('/import-document/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}));}
  renderDraft(result,extra);if(previous.src?.startsWith('blob:')&&previous.src!==$('original').src)URL.revokeObjectURL(previous.src);selectedSheet=sheet;return true;
  }catch(e){setStatus(e.message,true);if($('original').src.startsWith('blob:')&&$('original').src!==previous.src)URL.revokeObjectURL($('original').src);$('workspace').hidden=!draftReady;if(previous.src)$('original').src=previous.src;else $('original').removeAttribute('src');$('original').hidden=previous.hidden;$('sheet').replaceChildren();previous.sheets.forEach(o=>{const option=document.createElement('option');option.value=o.value;option.textContent=o.text;$('sheet').append(option);});$('sheet').value=String(selectedSheet);$('sheet-box').hidden=previous.sheetHidden;return false;}finally{try{if(worker)await worker.terminate();}finally{worker=null;setBusy(false);}}
 }
@@ -188,7 +204,7 @@ $('note-build').addEventListener('click',async()=>{
   if(draftReady&&!saved&&!await confirmReplacement())return;
   if(busy||saving||saveUncertain)return;
   setBusy(true);setStatus('noteReading');
-  const result=await parseResponse(await fetch('/import-document/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'order_note',text})}));
+  const result=useAI()?await readAI(text):await parseResponse(await fetch('/import-document/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'order_note',text})}));
   if(draftReady&&!result.items.length)throw new Error('no_items');
   file=null;renderDraft(result);
   if(previewURL){URL.revokeObjectURL(previewURL);previewURL=null;}
@@ -220,7 +236,7 @@ $('drop-zone').addEventListener('dragleave',e=>{if(!$('drop-zone').contains(e.re
 $('drop-zone').addEventListener('drop',e=>{e.preventDefault();$('drop-zone').classList.remove('drag-over');if(e.dataTransfer.files.length===1)chooseFile(e.dataTransfer.files[0]);else setStatus('oneFile',true);});
 $('add').addEventListener('click',()=>{const count=$('items').children.length;addItem();$('confirmed').checked=false;if($('items').children.length>count)focusIssue($('items').lastElementChild.querySelector('input'));});
 $('review-form').addEventListener('submit',async event=>{
- event.preventDefault();if(saved||saveUncertain||saving||busy||!$('review-form').reportValidity())return;if(!$('items').children.length){$('status').textContent=t('no_items');return;}if(draftStore.conflict){showStorageResult({ok:false,reason:'conflict'});return;}saving=true;persistDraft('saving');if(draftStore.conflict){saving=false;return;}$('save').disabled=true;setStatus('saving');const payload={};$('fields').querySelectorAll('input').forEach(i=>payload[i.dataset.field]=i.value.trim());payload.items=[...$('items').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(i=>[i.dataset.field,i.value.trim()])));let response;const controls=[...$('review-form').querySelectorAll('input,button')];controls.forEach(el=>el.disabled=true);setBusy(true);
+ event.preventDefault();if(saved||saveUncertain||saving||busy||!$('review-form').reportValidity())return;if(!$('items').children.length){$('status').textContent=t('no_items');return;}if(draftStore.conflict){showStorageResult({ok:false,reason:'conflict'});return;}saving=true;persistDraft('saving');if(draftStore.conflict){saving=false;return;}$('save').disabled=true;setStatus('saving');const payload={reviewed_import:true};$('fields').querySelectorAll('input').forEach(i=>payload[i.dataset.field]=i.value.trim());payload.items=[...$('items').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(i=>[i.dataset.field,i.value.trim()])));let response;const controls=[...$('review-form').querySelectorAll('input,button')];controls.forEach(el=>el.disabled=true);setBusy(true);
  try{response=await fetch('/invoice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch(e){saving=false;setBusy(false);saveUncertain=true;persistDraft('uncertain');setBusy(false);setStatus('retrySave',true);const a=document.createElement('a');a.href='/invoice-list';a.textContent=t('checkInvoices');$('status').append(document.createElement('br'),a);return;}
  if(response.status>=500&&!response.redirected){saving=false;showUncertainSave();persistDraft('uncertain');setBusy(false);return;}
  if(!response.ok||response.redirected){saving=false;setBusy(false);controls.forEach(el=>el.disabled=false);$('status').textContent=response.redirected?t('session'):([402,503].includes(response.status)?t('limit'):t('saveFailed'));$('save').disabled=false;persistDraft('draft');return;}
@@ -233,7 +249,9 @@ function captureDraft(status='draft'){
  const result=draftReady?{
   fields:Object.fromEntries([...$('fields').querySelectorAll('input')].map(input=>[input.dataset.field,input.value])),
   items:[...$('items').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(input=>[input.dataset.field,input.value]))),
-  source_text:$('source-text').textContent,warnings:activeWarnings,unmatched_lines:activeUnmatched
+  source_text:$('source-text').textContent,warnings:activeWarnings,unmatched_lines:activeUnmatched,
+  field_evidence:Object.fromEntries([...$('fields').querySelectorAll('input')].map(input=>[input.dataset.field,input.parentElement.querySelector('.source-evidence p')?.textContent||''])),
+  item_evidence:[...$('items').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(input=>[input.dataset.field,input.parentElement.querySelector('.source-evidence p')?.textContent||''])))
  }:null;
  return {status,note:$('order-note').value,mode:$('note-panel').hidden?'file':'note',label:sourceLabel,result};
 }

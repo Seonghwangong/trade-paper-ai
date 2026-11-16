@@ -103,6 +103,7 @@ def create_invoice(request: Request, payload: dict = Body(...)):
     record = dict(payload)
     record.pop("account_id", None)
     record.pop("signature_image", None)
+    reviewed_import = record.pop("reviewed_import", False) is True
     include_signature = record.pop("include_signature", False) is True
     record["account_id"] = _account_id(request)
     record["invoice_date"] = new_document_date(record.get("invoice_date"), "Invoice date")
@@ -125,7 +126,7 @@ def create_invoice(request: Request, payload: dict = Body(...)):
         "seller_phone": seller_company.get("phone", ""), "buyer_address": buyer.get("address", ""),
         "buyer_email": buyer.get("email", ""),
     }.items():
-        if not str(record.get(field, "") or "").strip():
+        if not reviewed_import and not str(record.get(field, "") or "").strip():
             record[field] = value
     require_items(record.get("items", []))
     for item in record["items"]:
@@ -133,7 +134,8 @@ def create_invoice(request: Request, payload: dict = Body(...)):
             raise DataValidationError("Items", "Each item must contain structured details.", "Add the item again, then save.")
         item["quantity"] = _invoice_number("Quantity", item.get("quantity", 0))
         item["unit_price"] = _invoice_number("Unit price", item.get("unit_price", 0))
-    product_module.enrich_items_from_products(record.get("items", []), _account_id(request))
+    if not reviewed_import:
+        product_module.enrich_items_from_products(record.get("items", []), _account_id(request))
     require_existing_reference("Proforma Invoice", record.get("pi_no", ""), load_proformas(_account_id(request)), "pi_no")
     def add_invoice(invoices):
         record["invoice_no"] = next_identifier(invoices, "invoice_no", "INV")

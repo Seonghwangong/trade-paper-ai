@@ -1,0 +1,35 @@
+Order-source AI pilot — 2026-11-16
+
+Status: implementation and offline regression validation complete; external activation NOT approved and NOT enabled. No actual AI API calls, live extraction accuracy claims, customer emails, payments, or customer data access.
+
+User flow
+- Existing /import-document reads PDF/photo text locally with bundled PDF.js/OCR. Standard spreadsheet reading remains available.
+- Only an enabled, explicitly allowlisted account sees optional “Use AI to read this order”. It is unchecked, discloses OpenAI text transfer/retention, and is not remembered on reload.
+- Selecting a source/worksheet or preparing a pasted order sends only its text to a new guarded mode on the existing extraction endpoint after opt-in. No mailbox access, original PDF/image upload, saved account data, signature or other documents sent to OpenAI.
+- The server requests structured JSON, verifies value/evidence substrings against source, checks decimals and line totals, blanks unsupported values, and flags incomplete results and mixed currencies. Literal evidence matches do NOT prove correct semantic extraction. The customer must review every value and omission.
+- Source quotes are viewable per field and retained with the existing browser recovery draft. No provider response is executed as HTML/code. Previous draft survives provider errors. No automatic retry.
+- User confirmation and explicit Save Invoice still required. Reviewed import fields are not silently enriched from buyer/product masters at save. Existing Invoice→Packing flow copies shared facts; actual cartons/weights remain for user review. No AI tools, email sending, purchase, or document-writing access.
+
+Operator activation — requires separate user approval for a new external service/cost
+- Model: gpt-5.6-terra; fixed https://api.openai.com/v1/responses; store=false; structured output; reasoning low; max_output_tokens=8192; no tools, prior conversation, URL override or redirects.
+- Set TRADE_PAPER_ORDER_AI_API_KEY securely on the existing service, never in source, logs, browser or chat. Use a dedicated project/key without opted-in data sharing.
+- Set TRADE_PAPER_ORDER_AI_ACCOUNTS to explicitly approved test account IDs (no wildcard); set TRADE_PAPER_ORDER_AI_ENABLED=1 only after permission. Empty/missing settings fail closed.
+- Limits: 20,000 UTF-8 bytes of source, 20 items, existing 5-page/8MB PDF limits, bounded provider response, timeout, durable SQLite reservation before each call. Requests, including failed/uncertain calls, capped at 3/account/day, 5 globally/day, 20 globally/UTC calendar month. Counts are serialized across processes in the shared data directory. Ledger contains account hash/day, not source or output.
+- Current official price: $2 per million input tokens, $12 per million output tokens. Twenty modest orders should cost less than $5 in this limited pilot, but this is an estimate at current rates and request caps, not a provider-wide dollar billing guarantee. Other project usage, taxes and exchange rates excluded. No new plan, free-document allowance or customer pricing change.
+- After activation, agent must run a small set of fictional English/Korean order PDFs, compare extracted values/omissions/quotes with ground truth and record actual provider token usage/cost. API account/model availability and live model accuracy remain unverified. User need not perform repeated tests.
+- To disable this optional pilot, set TRADE_PAPER_ORDER_AI_ENABLED=0; standard import stays available. Do not disable live subscription payments.
+
+Privacy
+- store=false does NOT mean Zero Data Retention. OpenAI default abuse-monitoring logs may retain content up to 30 days, subject to exceptions. Public privacy notice and per-use opt-in disclose this; no claim of ZDR approval. Existing browser draft recovery and recipient/downloaded-copy boundaries remain.
+
+Validation
+- 1,817 Python tests passed; 38 browser tests deselected; 9 existing warnings. This includes 30 new AI contract/guard/evidence/quota/invoice-preservation tests using mocked provider responses.
+- 4 Node tests execute actual PDF reading controller with fake transport: consented text-only request, unavailable/unchecked no AI request, and error preserves prior draft. Existing draft-recovery Node checks pass. JavaScript syntax and git diff checks pass.
+- Test PDF generated from fictional ABC Trading USA / Cotton T-shirts / 500 pcs / USD 8.00 / USD 4,000.00. PDF text through extraction controller verified with a mocked provider; resulting invoice PDF and Packing shared fields verified without inventing packing weights.
+- Prior release added a fifth home security FAQ; stale SEO expectation updated from four to five, with schema-to-visible-content comparison retained.
+- No actual browser visual QA or real model extraction accuracy has been verified in this run.
+
+Official references read on 2026-11-16
+https://developers.openai.com/api/docs/guides/structured-outputs
+https://developers.openai.com/api/docs/models/gpt-5.6-terra
+https://developers.openai.com/api/docs/guides/your-data

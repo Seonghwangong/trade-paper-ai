@@ -347,6 +347,7 @@ def _account(request):
 
 @router.get('/import-document', response_class=HTMLResponse)
 def import_page(request: Request):
+    from app import order_ai
     account = _account(request)
     lang = 'ko' if request.query_params.get('lang', request.cookies.get('tp_language', 'en')) == 'ko' else 'en'
     company = load_account_company(account, ACCOUNT_COMPANIES_FILE)
@@ -354,7 +355,7 @@ def import_page(request: Request):
     draft_scope = hashlib.sha256((account + '\0' + str(user.get('email', '')).strip().casefold()).encode()).hexdigest()
     repeat_no = request.query_params.get('repeat_invoice', '').strip()
     repeat_draft = repeat_invoice_draft(account, repeat_no) if repeat_no else None
-    bootstrap = json.dumps({'lang': lang, 'draft_scope': draft_scope, 'repeat_draft': repeat_draft, 'company': {k: company.get(k, '') for k in ('name', 'address')}}, ensure_ascii=False).replace('<', '\\u003c')
+    bootstrap = json.dumps({'lang': lang, 'ai_enabled': order_ai.available(account), 'draft_scope': draft_scope, 'repeat_draft': repeat_draft, 'company': {k: company.get(k, '') for k in ('name', 'address')}}, ensure_ascii=False).replace('<', '\\u003c')
     template = Path(__file__).with_name('templates').joinpath('document_import.html').read_text()
     return HTMLResponse(template.replace('__LANG__', lang).replace('__BOOTSTRAP__', bootstrap), headers={'Cache-Control': 'no-store'})
 
@@ -398,7 +399,7 @@ def repeat_invoice_draft(account, invoice_no):
 
 @router.post('/import-document/extract')
 async def extract(request: Request):
-    _account(request)
+    account = _account(request)
     # Stream before multipart parsing to bound both memory and temporary storage.
     content = bytearray()
     async for part in request.stream():
@@ -412,7 +413,10 @@ async def extract(request: Request):
             text = body.get('text')
             if not isinstance(text, str) or len(text) > MAX_TEXT:
                 raise ValueError('too_large')
-            if body.get('mode') == 'order_note':
+            if body.get('mode') == 'ai_order':
+                from app import order_ai
+                result = await order_ai.extract(request, account, body)
+            elif body.get('mode') == 'order_note':
                 from app.order_notes import parse_order_note
                 result = parse_order_note(text)
             else:
