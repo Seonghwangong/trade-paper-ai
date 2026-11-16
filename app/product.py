@@ -47,14 +47,19 @@ def search_product_records(account_id):
 
 
 def enrich_items_from_products(items, account_id):
-    """Fill only missing smart fields; submitted document values always win."""
-    products = {str(product.get("name", "")).strip().casefold(): product for product in load_products(account_id)}
+    """Fill missing fields only from a unique name; submitted values win."""
+    products = {}
+    for product in load_products(account_id):
+        name = str(product.get("name", "")).strip().casefold()
+        if name:
+            products.setdefault(name, []).append(product)
     for item in items or []:
         if not isinstance(item, dict):
             continue
-        product = products.get(str(item.get("name", "")).strip().casefold())
-        if not product:
+        matches = products.get(str(item.get("name", "")).strip().casefold(), [])
+        if len(matches) != 1:
             continue
+        product = matches[0]
         for field in ("hs_code", "origin", "unit"):
             if not str(item.get(field, "") or "").strip():
                 item[field] = product.get(field, "")

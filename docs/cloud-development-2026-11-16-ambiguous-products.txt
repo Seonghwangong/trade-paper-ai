@@ -1,0 +1,32 @@
+2026-11-16 09:00 Asia/Seoul cloud development
+Base main/live bc793a0d53a8fd61ee44f655d1856a3c8f2892fd.
+Read latest persistent record and standing runbook, including new b9ba704 source
+specification and bc793a0 test isolation changes. Preserve both and earlier work.
+44c6c93 remains unavailable as previously documented; not recreated or merged.
+
+Reproduced four failures: duplicate normalized product names selected the last
+catalog entry during server-side enrichment, arbitrarily filling missing HS,
+origin and quantity unit. Reversing catalog order changed customs information.
+Group by trimmed casefolded name and enrich only if exactly one catalog record
+matches. Leave ambiguous missing values empty and preserve explicit submitted
+values. Unique-name enrichment remains available; account-scoped lookup remains.
+No new HS/country/unit inference, no quantity/date/price changes or catalog edits.
+
+Validation with fresh fictional data:
+- Four cases failed before fix; five new cases now pass, covering order/case,
+  explicit submitted values and unique-name enrichment.
+- Full non-browser suite: 1786 passed, 38 deselected, 9 existing warnings.
+- Actual cloud Chromium fresh account with two same-name fictional products:
+  saved Invoice, linked Packing and both PDFs keep missing customs/unit fields
+  blank; no 111111/222222 catalog code arbitrarily applied. Numerical totals
+  unchanged (USD 12.00, one carton, net 2). Isolated health 200.
+- All 44 protected file hashes unchanged; git diff --check clean.
+- No customer/existing test data, catalog, payment, purchase, mail/promotion,
+  schedule, service, cost or security changes; no Mac/local browser dependence.
+Worktree /workspace/work/review-20261116; QA /workspace/work/ambiguous-product-qa.
+Confirmed Render workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0, autoDeploy=yes/commit. No duplicate manual deployment.
+Final commit/live/post-live health evidence in development-runs/latest.txt.
+Limit: direct production HTTP restricted by proxy; official Render logs used for
+health. Next: assess explicit product-selection usability with duplicate names,
+while preserving manual review and avoiding automatic customs assumptions.
