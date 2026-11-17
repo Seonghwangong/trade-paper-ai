@@ -435,7 +435,7 @@ def edit_invoice(invoice_no: str, request: Request):
 <p>After saving, review the Packing List and download updated PDFs. Previously downloaded files stay unchanged.</p>
 <p id="edit-error" role="alert" hidden></p>
 {form_footer("/invoice-list", "Update Invoice")}
-</form></div><script src="/static/invoice-edit.js?v=20261116-product-choice" defer></script></body></html>
+</form></div><script src="/static/invoice-edit.js?v=20261117-save-snapshot" defer></script></body></html>
 """
     return HTMLResponse(content)
 

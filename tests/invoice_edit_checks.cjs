@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const code = fs.readFileSync('app/static/invoice-edit.js', 'utf8');
 function element(value = '') {
-  return {value, textContent:'', listeners:{}, options:[], addEventListener(name, fn){this.listeners[name]=fn}, appendChild(option){this.options.push(option)},dispatchEvent(){},scrollIntoView(){}};
+  return {value, disabled:false, textContent:'', listeners:{}, options:[], addEventListener(name, fn){this.listeners[name]=fn}, appendChild(option){this.options.push(option)},dispatchEvent(){},scrollIntoView(){}};
 }
 async function setup(products, failed=false, result={ok:true,redirected:true,url:"http://example.test/invoice-list"}) {
   const rows = [[2,3],[4,5],[1.5,2.25]].map(([quantity,price],index) => {
@@ -15,6 +15,7 @@ async function setup(products, failed=false, result={ok:true,redirected:true,url
     return row;
   });
   const currency = element('USD'), total = element(), form = element(), error = element(), button = element();
+  form.querySelectorAll = () => [currency, button, ...rows.flatMap(row=>[row.select,...Object.values(row.fields)])];
   form.action = '/update-invoice/INV-1'; form.dataset = {}; form.querySelector = () => button;
   const window = {location:{href:'http://example.test/edit-invoice/INV-1'},tpMarkSaved(){this.saved=true}};
   const document = {querySelectorAll:()=>rows,querySelector:()=>currency,documentElement:{lang:'ko'},getElementById:id=>({'total':total,'invoice-edit-form':form,'edit-error':error}[id]),createElement:()=>element()};
@@ -89,4 +90,21 @@ test('untrusted continuation cannot navigate outside the review route',async()=>
   await form.listeners.submit({preventDefault(){}});
   assert.equal(window.location.href,'http://example.test/invoice-list');
  }
+});
+
+test('pending edit locks the submitted snapshot and restores prior disabled states on rejection',async()=>{
+ let respond; const pending=new Promise(resolve=>respond=resolve);
+ const {form,rows,currency,button}=await setup([],false,pending);
+ rows[2].fields.hs_code.disabled=true;
+ const submitted=form.listeners.submit({preventDefault(){}});
+ assert.equal(rows[0].fields.quantity.disabled,true);
+ assert.equal(rows[1].select.disabled,true);
+ assert.equal(currency.disabled,true);
+ assert.equal(button.disabled,true);
+ respond({ok:false,status:409}); await submitted;
+ assert.equal(rows[0].fields.quantity.disabled,false);
+ assert.equal(rows[1].select.disabled,false);
+ assert.equal(currency.disabled,false);
+ assert.equal(button.disabled,false);
+ assert.equal(rows[2].fields.hs_code.disabled,true);
 });

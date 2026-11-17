@@ -1,0 +1,34 @@
+2026-11-17 15:00 Asia/Seoul cloud development
+Base main/live72d9fd9e31070b1ac13956999fe6fbcefb947011.
+Read latest persistent record and standing runbook. Earlier create-form locking
+remains deployed; this change addresses the separate existing Invoice edit form.
+Preserve previous AI/product/PDF fixes and 44c6c93 unavailable/unmerged status.
+
+Reproduction in actual cloud Chromium: paused edit POST submits quantity3 while
+only submit button is locked; input can change to99, diverging from submitted
+snapshot before confirmation/navigation. No customer data used.
+Construct FormData before disabling controls, then lock form inputs/selects/
+textareas/buttons for duration of request. Restore every previous disabled state
+on completion, preserving existing login/conflict/retry behavior and explicit
+linked-review navigation. Refresh edit script cache version.
+
+Validation (fresh fictional data):
+- New deferred-response Node regression fails before fix and passes after fix.
+- Related Invoice edit JavaScript suite:11 cases passed (including conflicts,
+  session expiry, network errors, selection and linked continuation).
+- Full Python suite1839 passed,40 deselected,9 existing warnings.
+- Actual old-script browser shows POST3 versus UI99; fake409 prevents mutation.
+  New-script browser locks3 and product selection, multipart POST retains quantity
+  and revision, actual save confirms3, PDF total USD18.00. Isolated health200.
+- Initial browser harness attempted URL-encoded parsing of multipart FormData;
+  corrected MIME parsing and reran with fresh data. Product code did not change
+  to accommodate the harness error.
+- All44 protected file hashes unchanged; diff check clean. No real AI calls,
+  purchase/payment/mail/promotion, customer/existing test document changes,
+  new service/cost/security/schedule changes or Mac/local browser dependency.
+Worktree/work/review-pm-20261117; actual path/workspace/work/review-pm-20261117.
+QA/workspace/work/edit-snapshot-qa. Render confirmed workspace
+tea-d9g1qp3tqb8s73f0qhpg/service srv-d9g20smpbkes73d54ds0; autoDeploy=yes/commit.
+No duplicate manual deployment. Final commit/live/health evidence in latest.txt.
+Remaining direct HTTP restriction: verify official post-live Render health logs.
+Next: evidence-led save/review usability without repeating released fixes.

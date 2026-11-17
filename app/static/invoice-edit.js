@@ -51,10 +51,13 @@
     event.preventDefault();
     const button = form.querySelector('button[type="submit"]');
     if (button.disabled) return;
-    button.disabled = true;
+    const body = new FormData(form);
+    const controls = Array.from(form.querySelectorAll('input,select,textarea,button'));
+    const disabled = controls.map(control => control.disabled);
+    controls.forEach(control => { control.disabled = true; });
     error.hidden = true;
     try {
-      const response = await fetch(form.action, {method: 'POST', body: new FormData(form)});
+      const response = await fetch(form.action, {method: 'POST', body});
       const saved = response.ok && response.redirected && new URL(response.url, window.location.href).pathname === '/invoice-list';
       if (!saved) {
         const ko = document.documentElement.lang === 'ko';
@@ -85,7 +88,7 @@
         : 'Check your connection and save again. Your entries remain here.';
       error.hidden = false;
     } finally {
-      button.disabled = false;
+      controls.forEach((control, index) => { control.disabled = disabled[index]; });
     }
   });
 })();
