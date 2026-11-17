@@ -1,0 +1,33 @@
+2026-11-17 09:00 Asia/Seoul cloud development
+Base main/live 5c85a7ebfd9a1f9c3e5af79b31cf5ac8875e6d54.
+Read persistent latest record, runbook and subsequent source/security/opt-in AI
+beta releases (9764978,c740016,5c85a7e). Preserve consent/allowance/payment gates.
+44c6c93 still unavailable/unmerged as recorded; prior released fixes not repeated.
+
+Reproduced seven failures in AI result validation, using only synthetic responses:
+substring grounding accepted quantity5 from500,500 from1500,5 from-5,1 from1e3,
+price8 or50 from8.50 and amount4 from4,000.00. No actual provider call needed.
+Require complete numeric token boundaries within the already-grounded evidence
+before accepting quantity, unit price or amount. On mismatch leave number blank,
+retain quote/source and item, mark ai_unsupported for explicit user review.
+No number, currency, date, HS or customs guessing or conversion. Conservatively
+ambiguous token formatting requires review rather than accepting a substring.
+
+Validation (fresh fictional data):
+- Seven new cases failed before fix; eight new regression tests now pass.
+- Full non-browser suite: 1839 passed,40 deselected,9 existing warnings.
+- Actual cloud Chromium with guarded in-process fake provider: explicit consent,
+  note upload, model quantity5 quoted from500 becomes blank/aria-invalid; valid
+  price8.00 retained, original500 visible, review form invalid, no Invoice saved.
+- Isolated server health200; all44 protected file hashes unchanged.
+- No real AI request/cost, payment/purchase, mail/promotion, customer/existing test
+  data, subscription, environment, schedule, service or security changes.
+- git diff --check clean. No Mac/local browser dependency.
+QA /workspace/work/ai-numeric-qa; worktree /workspace/work/review-20261117.
+Render workspace tea-d9g1qp3tqb8s73f0qhpg/service srv-d9g20smpbkes73d54ds0;
+autoDeploy yes/commit. No duplicate manual deployment.
+Final commit/live/post-live health evidence in development-runs/latest.txt.
+Limit: this is numeric token validation, not proof of every semantic relationship
+in a quoted line. User review remains required. Direct production HTTP restricted
+by proxy; verify official Render logs for operational health.
+Next: evidence-led source review without real provider calls or guessed values.

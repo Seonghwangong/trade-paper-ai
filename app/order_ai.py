@@ -220,6 +220,10 @@ def validate_result(result, source):
         for key in ('quantity', 'unit_price', 'amount'):
             raw = item[key]
             item[key] = number(raw)
+            # Substring grounding alone accepts 5 from 500, 8 from 8.50 or
+            # 1 from 1e3. Require a complete numeric token in the quoted source.
+            if raw and not re.search(r'(?<![\w.,+\-−])' + re.escape(raw) + r'(?!\d|[.,]\d|[eE][+\-]?\d)', evidence[key]):
+                item[key] = ''
             if raw and not item[key]:
                 warnings.add('ai_unsupported')
         if all(item[k] for k in ('quantity', 'unit_price', 'amount')):
