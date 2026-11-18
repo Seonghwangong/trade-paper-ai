@@ -4,13 +4,15 @@
 const VERSION=1, TTL=7*24*60*60*1000, MAX_BYTES=1000000;
 const object=value=>Boolean(value)&&typeof value==='object'&&!Array.isArray(value);
 const strings=(value,max)=>object(value)&&Object.keys(value).length<=20&&Object.values(value).every(v=>typeof v==='string'&&v.length<=max);
+// Import joins up to 1000 description characters + " / " + 1000 specification characters.
+const itemStrings=value=>object(value)&&Object.keys(value).length<=20&&Object.entries(value).every(([key,v])=>typeof v==='string'&&v.length<=(key==='name'?2003:1000));
 function valid(value,now){
  if(!object(value)||value.version!==VERSION||!Number.isFinite(value.updated)||value.updated>now+60000||now-value.updated>TTL)return false;
  if(!['draft','saving','uncertain'].includes(value.status)||typeof value.note!=='string'||value.note.length>8000)return false;
  if(!['file','note'].includes(value.mode)||typeof value.label!=='string'||value.label.length>1000)return false;
  if(value.result===null)return value.status==='draft';
  const result=value.result;
- return object(result)&&strings(result.fields,1000)&&Array.isArray(result.items)&&result.items.length<=100&&result.items.every(item=>strings(item,1000))&&typeof result.source_text==='string'&&result.source_text.length<=200000&&Array.isArray(result.warnings)&&result.warnings.length<=120&&result.warnings.every(s=>typeof s==='string'&&s.length<=100)&&Array.isArray(result.unmatched_lines)&&result.unmatched_lines.length<=2000&&result.unmatched_lines.every(s=>typeof s==='string'&&s.length<=8000);
+ return object(result)&&strings(result.fields,1000)&&Array.isArray(result.items)&&result.items.length<=100&&result.items.every(itemStrings)&&typeof result.source_text==='string'&&result.source_text.length<=200000&&Array.isArray(result.warnings)&&result.warnings.length<=120&&result.warnings.every(s=>typeof s==='string'&&s.length<=100)&&Array.isArray(result.unmatched_lines)&&result.unmatched_lines.length<=2000&&result.unmatched_lines.every(s=>typeof s==='string'&&s.length<=8000);
 }
 function create(storage,scope,now=Date.now){
  const key='tradepaper-import-draft-v1:'+scope;

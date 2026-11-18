@@ -33,3 +33,12 @@ const draft={status:'draft',note:'Buyer: ABC',mode:'note',label:'Order note',res
  const denied=create({getItem(){throw Error('denied');},removeItem(){throw Error('denied');}},A);assert.equal(denied.load(),null);assert.equal(denied.write(draft).reason,'unavailable');
 }
 console.log('Draft recovery: reload, user isolation, expiry, pending submission, conflicting tabs, success cleanup and storage failures passed.');
+{
+ const storage=memory(),store=create(storage,A,()=>now);store.load();
+ const longName='N'.repeat(1000)+' / '+'S'.repeat(1000);
+ const combined={...draft,result:{...draft.result,items:[{name:longName,quantity:'2',unit_price:'6'}]}};
+ assert.equal(store.write(combined).ok,true);
+ assert.equal(create(storage,A,()=>now+1).load().result.items[0].name,longName);
+ assert.equal(store.write({...combined,result:{...combined.result,items:[{name:longName+'X'}]}}).ok,false);
+ assert.equal(store.write({...combined,result:{...combined.result,items:[{name:'Cup',unit:'X'.repeat(1001)}]}}).ok,false);
+}

@@ -110,7 +110,7 @@ const fields=['seller','seller_address','buyer','buyer_address','buyer_email','i
 const itemFields=['name','quantity','unit','unit_price','hs_code','origin'];
 const required=new Set(['seller','buyer','invoice_date','currency','name','quantity','unit_price']);
 function makeInput(key,value='',evidence=''){
- const label=document.createElement('label');label.textContent=t(key);const input=document.createElement('input');input.dataset.field=key;input.value=String(value??'');input.maxLength=key.includes('address')?1000:200;
+ const label=document.createElement('label');label.textContent=t(key);const input=document.createElement('input');input.dataset.field=key;input.value=String(value??'');input.maxLength=key==='name'?2003:key.includes('address')?1000:200;
  if(required.has(key))input.required=true;
  if(key==='invoice_date')input.type='date';
  if(key==='buyer_email')input.type='email';

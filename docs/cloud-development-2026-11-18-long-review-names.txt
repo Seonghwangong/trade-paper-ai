@@ -1,0 +1,35 @@
+2026-11-18 09:00 Asia/Seoul cloud development
+Base main/live1f52c29c22caa89ca1252d9a1766b593ab625739.
+Read latest record and standing runbook; preserve previously released changes
+and original44c6c93 unavailable/unmerged state. AI evidence recovery already
+exists; did not duplicate it. No real AI provider calls made.
+
+Reproduced failed draft storage assertion: imported description/specification
+can join two1000-character fields with " / ", but draft items allowed only1000
+characters and review input maxlength was200. Longer supported source names
+could not be edited normally and draft recovery could report unavailable.
+Allow only item name up to2003 in both review input and draft validation. Keep
+other item fields1000, metadata limits, total storage cap, account scope,
+seven-day expiry, existing drafts and conflict handling unchanged. Refresh only
+changed JavaScript cache versions; keep layout/colors/customer copy unchanged.
+
+Validation (fresh fictional data):
+- New Node regression failed before fix; now stores/restores full2003 name,
+  rejects2004 name and still rejects other oversized fields. Existing recovery,
+  user isolation, expiry, pending-save, conflict/cleanup/storage-failure checks pass.
+- Full Python suite1839 passed,40 deselected,9 existing warnings.
+- Actual cloud Chromium imports combined name/spec over1000, inserts a correction,
+  reloads and explicitly restores draft, saves exact corrected name, continues
+  to Packing page. Parsed PDF retains END-SPECX and USD12.00 total.
+- Isolated health200; all44 protected file hashes unchanged; diff check clean.
+- No customer/existing test data, payment/purchase/mail/promotion, real AI/cost,
+  environment/service/security/schedule changes or Mac/local browser dependency.
+QA/workspace/work/long-review-qa; worktree/workspace/work/review-20261118.
+Render confirmed workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0; autoDeploy=yes/commit; no duplicate manual deploy.
+Final commit/live/post-live health evidence in development-runs/latest.txt.
+Limit: existing repeat-order endpoint still has its own1000-character guard and
+requires opening the original for larger text; not changed in this run. Direct
+production HTTP restricted by proxy; official Render logs verify health.
+Next: assess repeat-order text compatibility with explicit original review,
+without changing historical dates or source values automatically.
