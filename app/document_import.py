@@ -369,9 +369,9 @@ def repeat_invoice_draft(account, invoice_no):
     source_items = record.get('items', [])
     if not isinstance(source_items, list) or len(source_items) > MAX_ITEMS:
         raise HTTPException(422, 'This invoice cannot be reused in the draft editor. Open the original invoice instead.')
-    def text(value):
+    def text(value, limit=1000):
         result = '' if value is None else str(value)
-        if len(result) > 1000:
+        if len(result) > limit:
             raise HTTPException(422, 'This invoice contains text too long for the draft editor. Open the original invoice instead.')
         return result
     fields = {key: text(record.get(key)) for key in META if key != 'source_reference'}
@@ -381,7 +381,9 @@ def repeat_invoice_draft(account, invoice_no):
     for item in source_items:
         if not isinstance(item, dict):
             raise HTTPException(422, 'This invoice contains an unreadable item. Open the original invoice instead.')
-        items.append({key: text(item.get(key)) for key in ('name', 'quantity', 'unit', 'unit_price', 'hs_code', 'origin')})
+        # Same description + " / " + specification limit as import review.
+        items.append({key: text(item.get(key), 2003 if key == 'name' else 1000)
+                      for key in ('name', 'quantity', 'unit', 'unit_price', 'hs_code', 'origin')})
     # Only supported editable fields travel to the new document. Old document,
     # shipment, payment, PDF and packing identifiers must never be inherited.
     lines = ['Invoice: ' + invoice_no, 'Invoice date: ' + text(record.get('invoice_date'))]

@@ -94,3 +94,31 @@ def test_bootstrap_escapes_invoice_text_and_list_links_to_review(records):
     listing = invoice.invoice_list(request()).body.decode()
     assert 'Repeat order' in listing
     assert '/import-document?repeat_invoice=INV-001' in listing
+
+
+@pytest.mark.parametrize('length', [1001, 2003])
+def test_repeat_accepts_supported_long_names_without_mutating_original(records, length):
+    path, original = records
+    original['items'][0]['name'] = 'N' * length
+    path.write_text(json.dumps([original]))
+    before = path.read_bytes()
+    draft = document_import.repeat_invoice_draft('a', 'INV-001')
+    assert draft['items'][0]['name'] == original['items'][0]['name']
+    assert draft['items'][0]['quantity'] == '120'
+    assert draft['items'][0]['unit_price'] == '3.25'
+    assert '2020-01-02' in draft['source_text']
+    assert draft['fields']['source_reference'] == ''
+    assert 'net_weight' not in draft['items'][0]
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize('location,key,length', [('item','name',2004),('item','unit',1001),('record','buyer',1001)])
+def test_repeat_still_rejects_unsupported_text_lengths(records, location, key, length):
+    path, original = records
+    target = original['items'][0] if location == 'item' else original
+    target[key] = 'X' * length
+    path.write_text(json.dumps([original])); before=path.read_bytes()
+    with pytest.raises(HTTPException) as error:
+        document_import.repeat_invoice_draft('a','INV-001')
+    assert error.value.status_code == 422
+    assert path.read_bytes() == before

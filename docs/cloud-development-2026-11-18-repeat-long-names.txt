@@ -1,0 +1,33 @@
+2026-11-18 15:00 Asia/Seoul cloud development
+Base main/live114e59322df49a523683e357a689a0a849635a72.
+Read latest record and standing runbook. Preserve prior review/draft recovery
+fix; this addresses the separate repeat-order server guard. Original44c6c93
+remains unavailable/unmerged as recorded; do not recreate it.
+
+Reproduced two failures: successfully imported/saved descriptions over1000
+characters could not be reused as a new order, because repeat endpoint rejected
+them despite the review editor supporting joined descriptions up to2003.
+Allow2003 only for repeated item name, matching existing review/draft limits.
+Keep other item/metadata1000, total source size, item count, tenant/role/archive
+checks and no-old-links semantics. Existing new-date suggestion stays unchanged;
+no original date or historical document is rewritten or silently confirmed.
+
+Validation (fresh fictional data):
+- Two new allowed-length cases failed before fix; five new cases cover1001/2003
+  allowed names and2004/oversized other-field rejection, including byte-for-byte
+  preservation of source invoice data.
+- Actual cloud Chromium imports and saves a long source description, opens
+  repeat draft without auto-saving, requires confirmation, explicitly changes
+  test quantity and creates a separate Invoice. Original record including date
+  unchanged; repeated name exact, original reference not copied, final PDF
+  END-SPECX and USD24.00 verified. No customer quantities/dates inferred.
+- Protected data file hashes all44 unchanged; isolated health200; diff check clean.
+- No customer/existing test data, purchases/payment, real AI/cost, mail/promotion,
+  new service/security/schedule changes or Mac/local browser dependency.
+QA/workspace/work/long-repeat-qa; worktree/workspace/work/repeat-20261118.
+Render confirmed workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0; autoDeploy yes/commit. No manual duplicate deploy.
+Final test totals/commit/live/post-live health in development-runs/latest.txt.
+Remaining direct production HTTP proxy restriction; official Render logs verify
+health. Next: evidence-led document workflow issues; no duplicate long-text fixes.
+Final full non-browser suite:1844 passed,40 deselected,9 existing warnings.
