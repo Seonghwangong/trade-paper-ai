@@ -70,9 +70,9 @@ def test_proforma_scope_crud_api_pdf_invoice_and_dependencies(tmp_path, monkeypa
 
     invoice_file = tmp_path / "invoices.json"; invoice_file.write_text("[]\n")
     monkeypatch.setattr(invoice, "INVOICE_FILE", invoice_file); monkeypatch.setattr(invoice, "USERS_FILE", users)
-    invoice.create_invoice(_request("A", "/invoice"), {"pi_no": "PI-001", "seller": "Seller A", "buyer": "Buyer A", "items": [{"name": "Product A"}]})
+    invoice.create_invoice(_request("A", "/invoice"), {"pi_no": "PI-001", "seller": "Seller A", "buyer": "Buyer A", "items": [{"name": "Product A", "quantity": 2, "unit_price": 10}]})
     with pytest.raises(DataValidationError):
-        invoice.create_invoice(_request("A", "/invoice"), {"pi_no": "PI-002", "seller": "Seller A", "buyer": "Buyer A", "items": [{"name": "Product A"}]})
+        invoice.create_invoice(_request("A", "/invoice"), {"pi_no": "PI-002", "seller": "Seller A", "buyer": "Buyer A", "items": [{"name": "Product A", "quantity": 2, "unit_price": 10}]})
 
     shipment_file = tmp_path / "shipments.json"; shipment_file.write_text(json.dumps([{"account_id": "A", "shipment_no": "SHP-A", "pi_no": "PI-001"}, {"account_id": "B", "shipment_no": "SHP-B", "pi_no": "PI-001"}]))
     original_data_path = referential_integrity.data_path

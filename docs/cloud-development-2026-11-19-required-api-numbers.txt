@@ -1,0 +1,37 @@
+2026-11-19 15:00 Asia/Seoul cloud development
+Base main/live03389cb9a360415afe0edf7c1c6bd24d1e213a03.
+Read latest record, runbook, AGENTS.md and new release-handoff skill. Preserve
+morning UI fix and subsequent handoff addition. Original44c6c93 unavailable/
+unmerged as previously documented; no recreation. Report every run to 사장님.
+
+Reproduced ten new failures: create/edit accepted missing,null or empty numeric
+values as0. Whitespace was already invalid. Add required numeric validation only
+for writes. Missing/blank quantity and price now rejected with existing validation
+response; explicit0 remains valid. Keep legacy PDF numeric normalization unchanged
+so old stored documents remain readable without rewriting data.
+
+Validation (new fictional data):
+- Fifteen new cases cover missing/null/empty/whitespace writes, original-byte
+  preservation after failed edits, explicit0 create/edit and legacy PDF values.
+- Actual isolated HTTP server: eight invalid create requests rejected with
+  existing HTTP409/no documents; blank edit409/original unchanged; explicit0
+  create/edit/PDF accepted. Cloud Chromium authenticated context; health200.
+- Initial HTTP harness expected422; matched existing409 validation contract and
+  reran with fresh data. No product response-status change made for the harness.
+- Initial full run1858 passed/1 failed: proforma ownership fixture omitted numbers.
+  Use its existing explicit quotation qty2/price10 in both valid/cross-tenant
+  reference cases, preserving ownership expectations rather than weakening tests.
+- All44 protected file hashes unchanged; diff check clean. No customer/existing
+  test data, real AI/payment/purchase/mail/promotion, new cost/service/security/
+  schedule changes or Mac dependence.
+QA/workspace/work/required-api-qa;worktree/workspace/work/api-20261119.
+Confirmed Render workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0;autoDeploy=yes/commit.No duplicate manual deploy.
+Final commit/live/post-live health in development-runs/latest.txt.
+Compatibility: API clients must submit explicit quantities/prices for new writes.
+Legacy PDF reads/defaults remain unchanged. Direct production HTTP proxy restricted;
+official Render logs verify health. Next:evidence-led write/review compatibility.
+Rion handoff: required internal brief tracked privately. No existing-chat list/read/
+send tool is available in this session; retain pending brief, never claim delivery
+or substitute customer email, another thread or a new schedule.
+Final full non-browser suite:1859 passed,40 deselected,9 existing warnings.

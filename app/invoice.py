@@ -51,6 +51,14 @@ def _invoice_number(field, value):
     return int(number) if number.is_integer() else number
 
 
+def _required_invoice_number(field, value):
+    """New writes require explicit values; legacy PDF normalization stays separate."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise DataValidationError(field, f"{field} is required.",
+                                  f"Enter a {field.lower()}, including zero when intended.")
+    return _invoice_number(field, value)
+
+
 def _account_id(request):
     user = request.scope.get("trade_paper_user") or {}
     account_id = str(user.get("account_id", "") or "").strip()
@@ -132,8 +140,8 @@ def create_invoice(request: Request, payload: dict = Body(...)):
     for item in record["items"]:
         if not isinstance(item, dict):
             raise DataValidationError("Items", "Each item must contain structured details.", "Add the item again, then save.")
-        item["quantity"] = _invoice_number("Quantity", item.get("quantity", 0))
-        item["unit_price"] = _invoice_number("Unit price", item.get("unit_price", 0))
+        item["quantity"] = _required_invoice_number("Quantity", item.get("quantity"))
+        item["unit_price"] = _required_invoice_number("Unit price", item.get("unit_price"))
     if not reviewed_import:
         product_module.enrich_items_from_products(record.get("items", []), _account_id(request))
     require_existing_reference("Proforma Invoice", record.get("pi_no", ""), load_proformas(_account_id(request)), "pi_no")
@@ -502,8 +510,8 @@ def update_invoice(
             updated_items = [dict(item) for item in existing_items] or [{}]
             for index, values in enumerate(updates):
                 values["name"] = require_text(f"Item {index + 1} name", values["name"])
-                values["quantity"] = _invoice_number(f"Item {index + 1} quantity", values["quantity"])
-                values["unit_price"] = _invoice_number(f"Item {index + 1} unit price", values["unit_price"])
+                values["quantity"] = _required_invoice_number(f"Item {index + 1} quantity", values["quantity"])
+                values["unit_price"] = _required_invoice_number(f"Item {index + 1} unit price", values["unit_price"])
                 updated_items[index].update(values)
 
             if signature_action == "use":

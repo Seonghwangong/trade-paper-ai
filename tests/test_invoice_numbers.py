@@ -91,3 +91,35 @@ def test_edit_preserves_other_items_and_first_item_metadata(store):
     assert items[0]['item_id'] == 'original-item'
     assert items[0]['custom_reference'] == 'keep-me'
     assert items[1] == other
+
+
+@pytest.mark.parametrize('field', ['quantity','unit_price'])
+@pytest.mark.parametrize('empty', [None,'','   ','missing'])
+def test_empty_numeric_create_never_writes_an_inferred_zero(store, field, empty):
+    item={'name':'Fictional item','quantity':2,'unit_price':6}
+    if empty=='missing':item.pop(field)
+    else:item[field]=empty
+    before=store.read_bytes()
+    with pytest.raises(DataValidationError):
+        invoice.create_invoice(_request('account-a'),{'seller':'Fictional Seller','buyer':'Fictional Buyer','items':[item]})
+    assert store.read_bytes()==before
+
+
+@pytest.mark.parametrize('field', ['quantity','unit_price'])
+@pytest.mark.parametrize('empty', [None,'','   '])
+def test_empty_numeric_edit_preserves_original_document(store, field, empty):
+    saved=create();before=store.read_bytes()
+    with pytest.raises(DataValidationError):update(saved['invoice_no'],**{field:empty})
+    assert store.read_bytes()==before
+
+
+def test_explicit_zero_and_legacy_pdf_values_remain_compatible(store):
+    saved=invoice.create_invoice(_request('account-a'),{'seller':'Fictional Seller','buyer':'Fictional Buyer',
+        'items':[{'name':'Fictional gift','quantity':2,'unit_price':0}]})
+    assert saved['items'][0]['unit_price']==0
+    update(saved['invoice_no'],quantity=0,unit_price=0)
+    assert json.loads(store.read_text())[0]['items'][0]['quantity']==0
+    payload={'seller':'Fictional Seller','buyer':'Fictional Buyer','items':[{'name':'Legacy item','quantity':'','unit_price':None}]}
+    before=store.read_bytes()
+    assert invoice.create_invoice_pdf(payload,{}).body.startswith(b'%PDF')
+    assert store.read_bytes()==before
