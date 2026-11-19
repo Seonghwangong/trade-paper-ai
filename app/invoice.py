@@ -103,6 +103,7 @@ def create_invoice(request: Request, payload: dict = Body(...)):
     record = dict(payload)
     record.pop("account_id", None)
     record.pop("signature_image", None)
+    record.pop("order_change_history", None)
     reviewed_import = record.pop("reviewed_import", False) is True
     include_signature = record.pop("include_signature", False) is True
     record["account_id"] = _account_id(request)
@@ -626,7 +627,7 @@ def invoice_list(request: Request, search: str = ""):
             button("PDF", f"/invoice-pdf/{invoice_no}", "secondary"),
             button("Send Email", f"/send-email/invoice/{invoice_no}", "secondary"),
             button("Created" if packing_exists else "Packing", packing_href, "secondary"),
-            button("Edit", f"/edit-invoice/{invoice_no}", "secondary") + " " + button("Repeat order", "/import-document?" + urlencode({'repeat_invoice': invoice_no}), "secondary"),
+            button("Edit", f"/edit-invoice/{invoice_no}", "secondary") + " " + button("Repeat order", "/import-document?" + urlencode({'repeat_invoice': invoice_no}), "secondary") + " " + button("수정 주문서 반영 / Apply revised order", "/import-document?" + urlencode({'revise_invoice': invoice_no}), "secondary") + ((" " + button("변경 기록 / Change history", "/order-changes/" + quote(invoice_no, safe="") + "/status", "secondary")) if inv.get("order_change_history") else ""),
             button("Delete", f"/delete-invoice/{invoice_no}", "danger"),
         ])
     content = search_toolbar(button("+ New Invoice", "/invoice"), button("← Dashboard", "/", "secondary"), action="/invoice-list", value=search, placeholder="Search invoice, buyer, seller or item", reset_url="/invoice-list", count_label=f"Total Invoices : {len(valid_invoices)}")

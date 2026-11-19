@@ -107,6 +107,7 @@ def load_invoice_records():
 def create_packing_list(request: Request, payload: dict = Body(...)):
     record = dict(payload)
     record.pop("account_id", None)
+    record.pop("order_change_history", None)
     account_id = _account_id(request)
     record["account_id"] = account_id
     record["packing_date"] = new_document_date(record.get("packing_date"), "Packing date")
