@@ -1,0 +1,45 @@
+Revised order comparison — implemented, NOT released
+
+User request: add the simple explained workflow: revised buyer order -> compare
+changes -> apply explicitly selected changes -> review physical packing figures.
+Base main/live: 2bed6054356d6c862e9666b73445f9acc00fcdde.
+
+Invoice list opens the existing importer in revise_invoice mode. Reuses its
+CSV/XLSX/PDF/photo reading and existing optional AI opt-in; no new API calls,
+provider, cost, service, credentials, customer data or email changes.
+Preview has no document writes. Blank source values keep saved fields. Unique
+full-name matches only; renamed/duplicate/unmatched items require explicit
+mapping. Changes start unchecked; bulk selection excludes removals. A version
+fingerprint rejects stale/replayed updates. Existing draft recovery is scoped
+to account/user/Invoice. Pending source reads disable applying older previews.
+
+Apply updates only the selected Invoice values, archives original record data
+without recursive history, and removes the old signature. Status page links to
+the existing packing comparison. Packing is NOT changed until actual carton/
+weight review is submitted. That confirmation also archives its old data.
+History PDF endpoints enforce account ownership and regenerate from prior
+document data without current company/master fallback. These are prior-content
+PDFs, not byte-identical copies of previously downloaded files. Previously
+downloaded PDFs never change. Other linked documents are not rewritten.
+History is limited to 100 amendments per document; no destructive truncation.
+
+Validation in isolated /tmp/tp-order-changes-20261119, no original repo changes:
+- 1867 Python tests passed, 42 browser tests deselected, 8 existing warnings.
+- 35 related Node tests passed (8 new amendment controller cases).
+- git diff --check clean; no test writes to protected customer data.
+- HTTP auth, tenant isolation, Viewer blocking, stale/replay/modified-payload
+  rejection, partial orders, explicit zero, ambiguous mappings, preservation,
+  packing confirmation/history and request-size bounds covered.
+- New browser test uses only fictional new accounts/data; AI/mail/payment off.
+  Chromium and WebKit attempts blocked before server startup: sandbox denies
+  socket bind (EPERM). Separate browser launch also denied by macOS sandbox.
+  Local-file fixture via CUA explicitly denied by browser URL policy. No bypass.
+  The fixture is NOT a successful browser test and was not used as evidence.
+
+Release gate: run tests/test_order_changes_browser.py in the existing supported
+cloud development environment; inspect desktop/mobile rendering and ensure the
+actual import->select->save->packing review flow works. Review signature/history
+PDF output. Rebase on then-current main before merging and preserving other
+development changes. Use existing automatic Render deployment; no duplicate
+manual deployment. Do not ask the user to repeat testing or grant new access.
+No merge, production deployment or schedule change was performed in this run.

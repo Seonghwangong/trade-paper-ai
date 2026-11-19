@@ -84,6 +84,7 @@ Object.assign(words,{
  itemLabel:['Item','품목'],
  emptyItems:['Add at least one item.','품목을 하나 이상 추가해 주세요.']
 });
+if(config.revise_invoice)Object.assign(words,{title:['Apply a revised order','수정 주문서 반영'],intro:['Upload the revised order, compare changes, then select what to apply. Blank values keep saved details.','수정 주문서를 넣고 바뀐 내용만 골라 반영하세요. 빈 값은 기존 내용을 유지합니다.'],save:['Compare with saved Invoice','기존 송장과 비교'],saveHint:['This updates an existing Invoice after review. No new document or email is created.','확인 후 기존 송장을 수정합니다. 새 문서를 만들거나 이메일을 보내지 않습니다.'],reviewHint:['Review extracted values against the source. Blank values keep saved details. Invoice date stays unchanged.','읽어온 값을 원본과 확인하세요. 빈 값과 송장 날짜는 기존 값을 유지합니다.'],sampleNotice:['Fictional sample. It will not change your Invoice until you explicitly select and apply changes.','가상 예시입니다. 변경을 골라 반영하기 전에는 송장이 바뀌지 않습니다.']});
 const t=key=>(words[key]||words.invalid_file)[ko?1:0];
 document.querySelectorAll('[data-i18n]').forEach(e=>e.textContent=t(e.dataset.i18n));
 $('ai-option').hidden=!config.ai_enabled;$('ai-consent').disabled=!config.ai_enabled;
@@ -104,11 +105,12 @@ const recoveredDraft=draftStore.load();
 
 function setStep(step){document.querySelectorAll('[data-step]').forEach(el=>{const n=Number(el.dataset.step);el.classList.toggle('complete',n<step);if(n===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');});}
 function setStatus(key,error=false){$('status').textContent=t(key);$('status').dataset.kind=error?'error':'info';}
-function setBusy(value){value=value||pendingRecovery||saveUncertain;busy=value;$('ai-consent').disabled=value||!config.ai_enabled;$('file').disabled=value;$('sheet').disabled=value;$('sample').disabled=value;$('drop-zone').setAttribute('aria-busy',String(value));$('draft-clear').disabled=value||saving||saveUncertain;for(const id of ['note-build','note-sample','order-note','voice-language','source-file','source-note'])$(id).disabled=value;$('note-mic').disabled=value&&!voiceActive;}
+function setBusy(value){value=value||pendingRecovery||saveUncertain;busy=value;revisionController?.setExternalBusy(value);$('ai-consent').disabled=value||!config.ai_enabled;$('file').disabled=value;$('sheet').disabled=value;$('sample').disabled=value;$('drop-zone').setAttribute('aria-busy',String(value));$('draft-clear').disabled=value||saving||saveUncertain;for(const id of ['note-build','note-sample','order-note','voice-language','source-file','source-note'])$(id).disabled=value;$('note-mic').disabled=value&&!voiceActive;}
 
 const fields=['seller','seller_address','buyer','buyer_address','buyer_email','invoice_date','currency','trade_term','payment_term','source_reference'];
 const itemFields=['name','quantity','unit','unit_price','hs_code','origin'];
-const required=new Set(['seller','buyer','invoice_date','currency','name','quantity','unit_price']);
+const required=new Set(config.revise_invoice?['name']:['seller','buyer','invoice_date','currency','name','quantity','unit_price']);
+let revisionController=null;
 function makeInput(key,value='',evidence=''){
  const label=document.createElement('label');label.textContent=t(key);const input=document.createElement('input');input.dataset.field=key;input.value=String(value??'');input.maxLength=key==='name'?2003:key.includes('address')?1000:200;
  if(required.has(key))input.required=true;
@@ -161,8 +163,9 @@ function updateReviewIssues(){
 }
 $('review-next').addEventListener('click',()=>{const issue=reviewIssues()[0];if(issue)focusIssue(issue.target);});
 function renderDraft(result,extra=[]){
+ revisionController?.invalidate();
  activeWarnings=[...(result.warnings||[]),...extra];activeUnmatched=result.unmatched_lines||[];if(result.items.some(item=>item.check_amount))activeWarnings.push('amount');sourceLabel=result.source_label||file?.name||t('noteSource');
- const values=result.fields||{};if(!result.restored&&!values.seller&&!(result.warnings||[]).includes('conflicting_seller')){values.seller=config.company.name||'';values.seller_address=values.seller_address||config.company.address||'';}
+ const values=result.fields||{};if(!config.revise_invoice&&!result.restored&&!values.seller&&!(result.warnings||[]).includes('conflicting_seller')){values.seller=config.company.name||'';values.seller_address=values.seller_address||config.company.address||'';}
  $('fields').replaceChildren();fields.forEach(key=>$('fields').append(makeInput(key,values[key],result.field_evidence?.[key])));$('items').replaceChildren();(result.items.length?result.items:[{}]).forEach((item,i)=>addItem(item,result.item_evidence?.[i]||{}));
  $('source-text').textContent=result.source_text||'';$('warnings').textContent=[...new Set([...(result.warnings||[]),...extra])].map(key=>t(key.startsWith('conflicting_')?'conflict':key)).join('\n');
  $('workspace').hidden=false;$('review-hint').hidden=false;$('review-heading').textContent=t('review');$('review-form').hidden=false;$('saved').hidden=true;$('confirmed').checked=false;$('save').disabled=false;draftReady=true;saved=false;saveUncertain=false;updateTotal();setStatus('ready');setStep(2);$('file-name').textContent=sourceLabel;$('file-name').hidden=false;$('review-heading').focus({preventScroll:true});scheduleDraft();
@@ -249,7 +252,17 @@ for(const event of ['dragenter','dragover'])$('drop-zone').addEventListener(even
 $('drop-zone').addEventListener('dragleave',e=>{if(!$('drop-zone').contains(e.relatedTarget))$('drop-zone').classList.remove('drag-over');});
 $('drop-zone').addEventListener('drop',e=>{e.preventDefault();$('drop-zone').classList.remove('drag-over');if(e.dataTransfer.files.length===1)chooseFile(e.dataTransfer.files[0]);else setStatus('oneFile',true);});
 $('add').addEventListener('click',()=>{const count=$('items').children.length;addItem();$('confirmed').checked=false;if($('items').children.length>count)focusIssue($('items').lastElementChild.querySelector('input'));});
+if(config.revise_invoice){
+ $('review-form').noValidate=true;$('confirmed').closest('label').hidden=true;
+ revisionController=window.TPOrderChanges.create({config,label:t,
+  lock:value=>{saving=value;setBusy(value);$('review-form').querySelectorAll('input,button').forEach(el=>el.disabled=value);},
+  complete:()=>{saved=true;window.clearTimeout(autoSaveTimer);draftStore.clear();if(window.tpMarkSaved)window.tpMarkSaved();}
+ });
+ document.querySelectorAll('a[href^="?lang="]').forEach(a=>{const u=new URL(a.href);u.searchParams.set('revise_invoice',config.revise_invoice);a.href=u.href;});
+}
 $('review-form').addEventListener('submit',async event=>{
+ if(config.revise_invoice){event.preventDefault();if(!saved&&!saveUncertain&&!saving&&!busy&&!draftStore.conflict)await revisionController.review(captureDraft().result);return;}
+
  event.preventDefault();if(saved||saveUncertain||saving||busy||!$('review-form').reportValidity())return;if(!$('items').children.length){$('status').textContent=t('no_items');return;}if(draftStore.conflict){showStorageResult({ok:false,reason:'conflict'});return;}saving=true;persistDraft('saving');if(draftStore.conflict){saving=false;return;}$('save').disabled=true;setStatus('saving');const payload={reviewed_import:true};$('fields').querySelectorAll('input').forEach(i=>payload[i.dataset.field]=i.value.trim());payload.items=[...$('items').children].map(row=>Object.fromEntries([...row.querySelectorAll('input')].map(i=>[i.dataset.field,i.value.trim()])));let response;const controls=[...$('review-form').querySelectorAll('input,button')];controls.forEach(el=>el.disabled=true);setBusy(true);
  try{response=await fetch('/invoice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch(e){saving=false;setBusy(false);saveUncertain=true;persistDraft('uncertain');setBusy(false);setStatus('retrySave',true);const a=document.createElement('a');a.href='/invoice-list';a.textContent=t('checkInvoices');$('status').append(document.createElement('br'),a);return;}
  if(response.status>=500&&!response.redirected){saving=false;showUncertainSave();persistDraft('uncertain');setBusy(false);return;}

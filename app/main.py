@@ -714,6 +714,8 @@ app.include_router(buyer_router)
 app.include_router(customer_router)
 from app.document_import import router as document_import_router
 app.include_router(document_import_router)
+from app.order_changes import router as order_changes_router
+app.include_router(order_changes_router)
 app.include_router(export_wizard_router)
 app.include_router(onboarding_router)
 app.include_router(team_router)

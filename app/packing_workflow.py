@@ -175,6 +175,9 @@ def attach_routes(router):
                 if c != c.to_integral_value() or g < n:
                     raise HTTPException(422, 'Cartons must be whole numbers; gross weight must be at least net weight.')
                 row.update(carton=int(c), net_weight=str(n), gross_weight=str(g))
+            if source.get('order_change_history'):
+                from app.order_changes import retain_previous
+                retain_previous(updated, current, 'Confirmed revised order packing')
             pack.assign_item_ids(updated['items'], [r.get('item_id', '') for r in updated['items']])
             def replace(rows):
                 for index, row in enumerate(rows):
