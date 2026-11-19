@@ -36,6 +36,12 @@
     const lockedFields = [];
     try {
       if (!savedNumber) {
+        for (const id of ['qty1', 'price1']) {
+          if (!document.getElementById(id).reportValidity()) {
+            showWorkflowError(label('Enter quantity and unit price. Enter zero explicitly when intended.', '수량과 단가를 입력해 주세요. 0은 직접 입력해야 합니다.'));
+            return;
+          }
+        }
         const params = new URLSearchParams(window.location.search);
         const data = Object.fromEntries(fieldIds.map(id => [id, document.getElementById(id).value]));
         data.items = getItems();

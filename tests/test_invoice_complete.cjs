@@ -3,6 +3,7 @@ const source=fs.readFileSync('app/static/invoice-complete.js','utf8');
 function setup(responses,lang='ko'){
  const calls=[],errors=[],next=[],fields={};const node=()=>({style:{},appendChild(){},replaceChildren(...children){this.children=children;},scrollIntoView(){}});
  for(const id of ['seller','seller_address','seller_email','seller_phone','currency','buyer','buyer_address','buyer_email','complete-invoice','completed-invoice-pdf','include-signature'])fields[id]={...node(),value:id};
+ for(const [id,value] of [['qty1','2'],['price1','6']])fields[id]={value,reportValidity(){return this.value.trim()!=='';}};
  const context={URLSearchParams,Object,Error,document:{documentElement:{lang},getElementById:id=>fields[id],createElement:node,querySelectorAll:()=>[fields.seller,fields.buyer]},getItems:()=>[{name:'Mug',quantity:2,unit_price:6}],clearWorkflowMessage(){},showWorkflowError:m=>errors.push(m),workflowErrorMessage:async()=> 'Request failed',workflowMessageArea:node,showShipmentReturn(){},showInvoiceNextActions:n=>next.push(n),window:{location:{search:'?pi_no=PI-001&shipment_no=SHP-001'},URL:{createObjectURL:()=> 'blob:pdf'}},fetch:async(url,opts)=>{calls.push({url,opts});const r=responses.shift();if(r instanceof Error)throw r;if(typeof r==='function')return r();return r;}};
  vm.runInNewContext(source,context);return {...context,fields,calls,errors,next};
 }
@@ -39,3 +40,5 @@ test('uncertain save keeps the submitted fields locked for checking the invoice 
  assert.equal(c.fields.seller.disabled,true);
  assert.equal(c.fields['complete-invoice'].disabled,true);
 });
+
+for(const id of ['qty1','price1'])test('blank numeric field blocks save without inventing zero: '+id,async()=>{const c=setup([saved(),pdf()]);c.fields[id].value='';await c.window.saveInvoice();assert.equal(c.calls.length,0);assert.match(c.errors[0],/수량과 단가/);assert.equal(c.fields['complete-invoice'].disabled,false);c.fields[id].value='0';await c.window.saveInvoice();assert.equal(c.calls.length,2);});

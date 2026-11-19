@@ -84,8 +84,8 @@ button{padding:16px;background:#111827;color:white;border:none;border-radius:12p
 <input id="hs1" placeholder="HS Code">
 <input id="origin1" placeholder="Country of Origin">
 <input id="unit1" placeholder="Unit">
-<input id="qty1" type="number" step="any" min="0" inputmode="decimal" aria-label="Quantity" placeholder="Quantity" oninput="calculateTotal()">
-<input id="price1" type="number" step="any" min="0" inputmode="decimal" aria-label="Unit Price" placeholder="Unit Price" oninput="calculateTotal()">
+<input id="qty1" type="number" step="any" min="0" required inputmode="decimal" aria-label="Quantity" placeholder="Quantity" oninput="calculateTotal()">
+<input id="price1" type="number" step="any" min="0" required inputmode="decimal" aria-label="Unit Price" placeholder="Unit Price" oninput="calculateTotal()">
 </div>
 
 <div class="total" id="total">Total: USD 0</div>
@@ -135,7 +135,7 @@ async function loadProducts(){
 let productSuggestTimer;
 function applyProduct(product){
     document.getElementById("item1").value = product.name || "";
-    document.getElementById("price1").value = product.unit_price || 0;
+    document.getElementById("price1").value = product.unit_price ?? "";
     document.getElementById("hs1").value = product.hs_code || "";
     document.getElementById("origin1").value = product.origin || "";
     document.getElementById("unit1").value = product.unit || "";
@@ -279,7 +279,7 @@ async function loadProformaPrefill(){
     document.getElementById("item1").value = firstItem.name || "";
     document.getElementById("hs1").value = firstItem.hs_code || "";
     document.getElementById("qty1").value = firstItem.qty || "";
-    document.getElementById("price1").value = firstItem.unit_price || "";
+    document.getElementById("price1").value = firstItem.unit_price ?? "";
 
     calculateTotal();
 }

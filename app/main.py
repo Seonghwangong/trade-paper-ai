@@ -623,7 +623,7 @@ function showPackingNextActions(packingNo,invoiceNo){
 """
     if kind == "invoice":
         behavior = """
-<script src="/static/invoice-complete.js?v=20261110"></script>
+<script src="/static/invoice-complete.js?v=20261119-required-numbers"></script>
 """
     else:
         behavior = """

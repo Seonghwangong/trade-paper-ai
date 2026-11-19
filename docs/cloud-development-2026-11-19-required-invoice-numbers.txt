@@ -1,0 +1,36 @@
+2026-11-19 09:00 Asia/Seoul cloud development
+Base main/livec165819a1788ce8f8b404612955e7849250e8167.
+Read latest record, standing runbook and prior preserved/released history.
+44c6c93 remains unavailable/unmerged as recorded; earlier fixes not repeated.
+
+Reproduced actual direct-Invoice UI saving blank quantity/price as0. Input
+controls lacked required validation and completion converted empty values to0.
+Require both numeric inputs and call native validity before any save request.
+Keep the form editable with a concise correction message when either is blank.
+Explicit0 remains allowed. Product and proforma price prefills use nullish
+fallbacks so unknown empty prices stay empty and stored0 remains0. Refresh
+completion script cache. No backend API defaults or legacy document data change.
+
+Validation with fresh fictional account/data:
+- Two new Node cases fail before fix: blank quantity/price must send no request;
+  corrected explicit0 remains accepted. Related completion suite passes after fix.
+- Actual cloud Chromium runs original script to reproduce blank->0 save only in
+  new fictional data, then new script: blank quantity/price send no POST, no new
+  Invoice, inputs editable; explicit price0 with quantity2 saves and PDFUSD0.00.
+- Isolated health200; all44 protected file hashes unchanged; diff check clean.
+- No customer/existing test data, real purchase/payment/AI/mail/promotion,
+  new cost/service/security/environment/schedule changes or Mac dependency.
+QA/workspace/work/blank-invoice-qa;worktree/workspace/work/review-20261119.
+Confirmed Render workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0;autoDeploy yes/commit.No duplicate manual deployment.
+Final test totals/commit/live/post-live health in development-runs/latest.txt.
+Limit: this changes direct Invoice UI validation; existing server API defaults
+and legacy PDF rendering remain unchanged. Direct production HTTP proxy
+restricted; official Render logs verify health. Next: evidence-led server-side
+required numeric policy/compatibility, preserving intentional explicit0 invoices.
+
+Reporting update: every execution reports to 사장님 with respectful Korean,
+completed changes/tests/deployment/pending-next work, even no-change/blocked.
+This supersedes silent-exit guidance in older runbooks/records. Do not change
+notification settings through task text; schedules/environments unchanged.
+Final full non-browser suite:1844 passed,40 deselected,9 existing warnings.
