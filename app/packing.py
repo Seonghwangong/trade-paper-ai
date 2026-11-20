@@ -381,13 +381,14 @@ def update_packing(
             continue
 
         try:
-            quantity_value = float(quantity[i] or 0) if i < len(quantity) else 0
+            raw_quantity = quantity[i] if i < len(quantity) else ""
+            quantity_value = float(raw_quantity) if raw_quantity is not None and str(raw_quantity).strip() else ""
         except (TypeError, ValueError) as exc:
             raise DataValidationError(
                 "Quantity", "Quantity must be a number.",
                 "Enter a numeric quantity, then save again.",
             ) from exc
-        if quantity_value.is_integer():
+        if isinstance(quantity_value, float) and quantity_value.is_integer():
             quantity_value = int(quantity_value)
 
         items.append({

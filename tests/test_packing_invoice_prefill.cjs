@@ -40,3 +40,13 @@ test('Invoice prefill keeps full specifications, quantities and even blank share
   assert.equal(fields.buyer.value,'Buyer');
   assert.deepEqual(events,['tp:prefill-complete']);
 });
+
+for(const [raw,expected] of [['',''],['   ',''],['0',0],['2.5',2.5]])test('Packing data keeps unconfirmed quantity distinct from explicit zero: '+JSON.stringify(raw),()=>{
+ const card={querySelector:selector=>({value:selector==='.item'?'Fictional box':selector==='.quantity'?raw:''})};
+ const context={window:{},document:{getElementById:()=>({value:''}),querySelectorAll:()=>[card]}};
+ vm.createContext(context);vm.runInContext(script,context);
+ const data=context.getPackingData();
+ assert.equal(data.items[0].quantity,expected);
+ assert.equal(data.items[0].carton,'');
+ assert.equal(data.items[0].net_weight,'');
+});

@@ -364,7 +364,7 @@ function getPackingData(){
         if(name){
             items.push({
                 name: name,
-                quantity: Number(card.querySelector(".quantity").value || 0),
+                quantity: card.querySelector(".quantity").value.trim() === "" ? "" : Number(card.querySelector(".quantity").value),
                 hs_code: card.querySelector(".hs_code").value,
                 origin: card.querySelector(".origin").value,
                 unit: card.querySelector(".unit").value,

@@ -1,0 +1,36 @@
+2026-11-20 15:00 Asia/Seoul cloud development
+Base main/livef82b7a7d7ce154ccacc600c60a0c2e70b18e8743.
+Read latest record,runbook,AGENTS.md and release-handoff instructions. Preserve
+morning unconfirmed aggregate fix and older released work;44c6c93 remains
+unavailable/unmerged. Every execution reports respectfully to 사장님.
+
+Reproduced blank/whitespace Packing quantity serialization as0. Preserve blank
+as blank in direct Packing form; keep explicit0/decimal quantities numeric.
+Follow-up browser review found edit endpoint also turned blank into0. Preserve
+missing/null/blank edit quantity without changing numeric normalization for
+explicit values. Drafts may remain unconfirmed; no quantity is inferred from
+Invoice or prior documents. No existing document is migrated or rewritten.
+
+Validation (fresh fictional data):
+- New real-script Node cases fail before fix for blank/whitespace; now cover
+  unknown versus0/2.5 while retaining blank carton/weight. Completion checks pass.
+- Added seven server edit regressions: empty/whitespace/null/missing/0/numeric0/
+  fractional quantity, preserving other account's Packing and source Invoice bytes.
+- Actual cloud Chromium:clear prefilled quantity,save blank,read PDF with no
+  standalone0,edit and save without change still blank,explicitly edit0 then
+  PDF shows0. Linked Invoice unchanged;isolated health200.
+- Initial harness expected string0 after edit;existing numeric normalization is
+  intentional,so assert numeric0 and rerun with fresh data. No change made just
+  to accommodate harness type expectation.
+- Protected files all44 hashes unchanged;diff check clean. No customer/existing
+  test data,real AI/purchases/payment/mail/promotion,new cost/service/security/
+  schedule changes or Mac/local browser dependency.
+QA/workspace/work/packing-quantity-qa;worktree/workspace/work/packing-pm-20261120.
+Render workspace tea-d9g1qp3tqb8s73f0qhpg/service srv-d9g20smpbkes73d54ds0,
+autoDeploy yes/commit;no manual duplicate deploy.Final test/commit/live/health
+in development-runs/latest.txt. Direct HTTP proxy restriction unchanged;official
+Render logs verify health. Rion brief pending:chat list/read/send tools absent,
+no delivery claimed;private brief retained,not substituted with mail/new thread.
+Next:evidence-led Packing review usability,keeping unknown distinct from zero.
+Final full non-browser suite:1886 passed,40 deselected,9 existing warnings.
+Two related Node scripts pass(Packing prefill/completion),including4 new cases.

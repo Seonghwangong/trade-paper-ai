@@ -137,3 +137,19 @@ def test_changed_documents_still_offer_review_without_changing_weights(records, 
     for body in (packing.edit_packing('PK-1', request()).body.decode(), packing.packing_list(request()).body.decode()):
         assert '/packing-sync/PK-1' in body
     assert (pp.read_bytes(), ip.read_bytes()) == before
+
+
+@pytest.mark.parametrize('quantities,expected', [([''],''),(['   '],''),([None],''),([],''),(['0'],0),([0],0),(['2.5'],2.5)])
+def test_packing_edit_preserves_unknown_quantity_and_explicit_numbers(records,monkeypatch,quantities,expected):
+    current,source,other,pp,ip=records
+    monkeypatch.setattr(packing,'INVOICE_FILE',ip)
+    monkeypatch.setattr(packing,'direct_document_shipment_no',lambda *args:'')
+    monkeypatch.setattr(packing,'shipment_detail_redirect_url',lambda *args:'/packing-list')
+    before_invoice=ip.read_bytes()
+    packing.update_packing('PK-1',request(),invoice_no='INV-1',seller='Seller',buyer='Old Buyer',
+        item_name=['Shirt'],quantity=quantities,hs_code=['6109'],carton=['5'],net_weight=['20'],
+        gross_weight=['25'],item_id=[],origin=['Korea'],unit=['PCS'])
+    stored=json.loads(pp.read_text())
+    assert stored[0]['items'][0]['quantity']==expected
+    assert stored[1]==other
+    assert ip.read_bytes()==before_invoice
