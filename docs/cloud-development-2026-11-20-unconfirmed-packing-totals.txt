@@ -1,0 +1,37 @@
+2026-11-20 09:00 Asia/Seoul cloud development
+Base main/live65120a8220d71c63c515d6aedbbf0d992dfdf024.
+Read latest record, runbook, AGENTS.md and release-handoff skill. Preserve prior
+write validation/PDF compatibility work and44c6c93 unavailable/unmerged state.
+Every execution reports to 사장님; old silent-exit guidance is superseded.
+
+Reproduced19 PDF failures: missing/TBC/nonfinite/negative measurements could
+publish zero or a partial sum; fractional cartons were rounded down in totals.
+Keep original row values and stored documents unchanged. Publish each aggregate
+only if every corresponding item measurement is present, finite, non-negative,
+and (for cartons) integral; otherwise display Not confirmed. Explicit0 remains0.
+Use decimal numeric accumulation. Preserve other valid aggregates independently.
+Direct Packing form now sends blank carton as blank rather than converting it0.
+No measurement/date/customs inference or conversion; no customer data migrations.
+
+Validation with fresh fictional data:
+-19 cases failed before fix;20 new tests now pass covering missing/null/TBC/NaN/
+  infinity/negative values for three aggregates, fractional cartons and explicit0.
+- Initial full suite1879 passed,40 deselected,9 existing warnings.
+- Actual cloud Chromium saves blank net weight/carton as blank, downloads PDF
+  with Not confirmed aggregates, then explicitly edits fake carton1/net2. Updated
+  PDF returns numeric totals; linked Invoice remains unchanged. Isolated health200.
+- PDF rendered and visually checked: confirmation text fits summary panel.
+- All44 protected file hashes unchanged; diff check clean.
+- No customer/existing test account/document changes, purchase/payment, AI calls,
+  mail/promotion, new cost/service/security/schedule changes or Mac dependence.
+QA/workspace/work/packing-totals-qa;worktree/workspace/work/review-20261120.
+Render confirmed workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0,autoDeploy yes/commit;no manual duplicate deploy.
+Final test totals/commit/live/health in development-runs/latest.txt.
+Limit: this does not certify measurements or cross-check net versus gross; user
+review remains required. Direct production HTTP proxy restricted; official logs
+verify health. Rion handoff pending: no existing-chat list/read/send tools; private
+brief retained, never claim delivery or substitute email/new chat/schedule.
+Next:evidence-led packing review/confirmation usability without guessed weights.
+Final full suite after blank-carton UI fix:1879 passed,40 deselected,9 warnings.
+Two related Node scripts passed(Packing prefill/completion).

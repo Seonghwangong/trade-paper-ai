@@ -368,7 +368,7 @@ function getPackingData(){
                 hs_code: card.querySelector(".hs_code").value,
                 origin: card.querySelector(".origin").value,
                 unit: card.querySelector(".unit").value,
-                carton: Number(card.querySelector(".carton").value || 0),
+                carton: card.querySelector(".carton").value.trim() === "" ? "" : Number(card.querySelector(".carton").value),
                 net_weight: card.querySelector(".net_weight").value,
                 gross_weight: card.querySelector(".gross_weight").value
             });

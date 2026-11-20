@@ -1,4 +1,5 @@
 from io import BytesIO
+from decimal import Decimal, DecimalException
 from app.document_dates import new_document_date, saved_document_date
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Body, Response, Form, HTTPException, Request
@@ -479,6 +480,23 @@ def preview_packing_list_pdf(request: Request, payload: dict = Body(...)):
 preview_packing_list_pdf.__name__ = "create_packing_list_pdf"
 
 
+def _confirmed_packing_total(items, field, whole=False):
+    """Do not turn missing measurements into zero or publish a partial sum."""
+    total = Decimal(0)
+    try:
+        for item in items:
+            raw = item.get(field)
+            if raw is None or isinstance(raw, bool) or not str(raw).strip():
+                return None
+            value = Decimal(str(raw).strip())
+            if not value.is_finite() or value < 0 or (whole and value != value.to_integral_value()):
+                return None
+            total += value
+        return total if total.is_finite() else None
+    except (DecimalException, ValueError, TypeError):
+        return None
+
+
 def create_packing_list_pdf(payload, company=None, buyer_master=None):
     payload = public_packing(payload)
     company = company if isinstance(company, dict) else load_company()
@@ -594,9 +612,9 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
     page_top = y
     line_gap = 10
 
-    total_carton = 0
-    total_net_weight = 0.0
-    total_gross_weight = 0.0
+    total_carton = _confirmed_packing_total(items, "carton", whole=True)
+    total_net_weight = _confirmed_packing_total(items, "net_weight")
+    total_gross_weight = _confirmed_packing_total(items, "gross_weight")
 
     item_count = len(items)
 
@@ -605,21 +623,6 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
         carton = item.get("carton", "")
         net_weight = item.get("net_weight", "")
         gross_weight = item.get("gross_weight", "")
-
-        try:
-            total_carton += int(float(carton or 0))
-        except:
-            pass
-
-        try:
-            total_net_weight += float(net_weight or 0)
-        except:
-            pass
-
-        try:
-            total_gross_weight += float(gross_weight or 0)
-        except:
-            pass
 
         lines = wrap_pdf_text(pdf, item.get("name", ""), 135, TP_UNICODE, 8)
         unit = str(item.get("unit") or "").strip()
@@ -676,9 +679,11 @@ def create_packing_list_pdf(payload, company=None, buyer_master=None):
     text_x = summary_x + 15
     text_y = summary_top - 28
     line_gap = 18
-    pdf.drawString(text_x, text_y, f"Total Cartons: {total_carton}")
-    pdf.drawString(text_x, text_y - line_gap, f"Total Net Weight: {total_net_weight:g}")
-    pdf.drawString(text_x, text_y - line_gap * 2, f"Total Gross Weight: {total_gross_weight:g}")
+    def confirmed(value):
+        return format(value, 'g') if value is not None else "Not confirmed"
+    pdf.drawString(text_x, text_y, f"Total Cartons: {confirmed(total_carton)}")
+    pdf.drawString(text_x, text_y - line_gap, f"Total Net Weight: {confirmed(total_net_weight)}")
+    pdf.drawString(text_x, text_y - line_gap * 2, f"Total Gross Weight: {confirmed(total_gross_weight)}")
 
     draw_signature_footer()
 
