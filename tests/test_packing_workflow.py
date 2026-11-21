@@ -153,3 +153,17 @@ def test_packing_edit_preserves_unknown_quantity_and_explicit_numbers(records,mo
     assert stored[0]['items'][0]['quantity']==expected
     assert stored[1]==other
     assert ip.read_bytes()==before_invoice
+
+
+@pytest.mark.parametrize('quantity', [0,120])
+def test_refresh_preview_preserves_explicit_zero_inputs_without_writes(records,quantity):
+    current,source,other,pp,ip=records
+    current['items'][0].update(quantity=quantity,carton=0,net_weight=0,gross_weight=0)
+    source['items'][0]['quantity']=quantity
+    pp.write_text(json.dumps([current,other]));ip.write_text(json.dumps([source]))
+    before=pp.read_bytes(),ip.read_bytes()
+    body=endpoint('/packing-sync/{packing_no}','GET')('PK-1',request()).body.decode()
+    for key in ('carton','net_weight','gross_weight'):
+        assert f'required value="0"' in body.split(f'name="{key}" type="number"',1)[1].split('>',1)[0]
+    assert f'name="quantity" value="{quantity}"' in body
+    assert (pp.read_bytes(),ip.read_bytes())==before

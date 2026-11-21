@@ -132,7 +132,7 @@ def attach_routes(router):
             lang = 'ko' if request.query_params.get('lang', request.cookies.get('tp_language')) == 'ko' else 'en'
             return RedirectResponse('/edit-packing/' + quote(packing_no, safe='') + '?lang=' + lang, status_code=303)
         proposed = proposal(current, source)
-        esc = lambda x: html.escape(str(x or ''), quote=True)
+        esc = lambda x: html.escape(str(x if x is not None else ''), quote=True)
         target = quote(packing_no, safe='')
         content = '<p>Compare the changes below. Applying replaces parties and items from the Invoice. Changed or ambiguous items need cartons and weights entered again. Existing downloaded PDFs and other linked documents are not updated.</p>'
         content += '<h2>Before / After</h2><table><thead><tr><th>Field</th><th>Saved Packing List</th><th>Current Invoice</th></tr></thead><tbody>'
