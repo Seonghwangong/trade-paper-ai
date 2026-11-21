@@ -92,3 +92,21 @@ def test_extra_packing_line_is_visible_with_its_missing_weight():
     rows = review([item()], [item(), extra])
     assert rows[1]['invoice_index'] is None and rows[1]['packing_index'] == 1
     assert rows[1]['issues'] == ['unpaired', 'net_missing']
+
+
+@pytest.mark.parametrize('left,right,delta', [(0,5,5),(5,0,-5),('0','0.0',0)])
+def test_explicit_zero_quantity_is_comparable_without_changing_documents(left,right,delta):
+    invoice={'items':[item(quantity=left)]};packing={'items':[item(quantity=right)]}
+    before=deepcopy((invoice,packing))
+    row=review_items(invoice,packing)[0]
+    assert row['delta']==Decimal(delta)
+    assert 'quantity_missing' not in row['issues']
+    assert ('quantity_different' in row['issues']) == bool(delta)
+    assert (invoice,packing)==before
+
+
+@pytest.mark.parametrize('unknown', ['',None,'NaN',-1])
+def test_unknown_or_invalid_quantity_is_not_equivalent_to_zero(unknown):
+    row=review([item(quantity=0)],[item(quantity=unknown)])[0]
+    assert row['delta'] is None
+    assert 'quantity_missing' in row['issues']

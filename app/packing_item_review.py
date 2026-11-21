@@ -13,10 +13,10 @@ def _name(item):
     return ' '.join(_text(item.get('name')).split()).casefold()
 
 
-def _number(value):
+def _number(value, *, zero=False):
     try:
         result = Decimal(_text(value))
-        return result if result.is_finite() and 0 < result <= 100000000 else None
+        return result if result.is_finite() and 0 <= result <= 100000000 and (zero or result > 0) else None
     except InvalidOperation:
         return None
 
@@ -42,7 +42,7 @@ def review_items(invoice, packing):
                     issues.append(field + '_missing')
                 elif a != b:
                     issues.append(field + '_different')
-            a, b = _number(item.get('quantity')), _number(other.get('quantity'))
+            a, b = _number(item.get('quantity'), zero=True), _number(other.get('quantity'), zero=True)
             if a is None or b is None:
                 issues.append('quantity_missing')
             elif 'unit_missing' not in issues and 'unit_different' not in issues:
