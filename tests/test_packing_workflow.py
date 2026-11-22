@@ -167,3 +167,12 @@ def test_refresh_preview_preserves_explicit_zero_inputs_without_writes(records,q
         assert f'required value="0"' in body.split(f'name="{key}" type="number"',1)[1].split('>',1)[0]
     assert f'name="quantity" value="{quantity}"' in body
     assert (pp.read_bytes(),ip.read_bytes())==before
+
+
+def test_refresh_inputs_match_existing_server_measurement_bounds(records):
+    body=endpoint('/packing-sync/{packing_no}','GET')('PK-1',request()).body.decode()
+    for key,minimum,step in [('carton','1','1'),('net_weight','0.000001','0.000001'),('gross_weight','0.000001','0.000001')]:
+        attributes=body.split(f'name="{key}" type="number"',1)[1].split('>',1)[0]
+        assert f'min="{minimum}"' in attributes
+        assert f'step="{step}"' in attributes
+        assert 'max="100000000"' in attributes

@@ -1,0 +1,26 @@
+2026-11-22 cloud development; base main/live2c0ba572184f803d4d8090a888b28f414296b173.
+Read latest record,runbook,AGENTS.md and existing handoff instructions;preserve
+prior fixes and unavailable/unmerged44c6c93 status. Every run reports to 사장님.
+
+Reproduced refresh-form mismatch with unchanged server rules:client min0 allowed
+zero physical measurements that server rejects;step0.001 disallowed six-decimal
+weights server accepts;client lacked server maximum100000000. Align only field
+constraints:cartons1..100000000,integer;weights0.000001..100000000,step0.000001.
+No new default values,measurement inference,policy relaxation or document migration.
+Gross>=net/stale-version/account checks remain server-enforced as before.
+
+Validation:new bounds regression failed before fix. Actual cloud Chromium with
+fresh fictional account/documents:existing0 visible but invalid,requestSubmit
+sends no POST;micro weights accepted;over-max cartons blocked;explicit valid
+apply succeeds,source Invoice unchanged,PDF totals verified. Protected44 hashes
+unchanged,isolated health200,diff check clean.No customer/existing test writes,
+AI/purchase/payment/mail/promotion,cost/service/security/schedule changes or Mac.
+QA/workspace/work/measurement-bounds-qa;worktree/workspace/work/review-20261122.
+Confirmed Render workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0;autoDeploy yes/commit,no manual duplicate deploy.
+Final tests/commit/live/health in development-runs/latest.txt. Direct production
+HTTP proxy restricted;official Render logs verify health. Rion handoff pending
+if chat list/read/send tools unavailable;no substitute email/new thread/schedule.
+Next:evidence-led client feedback for cross-field physical measurement validation,
+without certifying or guessing customer values.
+Final full suite:1896 passed,40 browser deselected,9 existing warnings.

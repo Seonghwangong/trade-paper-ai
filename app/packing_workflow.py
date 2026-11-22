@@ -148,7 +148,7 @@ def attach_routes(router):
             for key in SHARED:
                 content += f'<input type="hidden" name="{ "item_name" if key == "name" else key}" value="{esc(row.get(key))}">'
             for key in WEIGHTS:
-                content += f'<label>{key.replace("_", " ").title()}<input name="{key}" type="number" min="0" step="{"1" if key == "carton" else "0.001"}" required value="{esc(row.get(key))}"></label>'
+                content += f'<label>{key.replace("_", " ").title()}<input name="{key}" type="number" min="{"1" if key == "carton" else "0.000001"}" max="100000000" step="{"1" if key == "carton" else "0.000001"}" required value="{esc(row.get(key))}"></label>'
             content += '</section>'
         content += '<p>All weights are shipment-line totals in kg. Check the actual packing before applying.</p><button type="submit">Apply reviewed Invoice changes</button></form>'
         content += f'<p><a href="/edit-packing/{target}">Cancel</a></p><script src="/static/packing-assistant.js?v=20261101-flow" defer></script>'
