@@ -141,7 +141,7 @@ def attach_routes(router):
         content += '</tbody></table>'
         lang = request.query_params.get('lang', request.cookies.get('tp_language', 'en'))
         content += render_item_review(source, current, lang)
-        content += f'<form method="post" action="/packing-sync/{target}" data-native-submit="true">'
+        content += f'<form method="post" action="/packing-sync/{target}" data-native-submit="true" data-packing-review="true" data-review-lang="{esc(lang)}">'
         content += f'<input type="hidden" name="version" value="{fingerprint([current, source])}"><h2>Items to apply</h2>'
         for row in proposed['items']:
             content += f'<section class="packing-sync-item"><p translate="no">{esc(row.get("name"))} · {esc(row.get("quantity"))} {esc(row.get("unit"))}</p>'
@@ -151,6 +151,7 @@ def attach_routes(router):
                 content += f'<label>{key.replace("_", " ").title()}<input name="{key}" type="number" min="{"1" if key == "carton" else "0.000001"}" max="100000000" step="{"1" if key == "carton" else "0.000001"}" required value="{esc(row.get(key))}"></label>'
             content += '</section>'
         content += '<p>All weights are shipment-line totals in kg. Check the actual packing before applying.</p><button type="submit">Apply reviewed Invoice changes</button></form>'
+        content += '<script src="/static/packing-refresh-review.js?v=20261122-weight-relation" defer></script>'
         content += f'<p><a href="/edit-packing/{target}">Cancel</a></p><script src="/static/packing-assistant.js?v=20261101-flow" defer></script>'
         return HTMLResponse(page_shell('Refresh Packing List from Invoice', content), headers={'Cache-Control': 'no-store'})
 

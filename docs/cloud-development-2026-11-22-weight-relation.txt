@@ -1,0 +1,31 @@
+2026-11-22 15:00 Asia/Seoul cloud development
+Base main/livea1c4f8862bee0490a7933ef369faa09aed93be98.
+Read latest record,runbook,AGENTS.md and release-handoff instructions;preserve
+prior bounds fixes and44c6c93 unavailable/unmerged status.Report every execution.
+
+Reproduced real browser failure:net3/gross2 passed form validity and required a
+server rejection. Add scoped refresh-form script using native custom validity
+on gross weight. Validate on input/change and submission,clear stale relation
+errors after either weight changes,and keep native individual-field validation.
+English/Korean correction asks user to check actual weights. Never rewrite or
+estimate either value. Server validation/stale-version/tenant checks unchanged.
+Without JavaScript,the same existing server rejection remains authoritative.
+
+Validation with new fictional data:
+- Before browser assertion(net3/gross2 must be invalid)failed.
+- Three Node tests pass:relation failure/correction,either-side updates,Korean
+  message,submit guard,missing/native-invalid values,equal micro weights.
+- Full Python1896 passed,40 deselected,9 existing warnings.
+- Actual cloud Chromium:invalid relation has gross-field validation message,
+  requestSubmit sends no POST,typed3/2 unchanged;editing net/gross clears/rechecks;
+  valid apply/PDF verified,source Invoice unchanged,protected44 hashes unchanged.
+- Isolated health200,diff check clean.No customer/existing test data,real AI/
+  purchase/payment/mail/promotion,new cost/service/security/schedule changes or Mac.
+QA/workspace/work/weight-relation-qa;worktree/workspace/work/review-pm-20261122.
+Render confirmed workspace tea-d9g1qp3tqb8s73f0qhpg/service
+srv-d9g20smpbkes73d54ds0;autoDeploy yes/commit;no duplicate manual deployment.
+Final commit/live/health in development-runs/latest.txt.Direct HTTP proxy
+restricted;official Render logs verify health.Rion pending:chat list/read/send
+unavailable;private brief retained without delivery claims or substitute mail.
+Limit:native field feedback is shown on validation/submission;this does not
+measure or certify weights. Next:evidence-led workflow review,not inferred data.
