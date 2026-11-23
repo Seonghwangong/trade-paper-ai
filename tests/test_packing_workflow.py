@@ -208,3 +208,35 @@ def test_packing_settings_keep_field_limits_without_mutation(records, field, val
         save(request(), dict(settings, **{field: value}))
     assert error.value.status_code == 422
     assert get(request()) == before
+
+
+def test_light_item_settings_are_saved_without_assuming_one_unit_shipment(records):
+    save = endpoint('/packing-defaults', 'POST')
+    get = endpoint('/packing-defaults', 'GET')
+    settings = dict(name='Fictional lightweight label', hs_code='', origin='', unit='PCS',
+                    units_per_carton=100,
+                    net_per_unit='.0001', tare_per_carton='.001')
+    assert calculate(dict(settings, quantity=100)) == {
+        'carton': 1, 'net_weight': '0.010', 'gross_weight': '0.011'}
+    before = records[3].read_bytes(), records[4].read_bytes()
+    assert save(request(), settings) == {'saved': True}
+    assert get(request()) == [settings]
+    assert get(request('b')) == []
+    assert (records[3].read_bytes(), records[4].read_bytes()) == before
+    # The actual shipment still needs to meet the existing total-weight bounds.
+    with pytest.raises(HTTPException):
+        calculate(dict(settings, quantity=1))
+
+
+@pytest.mark.parametrize('field,value', [('units_per_carton', 0), ('net_per_unit', 0),
+                                        ('net_per_unit', 'NaN'), ('tare_per_carton', -1),
+                                        ('net_per_unit', '.0000001'), ('units_per_carton', 100000001)])
+def test_saved_packing_settings_still_validate_each_input(records, field, value):
+    save = endpoint('/packing-defaults', 'POST')
+    get = endpoint('/packing-defaults', 'GET')
+    settings = dict(name='Fictional label', units_per_carton=100,
+                    net_per_unit='.0001', tare_per_carton='.001')
+    with pytest.raises(HTTPException) as error:
+        save(request(), dict(settings, **{field: value}))
+    assert error.value.status_code == 422
+    assert get(request()) == []

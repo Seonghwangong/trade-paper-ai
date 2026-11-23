@@ -1,0 +1,29 @@
+2026-11-23 15:00 Asia/Seoul cloud development
+Base main/live5f6dc7b9b3c3585a51520712d91490dee33f89b4.
+Read latest record/runbook/AGENTS/release-handoff and preserved history.
+44c6c93 still unavailable/unmerged;released fixes retained.Report every run.
+
+Reproduced:packing settings for a0.0001kg/unit label calculate correctly at
+quantity100 (1carton,0.010kg net,0.011kg gross),but saving the specification
+returns422 because validation invents a one-unit shipment below0.001kg.
+Share parameter validation between actual calculation and saved specifications.
+Saved specifications validate capacity/net-per-unit/tare,without any implied
+shipment quantity.Actual calculate retains all existing quantity,total min/max,
+precision,finite-number and carton/rounding policies.No physical facts inferred.
+
+Regression tests:light-item save/load,tenant isolation,no Invoice/Packing mutation,
+actual one-unit shipment still rejected;zero/NaN/negative/overprecision/oversize
+parameter rejection unchanged. Before fix1failed/6passed.
+Cloud Chromium fresh fictional account:save,reload auto suggestion,calculate100
+units,download two readable PDFs;health200;44protected hashes unchanged.
+QA/workspace/work/light-settings-qa. Full test/final commit/deployment evidence
+in persistent development-runs/latest.txt.New test initially missed normalized
+blank identity keys;corrected its fixture to include explicit keys.
+
+No customer/existing test data changes,real AI/payment/purchase/mail/promotion,
+Mac dependency,new cost/service/security changes,new/local schedule changes.
+Render confirmed workspace/service explicit,autoDeploy yes/commit;no manual deploy.
+Official conversation list/read/send unavailable;Rion private brief pending.
+Next:evidence-led review of remaining import/review/document workflow issues.
+
+Final full Python:1908passed,40deselected,9existing warnings in70.35s.

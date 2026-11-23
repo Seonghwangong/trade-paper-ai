@@ -31,11 +31,15 @@ def number(value, label, *, zero=False):
         raise HTTPException(422, f'{label}: enter a finite {"non-negative" if zero else "positive"} number (maximum 100000000).')
 
 
+def packing_parameters(payload):
+    return (number(payload.get('units_per_carton'), 'Units per carton'),
+            number(payload.get('net_per_unit'), 'Net weight per unit'),
+            number(payload.get('tare_per_carton'), 'Packaging weight per carton', zero=True))
+
+
 def calculate(payload):
     quantity = number(payload.get('quantity'), 'Quantity')
-    capacity = number(payload.get('units_per_carton'), 'Units per carton')
-    net_each = number(payload.get('net_per_unit'), 'Net weight per unit')
-    tare = number(payload.get('tare_per_carton'), 'Packaging weight per carton', zero=True)
+    capacity, net_each, tare = packing_parameters(payload)
     cartons = (quantity / capacity).to_integral_value(rounding=ROUND_CEILING)
     net = quantity * net_each
     gross = net + cartons * tare
@@ -112,7 +116,9 @@ def attach_routes(router):
         # Preserve that exact identity when saving a reusable packing profile.
         if not key[0] or len(key[0]) > 2003 or any(len(part) > 200 for part in key[1:]):
             raise HTTPException(422, 'Enter an item name (maximum 2003 characters); other fields allow 200 characters.')
-        calculate(dict(payload, quantity=1))
+        # A reusable specification has no shipment quantity yet. Validate its
+        # inputs without inventing a one-unit shipment and rejecting light items.
+        packing_parameters(payload)
         settings = {k: payload.get(k, '') for k in (*IDENTITY, 'units_per_carton', 'net_per_unit', 'tare_per_carton')}
         def save(rows):
             old = next((r for r in rows if r.get('account_id') == account and identity(r['settings']) == key), None)
