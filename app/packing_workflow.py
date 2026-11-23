@@ -108,8 +108,10 @@ def attach_routes(router):
     def save_defaults(request: Request, payload: dict = Body(...)):
         account = pack._account_id(request)
         key = identity(payload)
-        if not key[0] or any(len(part) > 200 for part in key):
-            raise HTTPException(422, 'Enter an item name (maximum 200 characters per field).')
+        # Imported descriptions can join a 1000-character name and specification.
+        # Preserve that exact identity when saving a reusable packing profile.
+        if not key[0] or len(key[0]) > 2003 or any(len(part) > 200 for part in key[1:]):
+            raise HTTPException(422, 'Enter an item name (maximum 2003 characters); other fields allow 200 characters.')
         calculate(dict(payload, quantity=1))
         settings = {k: payload.get(k, '') for k in (*IDENTITY, 'units_per_carton', 'net_per_unit', 'tare_per_carton')}
         def save(rows):

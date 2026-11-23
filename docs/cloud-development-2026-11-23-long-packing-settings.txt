@@ -1,0 +1,34 @@
+2026-11-23 09:00 Asia/Seoul — cloud development
+Base main/live: aebb2e06299c2867b3dd18187a3535ff908f4737.
+Read latest persistent record, tracked runbook, preserved commit history and
+AGENTS/release-handoff skill. 44c6c93 remains unavailable and unmerged.
+Every-run reporting overrides the older silent-run rule.
+
+Reproduced defect: an imported name/specification of 1000 + 3 + 1000 characters
+is supported in the Invoice flow, but saving its packing settings returned422
+because all identity fields used the old200-character limit.
+Allow2003 characters only for the profile name. Keep other identity fields at200,
+existing calculations, account isolation, profile cap and exact identity matching.
+No item identity truncation or automatic physical-data confirmation.
+
+Regression: before fix1failed/4passed. Added tests for max-length roundtrip,
+exact-match update, tenant separation, unchanged Invoice/Packing documents and
+rejection without mutation of oversized name/HS/origin/unit fields.
+Cloud Chromium with a new fictional account: create long-name Invoice/Packing,
+save settings with actual fictional inputs,reload auto suggestion,calculate
+1carton/4.000net/4.500gross,download readable Invoice and Packing PDFs;health200.
+Existing document bytes unchanged during settings operations;44 protected hashes
+unchanged. QA:/workspace/work/long-settings-qa. Full suite result and final
+commit/deployment evidence are in persistent development-runs/latest.txt.
+
+Verification notes: initial sandbox suite stalled and was terminated;rerun with
+loopback-capable execution. Browser harness corrected .2/0.2 equivalence and the
+existing /packing-list-pdf route;these were verification errors,not product bugs.
+No real AI/payment/purchase/mail/promotion,customer or existing test data changes,
+Mac dependency,new cost/service/security permission,manual duplicate deploy,
+new schedule or local schedule changes.
+Render explicit confirmed workspace/service;autoDeploy yes/new commit.
+Rion official conversation list/read/send unavailable;retain private pending brief.
+Next:review remaining import-to-document usability based on reproducible evidence.
+
+Full Python suite:1901 passed,40 deselected,9 existing warnings in76.75s.

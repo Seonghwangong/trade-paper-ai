@@ -176,3 +176,35 @@ def test_refresh_inputs_match_existing_server_measurement_bounds(records):
         assert f'min="{minimum}"' in attributes
         assert f'step="{step}"' in attributes
         assert 'max="100000000"' in attributes
+
+
+def test_long_imported_name_can_save_and_reload_packing_settings(records):
+    save = endpoint('/packing-defaults', 'POST')
+    get = endpoint('/packing-defaults', 'GET')
+    name = 'N' * 1000 + ' / ' + 'S' * 1000
+    settings = dict(name=name, hs_code='', origin='', unit='PCS',
+                    units_per_carton=20, net_per_unit='.2', tare_per_carton='.5')
+    original_documents = records[3].read_bytes(), records[4].read_bytes()
+    save(request(), settings)
+    assert get(request())[0] == settings
+    assert get(request('b')) == []
+    save(request(), dict(settings, net_per_unit='.3'))
+    assert len(get(request())) == 1
+    assert get(request())[0]['name'] == name
+    assert get(request())[0]['net_per_unit'] == '.3'
+    assert (records[3].read_bytes(), records[4].read_bytes()) == original_documents
+
+
+@pytest.mark.parametrize('field,value', [('name', 'N' * 2004), ('hs_code', 'H' * 201),
+                                        ('origin', 'O' * 201), ('unit', 'U' * 201)])
+def test_packing_settings_keep_field_limits_without_mutation(records, field, value):
+    save = endpoint('/packing-defaults', 'POST')
+    get = endpoint('/packing-defaults', 'GET')
+    settings = dict(name='Fictional shirt', units_per_carton=20,
+                    net_per_unit='.2', tare_per_carton='.5')
+    save(request(), settings)
+    before = get(request())
+    with pytest.raises(HTTPException) as error:
+        save(request(), dict(settings, **{field: value}))
+    assert error.value.status_code == 422
+    assert get(request()) == before
