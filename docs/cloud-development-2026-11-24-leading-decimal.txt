@@ -1,0 +1,30 @@
+2026-11-24 09:00 Asia/Seoul cloud development
+Base main/live fafc8f87221cebb6dfd603cefcbfc6614abf3bbb.
+Read latest persistent record,runbook,AGENTS/release-handoff and preserved history.
+44c6c93 remains unavailable/unmerged;released functionality preserved.
+Every-run reports override the historical silent-run rule.
+
+Reproduced:CSV/XLSX explicit .5 quantity/.25 price were discarded as blank in
+review despite unambiguous decimal notation.Allow leading-dot decimals with
+1–6 fractional digits under the existing range limit;Decimal preserves their
+numeric value and precision.Original source text stays unchanged.
+No acceptance of signed,comma-decimal,scientific,malformed or overprecision input.
+No invented quantities/weights/HS/customs/dates.No change to pricing or rounding.
+
+Before fix:6failed/7passed targeted tests.Four number cases plus CSV and XLSX
+source tests cover quantity/price/amount including .0 and .000001;invalid formats
+remain blank.Final full Python1921passed,40deselected,9existing warnings76.65s.
+Fresh fictional Cloud Chromium:CSV upload,review normalized explicit .5 values,
+source text/date blank retained,explicit fictional-user today's-date selection,
+confirmed Invoice saved,USD0.25 PDF and readable Packing PDF;health200.
+Protected44hashes unchanged.QA /workspace/work/leading-decimal-qa.
+QA notes:first browser harness omitted required user date,then incorrectly
+expected a different existing half-cent rounding result.Used explicit current
+fictional date and exactly representable .5*.5=.25 for final PDF verification.
+
+No real AI/purchase/payment/mail/promotion,customer/existing test data changes,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Confirmed Render workspace/service explicit;autoDeploy yes/commit,no manual deploy.
+Final commit/main/live/post-live health evidence in development-runs/latest.txt.
+Rion official conversation tools unavailable;private pending brief retained.
+Next:remaining source-review usability from concrete reproduction.

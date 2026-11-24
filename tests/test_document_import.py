@@ -226,3 +226,34 @@ def test_import_uses_existing_document_creation_and_never_sends_email():
     assert "'/document-email" not in js
     assert 'isEvalSupported:false' in js
     assert "workerPath:'/static/vendor/" in js
+
+
+@pytest.mark.parametrize('source,expected', [('.5', '0.5'), ('.500000', '0.500000'),
+                                            ('.000001', '0.000001'), ('.0', '0.0')])
+def test_explicit_leading_dot_decimals_preserve_source_value(source, expected):
+    assert subject.number(source) == expected
+
+
+@pytest.mark.parametrize('source', ['.', '.0000001', '-.5', '+.5', ',5', '.5USD', '.5e2'])
+def test_ambiguous_or_out_of_range_leading_decimals_need_review(source):
+    assert subject.number(source) == ''
+
+
+@pytest.mark.parametrize('kind', ['csv', 'xlsx'])
+def test_leading_dot_source_values_survive_import_review(kind):
+    if kind == 'csv':
+        data = b'Description,Qty,Unit Price,Amount\nFictional fractional material,.5,.25,.125\n'
+    else:
+        data = workbook('<row><c r="A1" t="inlineStr"><is><t>Description</t></is></c>'
+                        '<c r="B1" t="inlineStr"><is><t>Qty</t></is></c>'
+                        '<c r="C1" t="inlineStr"><is><t>Unit Price</t></is></c>'
+                        '<c r="D1" t="inlineStr"><is><t>Amount</t></is></c></row>'
+                        '<row><c r="A2" t="inlineStr"><is><t>Fictional fractional material</t></is></c>'
+                        '<c r="B2"><v>.5</v></c><c r="C2"><v>.25</v></c>'
+                        '<c r="D2"><v>.125</v></c></row>')
+    rows, _, _ = subject.spreadsheet_rows(data, 'fictional.' + kind)
+    draft = subject.parse_rows(rows)
+    assert draft['items'] == [dict(name='Fictional fractional material', quantity='0.5',
+                                   unit_price='0.25', amount='0.125')]
+    assert '.5' in draft['source_text']
+    assert draft['fields']['invoice_date'] == ''

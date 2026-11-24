@@ -57,8 +57,8 @@ META_MAP = {normalized(alias): key for key, aliases in META.items() for alias in
 
 def number(value):
     text = str(value).strip()
-    # Only unambiguous dot decimals and groups of three comma-separated digits.
-    if not re.fullmatch(r'(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,6})?', text):
+    # Only unambiguous dot decimals (including .5) and groups of three digits.
+    if not re.fullmatch(r'(?:(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,6})?|\.\d{1,6})', text):
         return ''
     try:
         result = Decimal(text.replace(',', ''))
