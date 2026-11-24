@@ -257,3 +257,29 @@ def test_leading_dot_source_values_survive_import_review(kind):
                                    unit_price='0.25', amount='0.125')]
     assert '.5' in draft['source_text']
     assert draft['fields']['invoice_date'] == ''
+
+
+@pytest.mark.parametrize('code', ['usd', 'Usd', 'uSd'])
+def test_file_currency_prefix_case_does_not_discard_explicit_prices(code):
+    result = subject.parse_rows([['Description', 'Qty', 'Unit Price', 'Amount'],
+                                 ['Fictional bolts', '2', code + ' 8.50', code + ' 17.00']])
+    assert result['fields']['currency'] == 'USD'
+    assert result['items'] == [dict(name='Fictional bolts', quantity='2', unit_price='8.50', amount='17.00')]
+    assert code + ' 8.50' in result['source_text']
+
+
+def test_lowercase_currency_conflict_stays_unconfirmed_with_values_preserved():
+    rows, _, _ = subject.spreadsheet_rows(
+        b'Currency,USD\nDescription,Qty,Unit Price\nFictional bolts,2,eur 8.50\n', 'fictional.csv')
+    result = subject.parse_rows(rows)
+    assert result['fields']['currency'] == ''
+    assert 'conflicting_currency' in result['warnings']
+    assert result['items'][0]['unit_price'] == '8.50'
+    assert 'eur 8.50' in result['source_text']
+
+
+@pytest.mark.parametrize('source', ['usd8.50', 'us 8.50', 'usdd 8.50', 'uſd 8.50'])
+def test_invalid_currency_prefix_is_not_inferred(source):
+    result = subject.parse_rows([['Description', 'Qty', 'Unit Price'], ['Fictional bolts', '2', source]])
+    assert result['fields']['currency'] == ''
+    assert result['items'][0]['unit_price'] == ''

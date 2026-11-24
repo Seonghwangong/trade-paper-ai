@@ -1,0 +1,29 @@
+2026-11-24 15:00 Asia/Seoul cloud development
+Base main/live d20ff8a16bdc2d565b68216c8b7b625eef465af1.
+Read persistent latest/runbook/AGENTS/release-handoff and preserved history.
+44c6c93 unavailable/unmerged;prior memo case and file conflict fixes retained.
+Every-run reporting supersedes historical silent-run instruction.
+
+Reproduced:file-based review recognizes USD 8.50 only when the separated prefix
+is uppercase;usd 8.50 with a separating space loses its price,and conflicting
+lowercase EUR can be missed.Accept exactly three ASCII letters before whitespace
+in monetary cells,then reuse existing uppercase normalization/conflict handling.
+No guessing from currency symbols,unseparated codes,non-ASCII lookalikes or quantity.
+No exchange conversion,pricing or rounding changes.Original text retained.
+
+Before:4failed/4passed.Regression covers three letter-case variants,price/amount,
+retained source text,CSV metadataUSD vs lowercaseEUR conflict blank,warnings,
+invalid two/four-letter/unseparated/non-ASCII prefixes still blank.
+Fresh fictional Chromium:CSV usd/Usd values becomeUSD and explicit .5 values;
+user selects today's date and confirms.Invoice USD0.25 and Packing PDFs passed.
+Separate context:USD vs eur price preserved8.50,currency blank,warning visible,
+save sends no POST and creates no extra Invoice;health200;44protected hashes unchanged.
+QA:/workspace/work/currency-case-qa.Full suite/final live evidence in latest.txt.
+
+No real AI/payment/purchase/mail/promotion,customer/existing test data changes,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Explicit confirmed Render workspace/service;autoDeploy yes/commit,no manual deploy.
+Official conversation tools unavailable;Rion private pending brief retained.
+Next:remaining source-review usability supported by reproduction,not inferred data.
+
+Final full Python:1929passed,40deselected,9existing warnings in86.95s.

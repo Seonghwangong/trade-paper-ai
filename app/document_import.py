@@ -172,7 +172,7 @@ def parse_rows(rows):
         for key in ('quantity', 'unit_price', 'amount'):
             if key in item or key != 'amount':
                 raw = item.get(key, '')
-                money = re.fullmatch(r'([A-Z]{3})\s+(.+)', raw) if key != 'quantity' else None
+                money = re.fullmatch(r'([A-Za-z]{3})\s+(.+)', raw) if key != 'quantity' else None
                 if money:
                     remember('currency', money[1])
                     raw = money[2]
