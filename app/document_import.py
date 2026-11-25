@@ -30,7 +30,7 @@ ALIASES = {
     'unit_price': ('unit price', 'unitprice', 'price', 'price per unit', '단가'),
     'unit': ('unit', 'uom', '단위'),
     'amount': ('amount', 'total', 'line total', '금액'),
-    'hs_code': ('hs code', 'hscode', 'hs', '세번'),
+    'hs_code': ('hs code', 'hscode', 'hs', 'HS 코드', '세번'),
     'origin': ('origin', 'country of origin', '원산지'),
 }
 META = {

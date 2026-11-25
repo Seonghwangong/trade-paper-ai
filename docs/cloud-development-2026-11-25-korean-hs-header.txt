@@ -1,0 +1,25 @@
+2026-11-25 09:00 Asia/Seoul cloud development
+Base main/live: dac3ba406a274c35af9416cfde3aad9b739814a3.
+Read latest record/runbook/AGENTS/release-handoff and preserved commit history.
+44c6c93 remains unavailable/unmerged. Every-run reports supersede old silence rule.
+
+Reproduced defect: CSV/XLSX headings HS 코드 / HS코드 were not mapped, so an
+explicit source customs code disappeared from the reviewed item. Add the Korean
+heading alias using existing case/spacing normalization. Do not classify goods,
+validate customs applicability or infer any code from a name or product master.
+
+Before fix: six CSV/XLSX/case/spacing cases failed; unlabelled-digits case passed.
+Tests preserve explicit text001234 including leading zeros and original source,
+leave missing origin/date blank; unlabelled HS-like digits remain unclassified.
+Cloud Chromium fresh fictional account: upload explicit Korean-HS CSV, review
+001234,confirm with user-selected today's fictional date,save Invoice;Invoice
+and Packing PDFs contain001234. Health200 and44protected hashes unchanged.
+QA:/workspace/work/korean-hs-qa. Full suite/final release evidence in latest.txt.
+
+No customer/existing test data changes,real AI/payment/purchase/mail/promotion,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Render confirmed workspace/service explicit;autoDeploy yes/commit,no manual deploy.
+Rion official conversation list/read/send unavailable;private pending brief retained.
+Next:remaining source-review usability from reproducible evidence.
+
+Full Python:1936 passed,40 deselected,9 existing warnings in77.93s.

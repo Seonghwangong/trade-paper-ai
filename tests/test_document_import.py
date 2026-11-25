@@ -283,3 +283,29 @@ def test_invalid_currency_prefix_is_not_inferred(source):
     result = subject.parse_rows([['Description', 'Qty', 'Unit Price'], ['Fictional bolts', '2', source]])
     assert result['fields']['currency'] == ''
     assert result['items'][0]['unit_price'] == ''
+
+
+@pytest.mark.parametrize('header', ['HS 코드', 'HS코드', 'hs 코드'])
+@pytest.mark.parametrize('kind', ['csv', 'xlsx'])
+def test_explicit_korean_hs_header_preserves_source_code_without_classification(header, kind):
+    if kind == 'csv':
+        data = ('품명,수량,단가,' + header + '\n가상 품목,2,3,001234\n').encode('utf-8')
+    else:
+        data = workbook('<row><c r="A1" t="inlineStr"><is><t>품명</t></is></c>'
+                        '<c r="B1" t="inlineStr"><is><t>수량</t></is></c>'
+                        '<c r="C1" t="inlineStr"><is><t>단가</t></is></c>'
+                        '<c r="D1" t="inlineStr"><is><t>' + header + '</t></is></c></row>'
+                        '<row><c r="A2" t="inlineStr"><is><t>가상 품목</t></is></c>'
+                        '<c r="B2"><v>2</v></c><c r="C2"><v>3</v></c>'
+                        '<c r="D2" t="inlineStr"><is><t>001234</t></is></c></row>')
+    rows, _, _ = subject.spreadsheet_rows(data, 'fictional.' + kind)
+    draft = subject.parse_rows(rows)
+    assert draft['items'][0]['hs_code'] == '001234'
+    assert '001234' in draft['source_text']
+    assert draft['fields']['invoice_date'] == ''
+    assert draft['items'][0].get('origin', '') == ''
+
+
+def test_unlabelled_hs_like_digits_are_not_inferred_as_customs_code():
+    result = subject.parse_rows([['품명', '수량', '단가'], ['가상 001234 품목', '2', '3']])
+    assert result['items'][0].get('hs_code', '') == ''
