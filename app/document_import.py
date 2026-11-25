@@ -131,8 +131,14 @@ def parse_rows(rows):
                     remember(key, value)
             pending_meta = {}
             continue
+        # A named, explicitly priced row under declared item columns is data,
+        # even when its product name is also a metadata label (e.g. Date).
+        table_values = {key: cells[i] if i < len(cells) else ''
+                        for i, key in (headers or {}).items()}
+        priced_item = bool(table_values.get('name') and number(table_values.get('quantity', ''))
+                           and number(table_values.get('unit_price', '')))
         meta_found = False
-        for i, cell in enumerate(cells):
+        for i, cell in enumerate(cells if not priced_item else []):
             parts = re.split(r'\s*[:：]\s*', cell, maxsplit=1)
             label = parts[0]
             key = META_MAP.get(normalized(label))

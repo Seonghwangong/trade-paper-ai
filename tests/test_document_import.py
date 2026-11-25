@@ -309,3 +309,26 @@ def test_explicit_korean_hs_header_preserves_source_code_without_classification(
 def test_unlabelled_hs_like_digits_are_not_inferred_as_customs_code():
     result = subject.parse_rows([['품명', '수량', '단가'], ['가상 001234 품목', '2', '3']])
     assert result['items'][0].get('hs_code', '') == ''
+
+
+@pytest.mark.parametrize('name', ['Date', 'Seller', 'Currency'])
+def test_priced_table_item_is_not_consumed_as_metadata_label(name):
+    result = subject.parse_rows([['Seller', 'Fictional Exporter'],
+                                 ['Buyer', 'Fictional Buyer'],
+                                 ['Description', 'Qty', 'Unit Price'],
+                                 [name, '2', '3'], ['Fictional free sample', '1', '0']])
+    assert [item['name'] for item in result['items']] == [name, 'Fictional free sample']
+    assert result['items'][0]['quantity'] == '2'
+    assert result['items'][0]['unit_price'] == '3'
+    assert result['fields']['seller'] == 'Fictional Exporter'
+    assert result['fields']['buyer'] == 'Fictional Buyer'
+    assert result['fields']['invoice_date'] == ''
+    assert result['fields']['currency'] == ''
+
+
+def test_actual_metadata_after_table_is_still_read_without_numeric_item_values():
+    result = subject.parse_rows([['Description', 'Qty', 'Unit Price'], ['Date', '2', '3'],
+                                 ['Buyer', 'Fictional Buyer'], ['Currency', 'USD']])
+    assert result['items'] == [dict(name='Date', quantity='2', unit_price='3')]
+    assert result['fields']['buyer'] == 'Fictional Buyer'
+    assert result['fields']['currency'] == 'USD'

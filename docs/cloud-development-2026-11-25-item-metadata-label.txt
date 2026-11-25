@@ -1,0 +1,28 @@
+2026-11-25 15:00 Asia/Seoul cloud development
+Base main/live e34d2a4b4dfaecf8d31145e7be28c7155db98f1d.
+Read latest record,runbook,AGENTS/release-handoff and preserved history.
+44c6c93 unavailable/unmerged;existing released fixes retained.Report every run.
+
+Reproduced:under Description/Qty/Unit Price columns,a product named Date/Seller/
+Currency with explicit numeric quantity/price was consumed as metadata and lost.
+Prioritize a named table row with valid numeric quantity and price as item data.
+Continue normal metadata handling for rows without these explicit item values;
+flat-table metadata fields still use the existing per-item extraction path.
+No guessing from missing/invalid numbers;formula/summary/duplicate-header policies
+unchanged. Source text retained. This is not automatic item or customs classification.
+
+Before fix:4 targeted failures. Regression covers three metadata-like names,
+ordinary zero-price sample,correct parties,no fabricated date/currency,and actual
+Buyer/Currency metadata rows following the table.
+Cloud Chromium fresh fictional CSV:Date item survives review and explicit save,
+source date initially blank,user-selected today's date,Invoice/Packing PDFs contain
+Date and explicit totals;health200;44protected hashes unchanged.
+QA:/workspace/work/item-label-qa.Full suite/final commit/live evidence in latest.txt.
+
+No real AI/payment/purchase/mail/promotion,customer/existing test data changes,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Render explicit confirmed workspace/service,autoDeploy yes/commit,no manual deploy.
+Rion official conversation list/read/send unavailable;private pending brief retained.
+Next:review ambiguous/unpriced source rows conservatively;never invent quantities.
+
+Full Python:1940 passed,40 deselected,9 existing warnings in88.86s.
