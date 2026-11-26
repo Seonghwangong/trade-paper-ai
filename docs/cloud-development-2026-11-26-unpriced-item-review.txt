@@ -1,0 +1,30 @@
+2026-11-26 09:00 Asia/Seoul cloud development
+Base main/live f0b14dbe943f98e40d37f7b965a95c43f55c178d.
+Read latest/runbook/AGENTS/release-handoff and preserved history.
+44c6c93 unavailable/unmerged;retain existing priced-row behavior.Report every run.
+
+New reproduction beyond the previous release:Date table items with a blank,
+unreadable/formula-like or currency-prefixed price still disappeared as metadata.
+Preserve rows when name/quantity/unit-price columns are all explicitly present,
+the item is named and quantity is valid,including explicit zero. Leave unknown
+price blank for review;reuse existing currency handling for explicit priced values.
+A shorter Buyer,123 metadata row is still metadata rather than an invented item.
+Missing/ambiguous quantities remain subject to existing conservative behavior.
+No value,classification,HS,date or weight inferred. Original text retained.
+
+Before fix:8failed/1passed. Tests cover blank/pending/formula-like/usd3 prices at
+quantity2/0 plus numeric buyer metadata safeguard.No formula evaluation.
+Fresh fictional Cloud Chromium:blank-price Date item visible,save blocked/no POST,
+then fictional user explicitly enters price/today's date and reconfirms;Invoice
+and Packing PDFs verified;health200;44protected hashes unchanged.
+QA:/workspace/work/unpriced-item-qa. Final full suite/release evidence in latest.txt.
+QA harness initially omitted the existing post-edit reconfirmation;corrected to
+assert confirmation is reset and have the fictional user check it again.
+
+No real AI/payment/purchase/mail/promotion,customer/existing test data changes,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Explicit Render workspace/service confirmed,autoDeploy yes/commit,no manual deploy.
+Rion official conversation tools unavailable;private pending brief retained.
+Next:remaining review usability,with conservative handling of ambiguous source rows.
+
+Full Python:1949passed,40deselected,9existing warnings in84.26s.

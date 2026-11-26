@@ -332,3 +332,25 @@ def test_actual_metadata_after_table_is_still_read_without_numeric_item_values()
     assert result['items'] == [dict(name='Date', quantity='2', unit_price='3')]
     assert result['fields']['buyer'] == 'Fictional Buyer'
     assert result['fields']['currency'] == 'USD'
+
+
+@pytest.mark.parametrize('price', ['', 'pending', '=A1*2', 'usd 3'])
+@pytest.mark.parametrize('quantity', ['2', '0'])
+def test_full_width_named_item_with_explicit_quantity_survives_price_review(price, quantity):
+    result = subject.parse_rows([['Seller', 'Fictional Seller'],
+                                 ['Description', 'Qty', 'Unit Price'], ['Date', quantity, price]])
+    assert len(result['items']) == 1
+    assert result['items'][0]['name'] == 'Date'
+    assert result['items'][0]['quantity'] == quantity
+    assert result['items'][0]['unit_price'] == ('3' if price == 'usd 3' else '')
+    assert result['fields']['seller'] == 'Fictional Seller'
+    assert result['fields']['invoice_date'] == ''
+    if price:
+        assert price in result['source_text']
+
+
+def test_short_numeric_buyer_metadata_is_not_assumed_to_be_unpriced_item():
+    result = subject.parse_rows([['Description', 'Qty', 'Unit Price'],
+                                 ['Buyer', '123'], ['Fictional bolts', '2', '3']])
+    assert result['fields']['buyer'] == '123'
+    assert [item['name'] for item in result['items']] == ['Fictional bolts']
