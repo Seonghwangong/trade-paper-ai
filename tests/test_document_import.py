@@ -368,3 +368,25 @@ def test_explicit_price_keeps_unknown_quantity_item_and_following_row(quantity, 
     assert result['fields']['currency'] == ('USD' if price == 'usd 3' else '')
     if quantity:
         assert quantity in result['source_text']
+
+
+@pytest.mark.parametrize('ending', ['\r', '\n', '\r\n'])
+@pytest.mark.parametrize('delimiter', [',', ';'])
+@pytest.mark.parametrize('metadata', [False, True])
+def test_csv_record_newlines_preserve_quoted_content(ending, delimiter, metadata):
+    lines = []
+    if metadata:
+        lines.append(delimiter.join(['Seller', 'Fictional Exporter']))
+    lines.extend([delimiter.join(['Description', 'Qty', 'Unit Price']),
+                  delimiter.join(['"Fictional\rwrapped material"', '2', '3']),
+                  delimiter.join(['Fictional bolts', '1', '4'])])
+    data = (ending.join(lines) + ending).encode('utf-8')
+    rows, sheets, warnings = subject.spreadsheet_rows(data, 'fictional.csv')
+    assert sheets == ['CSV'] and warnings == []
+    assert rows[-2] == ['Fictional\rwrapped material', '2', '3']
+    draft = subject.parse_rows(rows)
+    assert [item['name'] for item in draft['items']] == ['Fictional\rwrapped material', 'Fictional bolts']
+    assert [item['quantity'] for item in draft['items']] == ['2', '1']
+    if metadata:
+        assert draft['fields']['seller'] == 'Fictional Exporter'
+    assert draft['fields']['invoice_date'] == ''

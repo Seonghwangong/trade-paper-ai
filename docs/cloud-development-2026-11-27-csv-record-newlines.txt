@@ -1,0 +1,26 @@
+2026-11-27 09:00 Asia/Seoul cloud development
+The environment context date is UTC2026-11-26;verified server clock23:56UTC
+corresponds to this morning's Asia/Seoul run. Not a duplicate of prior15:00 run.
+Base main/live dc6d0c2edd19922755607dff05cd45152991fad0.
+Read latest/runbook/AGENTS/release-handoff and preserved history.
+44c6c93 unavailable/unmerged;existing released fixes retained.Report every run.
+
+Reproduced:valid CSV using CR-only record endings raises csv.Error during read,
+so source review never opens. Pass newline='' to every CSV StringIO reader,
+including delimiter fallback sampling.Let csv handle record boundaries without
+rewriting quoted cell content.Encoding/delimiter/size/row limits unchanged.
+
+Before:4failed/8passed matrix of CR/LF/CRLF,comma/semicolon,metadata/no metadata.
+Tests retain quoted embedded CR in descriptions and explicit values/parties.
+Fresh fictional Cloud Chromium:assert actual CR-only uploaded bytes,review,
+explicit fictional-user today's-date selection and confirmation,Invoice USD0.25
+and readable Packing PDF;health200;44protected hashes unchanged.
+QA:/workspace/work/cr-csv-qa.Full suite/final release evidence in latest.txt.
+
+No customer/existing test data changes,real AI/payment/purchase/mail/promotion,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Explicit Render workspace/service confirmed;autoDeploy yes/commit,no manual deploy.
+Rion official conversation list/read/send unavailable;private pending brief retained.
+Next:remaining source-upload/review usability based on reproducible failures.
+
+Full Python:1970passed,40deselected,9existing warnings in75.84s.

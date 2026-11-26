@@ -234,6 +234,7 @@ def spreadsheet_rows(data, filename, sheet_index=0):
                 raise ValueError('encoding') from exc
         if len(text) > MAX_TEXT:
             raise ValueError('too_large')
+        # Let csv recognize CR/LF records while preserving quoted line breaks.
         try:
             dialect = csv.Sniffer().sniff(text[:8192], delimiters=',;\t')
         except csv.Error:
@@ -242,17 +243,17 @@ def spreadsheet_rows(data, filename, sheet_index=0):
             dialect = csv.excel
             candidates = []
             for delimiter in ',;\t':
-                for row in csv.reader(StringIO(text[:8192]), delimiter=delimiter):
+                for row in csv.reader(StringIO(text[:8192], newline=''), delimiter=delimiter):
                     headers = {HEADER_MAP.get(normalized(cell)) for cell in row}
                     if {'name', 'quantity'} <= headers:
                         candidates.append(delimiter)
                         break
             if len(candidates) == 1:
-                rows = list(csv.reader(StringIO(text), delimiter=candidates[0]))
+                rows = list(csv.reader(StringIO(text, newline=''), delimiter=candidates[0]))
             else:
-                rows = list(csv.reader(StringIO(text), dialect))
+                rows = list(csv.reader(StringIO(text, newline=''), dialect))
         else:
-            rows = list(csv.reader(StringIO(text), dialect))
+            rows = list(csv.reader(StringIO(text, newline=''), dialect))
         if len(rows) > 2000 or any(len(r) > 100 for r in rows):
             raise ValueError('too_large')
         return rows, ['CSV'], []
