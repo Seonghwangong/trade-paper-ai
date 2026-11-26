@@ -354,3 +354,17 @@ def test_short_numeric_buyer_metadata_is_not_assumed_to_be_unpriced_item():
                                  ['Buyer', '123'], ['Fictional bolts', '2', '3']])
     assert result['fields']['buyer'] == '123'
     assert [item['name'] for item in result['items']] == ['Fictional bolts']
+
+
+@pytest.mark.parametrize('quantity', ['', 'pending', '=SUM(A1:A2)'])
+@pytest.mark.parametrize('price', ['3', '0', 'usd 3'])
+def test_explicit_price_keeps_unknown_quantity_item_and_following_row(quantity, price):
+    result = subject.parse_rows([['Description', 'Qty', 'Unit Price'],
+                                 ['Date', quantity, price], ['Fictional bolts', '2', '3']])
+    assert [item['name'] for item in result['items']] == ['Date', 'Fictional bolts']
+    assert result['items'][0]['quantity'] == ''
+    assert result['items'][0]['unit_price'] == ('3' if price == 'usd 3' else price)
+    assert result['fields']['invoice_date'] == ''
+    assert result['fields']['currency'] == ('USD' if price == 'usd 3' else '')
+    if quantity:
+        assert quantity in result['source_text']

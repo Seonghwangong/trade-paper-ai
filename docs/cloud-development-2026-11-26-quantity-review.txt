@@ -1,0 +1,29 @@
+2026-11-26 15:00 Asia/Seoul cloud development
+Base main/live1152ce68e209649ef077924d74fbfa4e86bd1cb5.
+Read latest/runbook/AGENTS/release-handoff and preserved history.
+44c6c93 unavailable/unmerged;retain existing priced/missing-price fixes.Report every run.
+
+New reproduction:complete Date table row with unknown quantity and explicit
+price was still consumed as metadata. A blank quantity could set pending_date
+and swallow the following valid product row too.
+Preserve complete named table rows when quantity OR price is explicitly numeric,
+including zero and existing currency-prefixed prices. Never fill the unknown
+quantity;it remains blank and requires user review. Short numeric Buyer metadata
+safeguard,duplicate headers,formula skipping,source text and metadata logic retained.
+No evaluation,back-calculation from amount,or invented physical/customs/date values.
+
+Before:9targeted failures. Regression covers blank/pending/formula-like quantities,
+3/0/usd3 prices,following-item preservation,no fabricated date,currency handling.
+Cloud Chromium fresh fictional CSV:Date quantity remains blank,price preserved,
+no save POST until explicit fictional-user quantity/today's date/reconfirmation;
+Invoice and Packing PDFs passed;health200;44protected hashes unchanged.
+QA:/workspace/work/quantity-review-qa.Full suite/final release evidence in latest.txt.
+
+No real AI/payment/purchase/mail/promotion,customer/existing test data changes,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Explicit Render workspace/service confirmed,autoDeploy yes/commit,no manual deploy.
+Rion official conversation list/read/send unavailable;private pending brief retained.
+Next:ambiguous rows without explicit quantity AND price need conservative review;
+never infer missing values or describe automatic extraction as complete.
+
+Full Python:1958passed,40deselected,9existing warnings in81.33s.

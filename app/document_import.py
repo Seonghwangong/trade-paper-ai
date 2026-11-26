@@ -131,15 +131,19 @@ def parse_rows(rows):
                     remember(key, value)
             pending_meta = {}
             continue
-        # Keep complete table rows with an explicit quantity for price review,
+        # Keep complete table rows with an explicit quantity or price for review,
         # even when the name is a metadata label (e.g. Date). Short metadata
         # rows such as Buyer,123 must not be turned into unpriced items.
         table_values = {key: cells[i] if i < len(cells) else ''
                         for i, key in (headers or {}).items()}
         core_columns = [i for i, key in (headers or {}).items()
                         if key in {'name', 'quantity', 'unit_price'}]
+        price_text = table_values.get('unit_price', '')
+        price_prefix = re.fullmatch(r'([A-Za-z]{3})\s+(.+)', price_text)
+        explicit_price = number(price_prefix[2] if price_prefix else price_text)
         item_row = bool(len(core_columns) == 3 and all(i < len(cells) for i in core_columns)
-                        and table_values.get('name') and number(table_values.get('quantity', '')))
+                        and table_values.get('name')
+                        and (number(table_values.get('quantity', '')) or explicit_price))
         meta_found = False
         for i, cell in enumerate(cells if not item_row else []):
             parts = re.split(r'\s*[:：]\s*', cell, maxsplit=1)
