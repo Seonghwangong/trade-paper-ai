@@ -390,3 +390,40 @@ def test_csv_record_newlines_preserve_quoted_content(ending, delimiter, metadata
     if metadata:
         assert draft['fields']['seller'] == 'Fictional Exporter'
     assert draft['fields']['invoice_date'] == ''
+
+
+@pytest.mark.parametrize('label', ['Unit Price', '단가'])
+@pytest.mark.parametrize('code', ['USD', 'usd'])
+def test_parenthesized_header_currency_preserves_price_and_explicit_code(label, code):
+    result = subject.parse_rows([['Description', 'Qty', label + ' (' + code + ')', 'Amount (' + code + ')'],
+                                 ['Fictional bolts', '2', '3', '6']])
+    assert result['fields']['currency'] == 'USD'
+    assert result['items'] == [dict(name='Fictional bolts', quantity='2', unit_price='3', amount='6')]
+    assert label + ' (' + code + ')' in result['source_text']
+
+
+@pytest.mark.parametrize('metadata', [True, False])
+def test_header_currency_conflicts_require_review(metadata):
+    rows = [['Currency', 'EUR']] if metadata else []
+    rows += [['Description', 'Qty', 'Unit Price (USD)', 'Amount (' + ('USD' if metadata else 'EUR') + ')'],
+             ['Fictional bolts', '2', '3', '6']]
+    result = subject.parse_rows(rows)
+    assert result['fields']['currency'] == ''
+    assert 'conflicting_currency' in result['warnings']
+    assert result['items'][0]['unit_price'] == '3'
+
+
+@pytest.mark.parametrize('suffix', ['($)', '(US)', '(USDD)', '(UſD)'])
+def test_ambiguous_header_currency_is_not_inferred(suffix):
+    result = subject.parse_rows([['Description', 'Qty', 'Unit Price ' + suffix], ['Fictional bolts', '2', '3']])
+    assert result['fields']['currency'] == ''
+    assert result['items'][0]['quantity'] == '2'
+
+
+def test_duplicate_header_prices_stay_ambiguous_and_product_currency_is_not_inferred():
+    result = subject.parse_rows([['Description', 'Qty', 'Unit Price', 'Unit Price (USD)'],
+                                 ['Fictional bolts', '2', '3', '4']])
+    assert result['items'] == [] and 'duplicate_headers' in result['warnings']
+    result = subject.parse_rows([['Description', 'Qty', 'Unit Price'], ['Unit Price (USD)', '2', '3']])
+    assert result['fields']['currency'] == ''
+    assert result['items'][0]['name'] == 'Unit Price (USD)'

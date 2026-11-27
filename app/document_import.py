@@ -115,13 +115,26 @@ def parse_rows(rows):
         if not any(cells):
             continue
         raw_lines.append('\t'.join(cells))
-        mapped = {i: (HEADER_MAP | META_MAP)[normalized(c)] for i, c in enumerate(cells) if normalized(c) in (HEADER_MAP | META_MAP)}
+        mapped, header_currencies = {}, []
+        for i, cell in enumerate(cells):
+            key = (HEADER_MAP | META_MAP).get(normalized(cell))
+            labelled_currency = re.fullmatch(r'(.+?)\s*\(([A-Za-z]{3})\)', cell)
+            if key is None and labelled_currency:
+                key = HEADER_MAP.get(normalized(labelled_currency[1]))
+                if key in {'unit_price', 'amount'}:
+                    header_currencies.append(labelled_currency[2])
+                else:
+                    key = None
+            if key:
+                mapped[i] = key
         if 'name' in mapped.values() and 'quantity' in mapped.values():
             if len(set(mapped.values())) != len(mapped):
                 warnings.append('duplicate_headers')
                 headers = None
             else:
                 headers = mapped
+                for currency in header_currencies:
+                    remember('currency', currency)
             pending_meta = {}
             continue
         if pending_meta:

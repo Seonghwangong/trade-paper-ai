@@ -1,0 +1,28 @@
+2026-11-27 15:00 Asia/Seoul cloud development
+Base main/live2e148416b0b9bd8416ef7cb43f7a8d7f593b9878.
+Read latest/runbook/AGENTS/release-handoff and preserved history.
+44c6c93 unavailable/unmerged;prior released fixes retained.Report every run.
+
+Reproduced:Unit Price (USD)/단가 (USD) columns were not mapped,so explicit prices
+and header currency were absent in review.Support parenthesized three-ASCII-letter
+currency codes on recognized price/amount headers,only in a recognized item table.
+Reuse existing currency normalization/conflict checks.Duplicate monetary columns
+still disable ambiguous item extraction.No guessing from symbols or product names.
+No conversion or pricing/rounding changes.Original source labels retained.
+
+Before:7failed/4passed.Regression covers English/Korean headings,code case,
+metadata/header and price/amount currency conflicts,invalid suffixes,duplicate
+price columns,and product text that must not imply currency.
+Fresh fictional Cloud Chromium:USD price/amount header CSV review,explicit
+fictional-user today's date/confirmation,Invoice USD0.25 and Packing PDFs;
+separate context USD metadata/EUR header:blank currency,warning,no save POST.
+Health200;44protected hashes unchanged.QA:/workspace/work/header-currency-qa.
+Full suite/final release evidence in latest.txt.
+
+No real AI/payment/purchase/mail/promotion,customer/existing test data changes,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Explicit Render workspace/service confirmed,autoDeploy yes/commit,no manual deploy.
+Rion official conversation list/read/send unavailable;private pending brief retained.
+Next:remaining source-review usability based on reproducible failures.
+
+Full Python:1981passed,40deselected,9existing warnings in79.01s.
