@@ -1,0 +1,27 @@
+2026-11-28 09:00 Asia/Seoul cloud development
+Verified clock crossed from UTC2026-11-27 into28;this is the next morning KST run.
+Base main/live6653b2b6f3fdb89b70279d2ecba3bf05e11eb3df.
+Read latest/runbook/AGENTS/release-handoff and preserved history.
+44c6c93 unavailable/unmerged;file decimal/currency fixes retained.Report every run.
+
+Reproduced distinct order-note issue:the lexical NUM pattern rejected explicit
+.5 quantities or .25 prices before they reached the shared numeric validator.
+Allow leading-dot decimals with1–6digits in the note grammar,then keep the existing
+number validator,positive-quantity policy,unit mapping and currency conflict rules.
+No guessed quantity,weight,price,HS,origin,date or conversion.No AI/network parsing.
+
+Before:5failed/10passed.Regression covers quantity/price/both leading-dot inputs,
+six-decimal precision,explicit zero price,and rejection of negative/zero quantity,
+scientific/comma/bare-dot/overprecision input with untouched unmatched source.
+Fresh fictional Cloud Chromium:AI consent unchecked,request mode exactly order_note,
+.5kg atUSD.5 review preserves source,explicit fictional-user current date and
+confirmation,Invoice USD0.25 and Packing PDFs;health200;44hashes unchanged.
+QA:/workspace/work/note-decimal-qa.Full suite/final release evidence in latest.txt.
+
+No real AI/payment/purchase/mail/promotion,customer/existing test data changes,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Explicit confirmed Render workspace/service;autoDeploy yes/commit,no manual deploy.
+Rion official conversation list/read/send unavailable;private pending brief retained.
+Next:remaining note/import-review usability using reproducible evidence.
+
+Full Python:1996passed,40deselected,9existing warnings in66.11s.

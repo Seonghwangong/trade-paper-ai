@@ -98,3 +98,32 @@ def test_read_only_endpoint_keeps_account_scope_and_no_persistence(tmp_path, mon
 def test_note_limits(text, code):
     with pytest.raises(ValueError, match=code):
         parse_order_note(text)
+
+
+@pytest.mark.parametrize('quantity,price,expected_quantity,expected_price', [
+    ('.5', '.25', '0.5', '0.25'), ('1', '.25', '1', '0.25'),
+    ('.5', '0.25', '0.5', '0.25'), ('.000001', '.000001', '0.000001', '0.000001'),
+    ('.5', '.0', '0.5', '0.0')])
+def test_explicit_leading_dot_note_decimals_need_no_numeric_guessing(quantity, price, expected_quantity, expected_price):
+    source = f'Fictional material {quantity} kg at USD {price}'
+    draft = parse_order_note(source)
+    assert len(draft['items']) == 1
+    assert draft['items'][0] == dict(name='Fictional material', quantity=expected_quantity,
+                                     unit_price=expected_price, unit='KG', hs_code='', origin='')
+    assert draft['fields']['currency'] == 'USD'
+    assert draft['fields']['invoice_date'] == ''
+    assert draft['unmatched_lines'] == []
+    assert draft['source_text'] == source
+
+
+@pytest.mark.parametrize('source', [
+    'Fictional material .0 kg at USD .5', 'Fictional material -.5 kg at USD .5',
+    'Fictional material .0000001 kg at USD .5', 'Fictional material .5e3 kg at USD .5',
+    'Fictional material ,5 kg at USD .5', 'Fictional material . kg at USD .5',
+    'Fictional material .5 kg at USD -.5', 'Fictional material .5 kg at USD .0000001',
+    'Fictional material .5 kg at USD .5e3', 'Fictional material .5 kg at USD .'])
+def test_invalid_leading_note_numbers_remain_visible_unmatched(source):
+    draft = parse_order_note(source)
+    assert draft['items'] == []
+    assert draft['unmatched_lines'] == [source]
+    assert draft['source_text'] == source

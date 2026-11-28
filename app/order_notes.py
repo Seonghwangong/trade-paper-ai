@@ -4,7 +4,7 @@ import re
 from app.document_import import META_MAP, normalized, number, _date
 
 MAX_NOTE = 8000
-NUM = r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,6})?'
+NUM = r'(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,6})?|\.\d{1,6})'
 UNITS = {'개': 'PCS', 'pcs': 'PCS', 'pieces': 'PCS', 'piece': 'PCS',
          '세트': 'SET', 'sets': 'SET', 'set': 'SET', 'kg': 'KG',
          '킬로그램': 'KG', '박스': 'CTN', 'cartons': 'CTN', 'ctn': 'CTN'}
