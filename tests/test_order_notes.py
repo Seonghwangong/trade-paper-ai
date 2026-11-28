@@ -127,3 +127,29 @@ def test_invalid_leading_note_numbers_remain_visible_unmatched(source):
     assert draft['items'] == []
     assert draft['unmatched_lines'] == [source]
     assert draft['source_text'] == source
+
+
+@pytest.mark.parametrize('separator', ['\r', '\n', '\r\n', '\u2028', '\u2029'])
+def test_note_line_separators_keep_parties_and_items_separate(separator):
+    source = separator.join(['Seller: Fictional Seller', 'Buyer: Fictional Buyer',
+                             'Fictional bolts 2 PCS at USD 3', 'Fictional labels 1 PCS at USD 4'])
+    draft = parse_order_note(source)
+    assert draft['fields']['seller'] == 'Fictional Seller'
+    assert draft['fields']['buyer'] == 'Fictional Buyer'
+    assert [item['name'] for item in draft['items']] == ['Fictional bolts', 'Fictional labels']
+    assert [item['quantity'] for item in draft['items']] == ['2', '1']
+    assert draft['fields']['currency'] == 'USD'
+    assert draft['fields']['invoice_date'] == ''
+    assert draft['unmatched_lines'] == []
+    assert draft['source_text'] == source
+
+
+def test_mixed_note_separators_preserve_unmatched_and_currency_review():
+    source = 'Buyer: Fictional Buyer\rUnknown instruction\u2028Bolts 2 PCS at USD 3;Labels 1 PCS at EUR 4\u2029'
+    draft = parse_order_note(source)
+    assert len(draft['items']) == 2
+    assert draft['fields']['currency'] == ''
+    assert all(item['unit_price'] == '' for item in draft['items'])
+    assert draft['unmatched_lines'] == ['Unknown instruction']
+    assert 'note_currency' in draft['warnings']
+    assert draft['source_text'] == source

@@ -1,0 +1,26 @@
+2026-11-28 15:00 Asia/Seoul cloud development
+Base main/live fd52d131e7412fb11544dd3c9b73d02472c0114d.
+Read latest/runbook/AGENTS/release-handoff and preserved history.
+44c6c93 unavailable/unmerged;existing decimal/file fixes retained.Report every run.
+
+Reproduced:CR-only or Unicode line/paragraph separators in order notes joined
+party labels and item text into one line,losing items or polluting party values.
+Split CR,LF,U+2028,U+2029 and existing semicolons into note lines. Preserve source
+text verbatim;existing parsing,unmatched-line visibility,currency conflicts and
+numeric limits unchanged.No guessing or conversion;no real AI calls.
+
+Before:4failed/2passed.Regression coversCR/LF/CRLF/Unicode separators,parties,
+multiple products,unchanged source/no fabricated date,and mixed separators with
+an unmatched instruction plus mixed-currency prices that remain blank for review.
+Fresh fictional Cloud Chromium:assertU+2028/U+2029 retained in textarea,AI consent
+unchecked,mode exactlyorder_note,parties/item review,explicit fictional-user date/
+confirmation,Invoice/Packing PDFs;health200;44protected hashes unchanged.
+QA:/workspace/work/note-lines-qa.Full suite/final release evidence in latest.txt.
+
+No customer/existing test data changes,real AI/payment/purchase/mail/promotion,
+Mac dependency,new cost/service/security permission,new/local schedule changes.
+Explicit Render workspace/service confirmed,autoDeploy yes/commit,no manual deploy.
+Rion official conversation list/read/send unavailable;private pending brief retained.
+Next:remaining note/review usability based on reproducible evidence.
+
+Full Python:2002passed,40deselected,9existing warnings in81.69s.

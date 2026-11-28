@@ -29,8 +29,8 @@ def parse_order_note(text):
         if key in fields and fields[key] != value:
             conflicts.add(key)
         fields.setdefault(key, value)
-    # Semicolons/newlines separate items. Commas stay intact in numbers and names.
-    for raw in re.split(r'[\n;；]+', text):
+    # Semicolons and plain/Unicode line breaks separate items. Keep commas intact.
+    for raw in re.split(r'[\r\n\u2028\u2029;；]+', text):
         line = raw.strip()
         if not line:
             continue
